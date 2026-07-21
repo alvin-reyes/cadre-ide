@@ -1,0 +1,132 @@
+name: Build & Release Installers
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create.outputs.id }}
+    steps:
+      - name: Create GitHub Release
+        id: create
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: 'ADE ${{ github.ref_name }}'
+          body: |
+            ## Downloads
+
+            | Platform | File | Architecture |
+            |----------|------|-------------|
+            | **macOS (Apple Silicon)** | `.dmg` | M1/M2/M3/M4 |
+            | **macOS (Intel)** | `.dmg` | x86_64 |
+            | **Windows** | `.msi` / `.exe` | x64 |
+            | **Linux** | `.deb` / `.AppImage` | x64 |
+
+            ### Install via Homebrew (macOS)
+            ```bash
+            brew tap alvin-reyes/tap
+            brew install --cask ade
+            ```
+
+            **Full Changelog**: https://github.com/${{ github.repository }}/compare/v0.2.0...${{ github.ref_name }}
+          draft: false
+          prerelease: false
+
+  build:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            label: macOS-ARM64
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            label: macOS-x64
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            label: Linux-x64
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            label: Windows-x64
+
+    runs-on: ${{ matrix.platform }}
+    name: Build (${{ matrix.label }})
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build Tauri app
+        run: npx tauri build --target ${{ matrix.target }}
+
+      - name: List bundle output (debug)
+        if: always()
+        shell: bash
+        run: |
+          echo "=== Listing bundle directory ==="
+          find src-tauri/target/${{ matrix.target }}/release/bundle -type f 2>/dev/null || echo "No bundle directory found"
+          echo "=== Done ==="
+
+      - name: Find and upload artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BUNDLE_DIR="src-tauri/target/${{ matrix.target }}/release/bundle"
+          echo "Looking for artifacts in: $BUNDLE_DIR"
+
+          # Find all installer files (using null delimiter to handle spaces in filenames)
+          FOUND=0
+          while IFS= read -r -d '' FILE; do
+            echo "Uploading: $FILE"
+            gh release upload "${{ github.ref_name }}" "$FILE" --clobber
+            FOUND=1
+          done < <(find "$BUNDLE_DIR" -type f \( -name "*.dmg" -o -name "*.deb" -o -name "*.AppImage" -o -name "*.msi" -o -name "*.exe" \) -print0 2>/dev/null)
+
+          if [ "$FOUND" -eq 0 ]; then
+            echo "::warning::No installer artifacts found in $BUNDLE_DIR"
+          fi
+

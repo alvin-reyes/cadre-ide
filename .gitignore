@@ -1,1 +1,13 @@
+# cadre-ide (the IDE's own repo)
+node_modules/
+dist/
+src-tauri/target/
+.DS_Store
+*.log
+
+# brainstorming visual-companion scratch
 .superpowers/
+
+# local env / secrets
+.env
+.env.local

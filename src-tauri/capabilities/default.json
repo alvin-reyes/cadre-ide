@@ -1,0 +1,11 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities for Better Terminal",
+  "windows": ["*"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-create",
+    "opener:default",
+    "clipboard-manager:default"
+  ]
+}
