@@ -249,6 +249,13 @@ ephemeral scratch is ignored.)*
 - **Workbench = full-swap (`⌘⇥`) primary + slide-over drawer for peeks.**
 - **Approval & escalation surface** — the human-decision inbox (§6.3); first-class.
 - **Visual identity = Calm Studio base + Warm Craft / Mission Control themes** *([later])*.
+- **Premium bar = "Linear-grade minimal."** Crafted, calm, and *fast* — not flashy. Restraint (little
+  chrome, generous whitespace, one confident indigo accent), a refined type scale on a premium system
+  stack (`SF Pro`/`Inter` UI, crafted mono for terminals), subtle depth (hairline borders + soft
+  elevation), and physical micro-motion (spring easing, 120–240ms). Speed is a feature: instant, no jank.
+  Enforced via a **design-token layer** (`src/styles/tokens.css`) every Cadre surface builds on.
+- **No emoji, ever, in the UI.** Icons are **Lucide** line icons (`lucide-react`), consistent stroke and
+  size. (Emoji render inconsistently across platforms and read as amateur — banned for the premium bar.)
 
 ---
 

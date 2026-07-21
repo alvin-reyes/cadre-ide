@@ -1,0 +1,104 @@
+/*
+ * Cadre design system — Linear-grade minimal.
+ * Dark, restrained, fast. One confident accent, subtle depth, physical motion.
+ * New Cadre surfaces (Cockpit, Planning Studio, inbox) build on these tokens.
+ *
+ * Icons: use Lucide line icons (lucide-react). NO emoji anywhere in the UI.
+ */
+:root {
+  /* Surfaces — near-black with subtle elevation steps */
+  --c-bg: #0b0b0f;
+  --c-surface-1: #101015; /* panels */
+  --c-surface-2: #16161d; /* cards */
+  --c-surface-3: #1c1c25; /* elevated / hover */
+  --c-overlay: #202029; /* popovers / menus */
+
+  /* Content */
+  --c-text: #e9e9f0;
+  --c-text-secondary: #a0a0b0;
+  --c-text-muted: #6b6b7c;
+  --c-text-faint: #45454f;
+
+  /* Hairlines */
+  --c-border: rgba(255, 255, 255, 0.06);
+  --c-border-strong: rgba(255, 255, 255, 0.1);
+
+  /* Accent — Calm Studio indigo/violet */
+  --c-accent: #6e79ff;
+  --c-accent-hover: #7f88ff;
+  --c-accent-subtle: rgba(110, 121, 255, 0.14);
+  --c-accent-ring: rgba(110, 121, 255, 0.35);
+  --c-on-accent: #ffffff;
+
+  /* Status — semantic */
+  --c-success: #3fbf7f;
+  --c-success-subtle: rgba(63, 191, 127, 0.14);
+  --c-warning: #f0a12e;
+  --c-warning-subtle: rgba(240, 161, 46, 0.14);
+  --c-danger: #f2555a;
+  --c-danger-subtle: rgba(242, 85, 90, 0.14);
+  --c-info: #6e79ff;
+
+  /* Typography — premium system stack + crafted mono */
+  --c-font-ui: -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif;
+  --c-font-mono: "SF Mono", "JetBrains Mono", ui-monospace, "Cascadia Code",
+    monospace;
+  --c-fs-xs: 11px;
+  --c-fs-sm: 12px;
+  --c-fs-base: 13px;
+  --c-fs-md: 14px;
+  --c-fs-lg: 16px;
+  --c-fs-xl: 20px;
+  --c-fs-2xl: 26px;
+  --c-lh-tight: 1.25;
+  --c-lh: 1.5;
+  --c-tracking-tight: -0.01em;
+  --c-weight-normal: 450;
+  --c-weight-medium: 550;
+  --c-weight-strong: 650;
+
+  /* Spacing — 4px base */
+  --c-space-1: 4px;
+  --c-space-2: 8px;
+  --c-space-3: 12px;
+  --c-space-4: 16px;
+  --c-space-5: 24px;
+  --c-space-6: 32px;
+  --c-space-7: 48px;
+
+  /* Radius */
+  --c-radius-sm: 6px;
+  --c-radius: 8px;
+  --c-radius-lg: 12px;
+  --c-radius-full: 999px;
+
+  /* Elevation — Linear-style: hairline + soft shadow */
+  --c-elev-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --c-elev-2: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --c-elev-3: 0 12px 40px rgba(0, 0, 0, 0.45);
+
+  /* Motion — fast, physical */
+  --c-ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --c-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --c-dur-fast: 120ms;
+  --c-dur: 180ms;
+  --c-dur-slow: 240ms;
+}
+
+/* Premium base for the Cadre UI shell. Apply `.cadre-ui` at the app root. */
+.cadre-ui {
+  font-family: var(--c-font-ui);
+  font-size: var(--c-fs-base);
+  line-height: var(--c-lh);
+  letter-spacing: var(--c-tracking-tight);
+  color: var(--c-text);
+  background: var(--c-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Lucide icons: consistent stroke + size, inherit color. */
+.cadre-ui svg {
+  stroke-width: 1.75;
+}
