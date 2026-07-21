@@ -41,7 +41,11 @@ export interface VerifyInput {
   timeoutSecs: number;
   /** re-run on non-zero this many times before declaring Failed (flaky suites) */
   retriesOnNonZero?: number;
+  /** pause between retries (ms) — a flaky suite is likelier to change after a wait */
+  retryDelayMs?: number;
 }
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export interface VerifyResult {
   status: Status;
@@ -69,6 +73,10 @@ export async function verifyStory(
       }
     }
     if (passed) break;
+    // Back off before re-running a flaky suite (skip after the last attempt).
+    if (attempts < maxAttempts && input.retryDelayMs) {
+      await sleep(input.retryDelayMs);
+    }
   }
 
   const status: Status = passed ? "Done" : "Failed";

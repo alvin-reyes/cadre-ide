@@ -340,4 +340,14 @@ mod tests {
             vec!["claude".to_string()]
         );
     }
+
+    #[test]
+    fn args_require_a_command_and_are_ignored_without_one() {
+        // Contract: args apply only to an explicit command; with no command we
+        // fall back to the login shell and the args are intentionally unused.
+        assert_eq!(
+            resolve_argv(None, &["--foo".to_string()], "/bin/zsh"),
+            vec!["/bin/zsh".to_string(), "-l".to_string()]
+        );
+    }
 }

@@ -47,6 +47,17 @@ describe("verifyStory", () => {
     expect(written).toEqual(["Done"]);
   });
 
+  it("backs off between retries when retryDelayMs is set", async () => {
+    const { d } = deps([
+      { exitCode: 1, timedOut: false },
+      { exitCode: 0, timedOut: false },
+    ]);
+    const start = Date.now();
+    const r = await verifyStory(d, { ...base, retriesOnNonZero: 2, retryDelayMs: 20 });
+    expect(r.status).toBe("Done");
+    expect(Date.now() - start).toBeGreaterThanOrEqual(15); // waited before retrying
+  });
+
   it("fails after exhausting the retry ceiling", async () => {
     const { d } = deps([{ exitCode: 1, timedOut: false }]);
     const r = await verifyStory(d, { ...base, retriesOnNonZero: 2 });

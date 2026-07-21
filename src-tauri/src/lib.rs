@@ -5,6 +5,8 @@ mod secrets;
 mod verify;
 mod watcher;
 
+use base64::{engine::general_purpose::STANDARD, Engine};
+
 #[derive(serde::Serialize)]
 struct FileEntry {
     name: String,
@@ -238,28 +240,10 @@ fn save_temp_image(base64_data: String, extension: String) -> Result<String, Str
 }
 
 fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
-    // Simple base64 decoder
-    let table: Vec<u8> = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-        .to_vec();
-    let mut output = Vec::new();
-    let mut buf: u32 = 0;
-    let mut bits: u32 = 0;
-
-    for &byte in input.as_bytes() {
-        if byte == b'=' || byte == b'\n' || byte == b'\r' || byte == b' ' {
-            continue;
-        }
-        let val = table.iter().position(|&b| b == byte)
-            .ok_or_else(|| format!("Invalid base64 char: {}", byte as char))? as u32;
-        buf = (buf << 6) | val;
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            output.push((buf >> bits) as u8);
-            buf &= (1 << bits) - 1;
-        }
-    }
-    Ok(output)
+    let cleaned: String = input.chars().filter(|c| !c.is_whitespace()).collect();
+    STANDARD
+        .decode(cleaned)
+        .map_err(|e| format!("Invalid base64: {}", e))
 }
 
 #[tauri::command]
@@ -271,28 +255,7 @@ fn read_file_base64(path: String) -> Result<String, String> {
         path.clone()
     };
     let bytes = std::fs::read(&resolved).map_err(|e| format!("Failed to read {}: {}", resolved, e))?;
-    // Simple base64 encode
-    let table = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut result = String::new();
-    for chunk in bytes.chunks(3) {
-        let b0 = chunk[0] as u32;
-        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
-        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
-        let triple = (b0 << 16) | (b1 << 8) | b2;
-        result.push(table[((triple >> 18) & 0x3F) as usize] as char);
-        result.push(table[((triple >> 12) & 0x3F) as usize] as char);
-        if chunk.len() > 1 {
-            result.push(table[((triple >> 6) & 0x3F) as usize] as char);
-        } else {
-            result.push('=');
-        }
-        if chunk.len() > 2 {
-            result.push(table[(triple & 0x3F) as usize] as char);
-        } else {
-            result.push('=');
-        }
-    }
-    Ok(result)
+    Ok(STANDARD.encode(bytes))
 }
 
 #[tauri::command]

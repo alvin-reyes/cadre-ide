@@ -37,6 +37,8 @@ interface BmadState {
   projectRoot: string | null;
   board: BoardState;
   stories: StoryCard[];
+  /** set if a directory watch failed to register — the board may be static */
+  watchError: string | null;
   openProject: (root: string) => Promise<void>;
   /**
    * Authoritative status write: updates the board immediately (so the UI is
@@ -77,6 +79,7 @@ export const useBmadStore = create<BmadState>((set, get) => {
     projectRoot: null,
     board: emptyBoard(),
     stories: [],
+    watchError: null,
 
     setStatus: async (epic: number, story: number, status: Status) => {
       // Optimistic board update, then the engine writes the authoritative file.
@@ -86,7 +89,7 @@ export const useBmadStore = create<BmadState>((set, get) => {
 
     openProject: async (root: string) => {
       await invoke("open_project", { root });
-      set({ projectRoot: root, board: emptyBoard(), stories: [] });
+      set({ projectRoot: root, board: emptyBoard(), stories: [], watchError: null });
 
       const stateDir = `${root}/.cadre/state`;
       const storyDir = `${root}/docs/stories`;
@@ -118,12 +121,12 @@ export const useBmadStore = create<BmadState>((set, get) => {
         dir: stateDir,
         extensions: ["json"],
         onEvent: stateChannel,
-      }).catch(() => {});
+      }).catch((e) => set({ watchError: `state watch failed: ${e}` }));
       invoke("watch_directory", {
         dir: storyDir,
         extensions: ["md"],
         onEvent: storyChannel,
-      }).catch(() => {});
+      }).catch((e) => set({ watchError: `story watch failed: ${e}` }));
     },
   };
 });
