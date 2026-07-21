@@ -287,6 +287,67 @@ The design is deliberately **additive** — it fills the existing worker slot; i
 git sync, chips — is **[v0.1]**, built directly on the v0.0 engine (no new backend; `run_verification`,
 `cadre_state`, and reload-from-git already exist).
 
+### 3.11 Fleet execution: definitions of done, adversarial review & tool integrations
+Three additions harden what "Done" means for each worker and let the fleet act on the world (deploy).
+
+**Per-role Definition of Done (DoD) — carried by the role, enforced by the engine.** Every fleet role has
+an explicit, checkable DoD that travels **with the role** (in its persona/pack — it is *part of "people"*),
+not hardcoded in the engine. The DoD is the concrete bar the work must clear, and the engine's verification
+(§6.1) **is** the DoD's enforcement — un-forgeable, run by Cadre, never self-reported:
+- **Dev:** failing test written first → all tests green → adversarial review passes.
+- **Auditor (web3):** Slither/Echidna clean of high-severity findings.
+- **Deployer:** app deployed **and** the health check returns 200.
+
+The SM composes each story's DoD from the **role's base DoD + the story's acceptance criteria**; the frozen
+verification command(s) are the machine-checkable subset the QA gate re-runs.
+
+**Adversarial review — reviewers try to BREAK the code, not bless it.** Between implementation and the
+QA/verify gate sits a **Reviewer** step (an Cadre-added role, not a BMAD persona): one or more **adversarial
+reviewer agents** read the diff with a **default-to-reject posture**, instructed to hunt bugs, security
+holes, missing tests, and drift from the PRD/architecture — *never* to rubber-stamp. A blocking finding
+bounces the story to `InProgress` (visible, retry-ceiling-bounded). **Multiple independent reviewers with
+diverse lenses** (correctness / security / does-it-match-the-story) raise the catch rate; a story clears
+review only when no reviewer raises a blocker. This is the **qualitative** gate; the mechanical test run is
+the **quantitative** one — a story needs both to reach `Done`.
+
+**Tool integrations & deploy — the agent prepares, the ENGINE runs it (creds never touch the agent).**
+Fleet agents sometimes must act on the world — chiefly **deploy**. An **integration** is a declarative,
+pack-like bundle (mirroring the model `PROVIDERS`): `{ id, name, secretKey, env, cli, deployerPersona,
+healthCheck }` for Railway / Fly / DigitalOcean / …. A deploy is just a **story whose DoD/verification is a
+health check**:
+- The **deployer agent PREPARES** the deploy (Dockerfile, `fly.toml`, config) — it has **no cloud
+  credential** in its shell.
+- The **engine holds the token** (SecretsStore, §3.6) and **runs the deploy command itself** — exactly as
+  it runs verification, which the agent never touches — then **verifies by hitting the health endpoint**.
+- The story is `Done` only if the app actually responds. A deploy is **human-gated** (explicit approval
+  before dispatch) because it is outward-facing and costly.
+
+This keeps live credentials out of an autonomous shell agent while making shipping *verified, not vibed*.
+
+```mermaid
+flowchart LR
+  SM["SM shards story + DoD"] --> DEV["Dev agent implements (TDD)"]
+  DEV --> REV{"Adversarial review"}
+  REV -- "blocker" --> DEV
+  REV -- "clean" --> VER["Engine runs verification"]
+  VER -- "red" --> DEV
+  VER -- "green" --> DONE["Done"]
+  DONE -. "deploy story" .-> PREP["Deployer prepares config"]
+  PREP --> ENG["Engine deploys with held creds"]
+  ENG --> HC{"Health check 200?"}
+  HC -- "no" --> PREP
+  HC -- "yes" --> LIVE["Done: live + verified"]
+```
+
+**Documentation standard (cross-cutting):** every artifact Cadre's personas produce — PRD, architecture,
+UX spec, deploy runbook — must be **thorough and elaborate, with diagrams**. Personas emit **Mermaid**
+fenced blocks (flowcharts, sequence, ER, C4-ish component diagrams) and Cadre **renders them as visuals** in
+the document pane (not raw code). Detail and diagrams are a requirement of the output, not an option.
+
+**Milestone:** per-role DoD + adversarial Reviewer are **[v0.1/v0.2]** (the Reviewer/QA gates); tool
+integrations + deploy are **[v1]** (they build on packs + secrets + verification, all reserved in v0). The
+documentation standard (thorough docs + rendered Mermaid) applies **now [v0.0]**.
+
 ---
 
 ## 4. The two hats — components
