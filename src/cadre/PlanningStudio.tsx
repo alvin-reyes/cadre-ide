@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, type CSSProperties, type ClipboardEvent, type KeyboardEvent } from "react";
 import { marked } from "marked";
-import { ArrowUp, ArrowRight, FileText, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, Paperclip, X, Check, Copy, Eye, Code2 } from "lucide-react";
+import { ArrowUp, ArrowRight, Lock, FileText, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, Paperclip, X, Check, Copy, Eye, Code2 } from "lucide-react";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre, MODEL } from "./useCadre";
 import { planningTurn, type ChatMessage, type Attachment } from "../lib/planning/planningChat";
@@ -295,11 +295,13 @@ export function PlanningStudio() {
   }
 
   const showDesignPreview = persona === "design" && designView === "preview";
+  // PM-first: the other roles are locked until the PM has produced the PRD.
+  const prdReady = prd.trim().length > 0;
 
-  // Next-step guidance for the bottom bar (until the plan is approvable).
-  const guidance: { done: string | null; msg: string; to: PersonaId | null; cta: string } = !prd
+  // Sequential next-step guidance (PM → Architect → approve).
+  const guidance: { done: string | null; msg: string; to: PersonaId | null; cta: string } = !prdReady
     ? persona === "pm"
-      ? { done: null, msg: "Describe your idea — the PM will draft the PRD.", to: null, cta: "" }
+      ? { done: null, msg: "Start here — describe your idea and the PM will close down the requirements.", to: null, cta: "" }
       : { done: null, msg: "Start with the PM to draft the PRD.", to: "pm", cta: "Go to PM" }
     : persona === "architect"
       ? { done: "PRD ready", msg: "Now talk to the Architect to design the build.", to: null, cta: "" }
@@ -315,27 +317,36 @@ export function PlanningStudio() {
               const P = PERSONAS[id];
               const active = id === persona;
               const ready = docFor(id).trim().length > 0;
+              // PM is always open; the rest unlock once the PRD exists.
+              const locked = id !== "pm" && !prdReady;
               return (
                 <button
                   key={id}
-                  onClick={() => setPersona(id)}
+                  onClick={() => !locked && setPersona(id)}
+                  disabled={locked}
+                  title={locked ? "The PM closes the requirements first — draft the PRD to unlock." : undefined}
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
                     gap: 6,
                     fontSize: "var(--c-fs-sm)",
                     fontWeight: 550 as const,
-                    color: active ? "var(--c-accent)" : "var(--c-text-muted)",
+                    color: locked ? "var(--c-text-faint)" : active ? "var(--c-accent)" : "var(--c-text-muted)",
                     background: active ? "var(--c-accent-subtle)" : "transparent",
                     border: `1px solid ${active ? "var(--c-accent-ring)" : "transparent"}`,
                     borderRadius: "var(--c-radius-full)",
                     padding: "2px 10px",
-                    cursor: "pointer",
+                    cursor: locked ? "not-allowed" : "pointer",
+                    opacity: locked ? 0.55 : 1,
                     transition: "background var(--c-dur) var(--c-ease-out)",
                   }}
                 >
                   <P.icon size={13} strokeWidth={2} /> {P.label}
-                  {ready && <Check size={12} strokeWidth={3} style={{ color: "var(--c-success)" }} />}
+                  {ready ? (
+                    <Check size={12} strokeWidth={3} style={{ color: "var(--c-success)" }} />
+                  ) : locked ? (
+                    <Lock size={11} strokeWidth={2} />
+                  ) : null}
                 </button>
               );
             })}
