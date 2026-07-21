@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type ClipboardEvent } from "react";
+import { useState, useRef, useEffect, type CSSProperties, type ClipboardEvent, type KeyboardEvent } from "react";
 import { marked } from "marked";
 import { Lock, ArrowUp, FileText, PencilRuler, Ruler, KeyRound, ShieldCheck, Paperclip, X } from "lucide-react";
 import { useSettingsStore } from "../stores/settingsStore";
@@ -97,13 +97,37 @@ export function PlanningStudio() {
   const canApprove = prd.trim().length > 0 && architecture.trim().length > 0;
   const canSend = (draft.trim().length > 0 || attachments.length > 0) && !!apiKey && !thinking;
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Keep the conversation pinned to the latest message.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages, thinking, persona]);
+
+  // Auto-grow the composer as the user types (capped).
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [draft]);
+
+  function onInputKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      send();
+    }
+  }
+
   function addAttachments(items: Attachment[]) {
     if (items.length) setAttachments((a) => [...a, ...items]);
   }
 
   // Paste a doc → attach it to the turn. Files always attach; large/multi-line
   // text attaches as a document; short text pastes into the input as normal.
-  async function onPaste(e: ClipboardEvent<HTMLInputElement>) {
+  async function onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
     const dt = e.clipboardData;
     if (dt.files && dt.files.length > 0) {
       e.preventDefault();
@@ -236,7 +260,7 @@ export function PlanningStudio() {
             </div>
           )}
 
-          <div style={{ flex: 1, overflow: "auto", padding: "var(--c-space-4)", display: "flex", flexDirection: "column" }}>
+          <div ref={scrollRef} style={{ flex: 1, overflow: "auto", padding: "var(--c-space-4)", display: "flex", flexDirection: "column" }}>
             {messages.length === 0 ? (
               <div style={{ margin: "auto 0" }}>
                 <p style={{ fontSize: "var(--c-fs-md)", lineHeight: 1.6, color: "var(--c-text-secondary)", maxWidth: 380 }}>
@@ -276,12 +300,12 @@ export function PlanningStudio() {
             <div
               style={{
                 display: "flex",
-                alignItems: "center",
+                alignItems: "flex-end",
                 gap: "var(--c-space-2)",
                 background: "var(--c-surface-1)",
                 border: "1px solid var(--c-border-strong)",
                 borderRadius: "var(--c-radius-lg)",
-                padding: "10px 10px 10px 12px",
+                padding: "8px 8px 8px 10px",
               }}
             >
               <button
@@ -292,8 +316,8 @@ export function PlanningStudio() {
                   display: "inline-flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  width: 26,
-                  height: 26,
+                  width: 30,
+                  height: 30,
                   borderRadius: "var(--c-radius-sm)",
                   background: "transparent",
                   border: "none",
@@ -304,21 +328,27 @@ export function PlanningStudio() {
               >
                 <Paperclip size={16} strokeWidth={2} />
               </button>
-              <input
+              <textarea
+                ref={inputRef}
                 value={draft}
+                rows={1}
                 onChange={(e) => setDraft(e.target.value)}
                 onPaste={onPaste}
-                onKeyDown={(e) => e.key === "Enter" && send()}
-                placeholder={apiKey ? `Talk to the ${meta.label}… (paste a doc to attach)` : "Add your API key above to start"}
+                onKeyDown={onInputKeyDown}
+                placeholder={apiKey ? `Talk to the ${meta.label}…  (Enter to send · Shift+Enter for a new line · paste a doc to attach)` : "Add your API key above to start"}
                 disabled={!apiKey || thinking}
                 style={{
                   flex: 1,
+                  resize: "none",
+                  maxHeight: 160,
                   background: "transparent",
                   border: "none",
                   outline: "none",
                   color: "var(--c-text)",
                   fontSize: "var(--c-fs-md)",
                   fontFamily: "var(--c-font-ui)",
+                  lineHeight: 1.5,
+                  padding: "5px 0",
                 }}
               />
               <button
@@ -335,6 +365,7 @@ export function PlanningStudio() {
                   color: canSend ? "var(--c-on-accent)" : "var(--c-text-muted)",
                   border: "none",
                   cursor: canSend ? "pointer" : "default",
+                  flexShrink: 0,
                 }}
               >
                 <ArrowUp size={16} strokeWidth={2.5} />
@@ -536,7 +567,6 @@ function Bubble({
         fontSize: "var(--c-fs-md)",
         lineHeight: 1.5,
         color: "var(--c-text)",
-        whiteSpace: "pre-wrap",
         display: "flex",
         flexDirection: "column",
         gap: 6,
@@ -549,7 +579,12 @@ function Bubble({
           ))}
         </span>
       )}
-      {content && <span>{content}</span>}
+      {content &&
+        (isUser ? (
+          <span style={{ whiteSpace: "pre-wrap" }}>{content}</span>
+        ) : (
+          <div className="cadre-md" dangerouslySetInnerHTML={{ __html: marked.parse(content) as string }} />
+        ))}
     </div>
   );
 }

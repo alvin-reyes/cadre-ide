@@ -102,3 +102,171 @@
 .cadre-ui svg {
   stroke-width: 1.75;
 }
+
+/* Thin, unobtrusive scrollbars inside the Cadre shell. */
+.cadre-ui *::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.cadre-ui *::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: var(--c-radius-full);
+}
+.cadre-ui *::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.16);
+  background-clip: padding-box;
+}
+.cadre-ui *::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/*
+ * Rendered Markdown prose. `.cadre-doc` = the live document pane (PRD /
+ * architecture); `.cadre-md` = the tighter variant inside chat bubbles.
+ * Both derive from marked(); style the elements it emits.
+ */
+.cadre-doc,
+.cadre-md {
+  color: var(--c-text-secondary);
+}
+.cadre-doc > :first-child,
+.cadre-md > :first-child {
+  margin-top: 0;
+}
+.cadre-doc > :last-child,
+.cadre-md > :last-child {
+  margin-bottom: 0;
+}
+
+.cadre-doc h1,
+.cadre-doc h2,
+.cadre-doc h3,
+.cadre-doc h4 {
+  color: var(--c-text);
+  font-weight: var(--c-weight-strong);
+  letter-spacing: var(--c-tracking-tight);
+  line-height: var(--c-lh-tight);
+  margin: 1.4em 0 0.5em;
+}
+.cadre-doc h1 { font-size: var(--c-fs-xl); }
+.cadre-doc h2 {
+  font-size: var(--c-fs-lg);
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--c-border);
+}
+.cadre-doc h3 { font-size: var(--c-fs-md); }
+.cadre-doc h4 { font-size: var(--c-fs-base); color: var(--c-text-secondary); }
+
+.cadre-doc p,
+.cadre-doc ul,
+.cadre-doc ol,
+.cadre-doc blockquote,
+.cadre-doc pre,
+.cadre-doc table {
+  margin: 0 0 0.85em;
+}
+.cadre-doc ul,
+.cadre-doc ol {
+  padding-left: 1.4em;
+}
+.cadre-doc li {
+  margin: 0.25em 0;
+}
+.cadre-doc li::marker {
+  color: var(--c-text-muted);
+}
+.cadre-doc strong,
+.cadre-md strong {
+  color: var(--c-text);
+  font-weight: var(--c-weight-medium);
+}
+.cadre-doc a,
+.cadre-md a {
+  color: var(--c-accent);
+  text-decoration: none;
+}
+.cadre-doc a:hover,
+.cadre-md a:hover {
+  text-decoration: underline;
+}
+.cadre-doc blockquote {
+  padding-left: 1em;
+  border-left: 2px solid var(--c-border-strong);
+  color: var(--c-text-muted);
+}
+.cadre-doc hr {
+  border: none;
+  border-top: 1px solid var(--c-border);
+  margin: 1.4em 0;
+}
+
+/* Inline code + fenced blocks */
+.cadre-doc code,
+.cadre-md code {
+  font-family: var(--c-font-mono);
+  font-size: 0.9em;
+  background: var(--c-surface-3);
+  border: 1px solid var(--c-border);
+  border-radius: var(--c-radius-sm);
+  padding: 0.1em 0.35em;
+}
+.cadre-doc pre {
+  background: #0a0a0f;
+  border: 1px solid var(--c-border);
+  border-radius: var(--c-radius);
+  padding: var(--c-space-3);
+  overflow: auto;
+}
+.cadre-doc pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: var(--c-fs-sm);
+  color: var(--c-text-secondary);
+}
+
+/* Tables */
+.cadre-doc table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: var(--c-fs-sm);
+}
+.cadre-doc th,
+.cadre-doc td {
+  border: 1px solid var(--c-border);
+  padding: 6px 10px;
+  text-align: left;
+}
+.cadre-doc th {
+  color: var(--c-text);
+  font-weight: var(--c-weight-medium);
+  background: var(--c-surface-2);
+}
+
+/* Chat-bubble Markdown: tighter, no oversized headings. */
+.cadre-md {
+  color: inherit;
+}
+.cadre-md p,
+.cadre-md ul,
+.cadre-md ol {
+  margin: 0 0 0.5em;
+}
+.cadre-md ul,
+.cadre-md ol {
+  padding-left: 1.25em;
+}
+.cadre-md li {
+  margin: 0.15em 0;
+}
+.cadre-md h1,
+.cadre-md h2,
+.cadre-md h3,
+.cadre-md h4 {
+  font-size: var(--c-fs-md);
+  font-weight: var(--c-weight-medium);
+  color: var(--c-text);
+  margin: 0.6em 0 0.3em;
+}
