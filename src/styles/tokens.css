@@ -105,6 +105,61 @@
   stroke-width: 1.75;
 }
 
+/* Conversational motion — message entrance, typing dots, quick-reply chips. */
+@keyframes cadre-bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.cadre-bubble {
+  animation: cadre-bubble-in var(--c-dur) var(--c-ease-out);
+}
+
+@keyframes cadre-typing {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+.cadre-typing-dot {
+  animation: cadre-typing 1.2s infinite var(--c-ease-out);
+}
+.cadre-typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.cadre-typing-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+.cadre-chip {
+  animation: cadre-bubble-in var(--c-dur) var(--c-ease-out);
+  transition: background var(--c-dur-fast) var(--c-ease-out), transform var(--c-dur-fast) var(--c-ease-out);
+}
+.cadre-chip:hover {
+  background: var(--c-accent) !important;
+  color: var(--c-on-accent) !important;
+  transform: translateY(-1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cadre-bubble,
+  .cadre-typing-dot,
+  .cadre-chip {
+    animation: none;
+  }
+}
+
 /* Thin, unobtrusive scrollbars inside the Cadre shell. */
 .cadre-ui *::-webkit-scrollbar {
   width: 10px;

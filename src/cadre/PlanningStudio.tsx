@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, type CSSProperties, type ClipboardEvent, type KeyboardEvent } from "react";
 import { marked } from "marked";
-import { Lock, ArrowUp, FileText, PencilRuler, Ruler, KeyRound, ShieldCheck, Paperclip, X, Check, Copy } from "lucide-react";
+import { Lock, ArrowUp, FileText, PencilRuler, Ruler, Palette, KeyRound, ShieldCheck, Paperclip, X, Check, Copy, Eye, Code2 } from "lucide-react";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre, MODEL } from "./useCadre";
 import { planningTurn, type ChatMessage, type Attachment } from "../lib/planning/planningChat";
@@ -31,7 +31,7 @@ function wordCount(text: string): number {
   return text.trim() ? text.trim().split(/\s+/).length : 0;
 }
 
-type PersonaId = "pm" | "architect";
+type PersonaId = "pm" | "architect" | "design";
 
 const PM_SYSTEM_PROMPT = `You are a sharp, pragmatic Product Manager (PM) helping the user turn an idea into a clear, complete PRD.
 
@@ -45,9 +45,19 @@ Converse to resolve: the stack, key components and their boundaries, the data mo
 
 Whenever the architecture should change, call the write_document tool with the FULL current architecture in Markdown, using sections like: ## Tech Stack, ## Components, ## Data Model, ## Integrations, ## Testing Strategy.`;
 
+const DESIGN_SYSTEM_PROMPT = `You are a pragmatic UX/UI Designer. Given the PRD, design the product's interface and user experience.
+
+Converse to resolve: primary user flows, information architecture, the screen/component inventory, key states (empty, loading, error), and the visual + interaction language. Ask focused questions one or two at a time. Keep replies concise. Refer to yourself as "the Designer".
+
+You have two tools:
+- write_document: the FULL UX spec in Markdown (## User Flows, ## Information Architecture, ## Component Inventory, ## Screen States, ## Visual & Interaction Guidelines).
+- write_mockup: a self-contained HTML mockup of the key screen(s) — inline CSS only, NO external resources, fonts, or scripts. Make it look polished and realistic.
+
+Keep BOTH the spec and the mockup current as the design evolves so the user can see it.`;
+
 const PERSONAS: Record<
   PersonaId,
-  { label: string; icon: typeof PencilRuler; sub: string; file: string; intro: string }
+  { label: string; icon: typeof PencilRuler; sub: string; file: string; intro: string; opener: string }
 > = {
   pm: {
     label: "PM",
@@ -55,6 +65,7 @@ const PERSONAS: Record<
     sub: "Product Manager · shaping your PRD",
     file: "docs/prd.md",
     intro: "I'm your PM. Tell me what you want to build and I'll turn it into a real PRD.",
+    opener: "What do you want to build?",
   },
   architect: {
     label: "Architect",
@@ -62,8 +73,19 @@ const PERSONAS: Record<
     sub: "System Architect · shaping the build",
     file: "docs/architecture.md",
     intro: "I'm your Architect. Once there's a PRD, I'll turn it into a build-ready architecture.",
+    opener: "How should we build it?",
+  },
+  design: {
+    label: "Design",
+    icon: Palette,
+    sub: "UX Designer · shaping the interface",
+    file: "docs/ux-spec.md",
+    intro: "I'm your Designer. From the PRD I'll shape the UX and mock up the actual screens.",
+    opener: "What should it look and feel like?",
   },
 };
+
+const PERSONA_IDS: PersonaId[] = ["pm", "architect", "design"];
 
 const paneHead: CSSProperties = {
   display: "flex",
@@ -80,22 +102,29 @@ export function PlanningStudio() {
 
   const prd = useCadre((s) => s.prd);
   const architecture = useCadre((s) => s.architecture);
+  const uxSpec = useCadre((s) => s.uxSpec);
+  const mockupHtml = useCadre((s) => s.mockupHtml);
   const setPrd = useCadre((s) => s.setPrd);
   const setArchitecture = useCadre((s) => s.setArchitecture);
+  const setUxSpec = useCadre((s) => s.setUxSpec);
+  const setMockupHtml = useCadre((s) => s.setMockupHtml);
   const approvePlan = useCadre((s) => s.approvePlan);
   const busy = useCadre((s) => s.busy);
   const error = useCadre((s) => s.error);
 
   const [persona, setPersona] = useState<PersonaId>("pm");
-  const [threads, setThreads] = useState<Record<PersonaId, ChatMessage[]>>({ pm: [], architect: [] });
+  const [threads, setThreads] = useState<Record<PersonaId, ChatMessage[]>>({ pm: [], architect: [], design: [] });
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [thinking, setThinking] = useState(false);
   const [keyDraft, setKeyDraft] = useState("");
   const [verifyCmd, setVerifyCmd] = useState("npm test");
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [designView, setDesignView] = useState<"spec" | "preview">("preview");
 
-  const doc = persona === "pm" ? prd : architecture;
-  const setDoc = persona === "pm" ? setPrd : setArchitecture;
+  const docFor = (id: PersonaId) => (id === "pm" ? prd : id === "architect" ? architecture : uxSpec);
+  const doc = docFor(persona);
+  const setDoc = persona === "pm" ? setPrd : persona === "architect" ? setArchitecture : setUxSpec;
   const messages = threads[persona];
   const meta = PERSONAS[persona];
   const canApprove = prd.trim().length > 0 && architecture.trim().length > 0;
@@ -108,7 +137,7 @@ export function PlanningStudio() {
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, thinking, persona]);
+  }, [messages, thinking, persona, suggestions]);
 
   // Auto-grow the composer as the user types (capped).
   useEffect(() => {
@@ -117,6 +146,11 @@ export function PlanningStudio() {
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, [draft]);
+
+  // Suggestions belong to the active persona's last turn.
+  useEffect(() => {
+    setSuggestions([]);
+  }, [persona]);
 
   function onInputKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -160,8 +194,15 @@ export function PlanningStudio() {
     }
   }
 
-  async function send() {
-    const text = draft.trim();
+  function systemPromptFor(id: PersonaId): string {
+    if (id === "pm") return PM_SYSTEM_PROMPT;
+    const base = id === "architect" ? ARCHITECT_SYSTEM_PROMPT : DESIGN_SYSTEM_PROMPT;
+    return prd.trim() ? `${base}\n\n## PRD (context)\n${prd}` : base;
+  }
+
+  // `override` lets a quick-reply chip send its text directly.
+  async function send(override?: string) {
+    const text = (override ?? draft).trim();
     if ((!text && attachments.length === 0) || thinking || !apiKey) return;
     const next: ChatMessage[] = [
       ...messages,
@@ -170,21 +211,26 @@ export function PlanningStudio() {
     setThreads((t) => ({ ...t, [persona]: next }));
     setDraft("");
     setAttachments([]);
+    setSuggestions([]);
     setThinking(true);
     try {
-      // The Architect sees the PRD as context so the architecture derives from it.
-      const systemPrompt =
-        persona === "pm"
-          ? PM_SYSTEM_PROMPT
-          : prd.trim()
-            ? `${ARCHITECT_SYSTEM_PROMPT}\n\n## PRD (context)\n${prd}`
-            : ARCHITECT_SYSTEM_PROMPT;
-      const result = await planningTurn({ apiKey, model: MODEL, systemPrompt, messages: next });
+      const result = await planningTurn({
+        apiKey,
+        model: MODEL,
+        systemPrompt: systemPromptFor(persona),
+        messages: next,
+        allowMockup: persona === "design",
+      });
       setThreads((t) => ({
         ...t,
         [persona]: [...next, { role: "assistant", content: result.reply || "(updated the document)" }],
       }));
       if (result.document) setDoc(result.document);
+      if (result.mockup) {
+        setMockupHtml(result.mockup);
+        setDesignView("preview");
+      }
+      if (result.suggestions && result.suggestions.length) setSuggestions(result.suggestions);
     } catch (e) {
       setThreads((t) => ({
         ...t,
@@ -195,16 +241,18 @@ export function PlanningStudio() {
     }
   }
 
+  const showDesignPreview = persona === "design" && designView === "preview";
+
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
         {/* Conversation */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
           <div style={paneHead}>
-            {(["pm", "architect"] as PersonaId[]).map((id) => {
+            {PERSONA_IDS.map((id) => {
               const P = PERSONAS[id];
               const active = id === persona;
-              const ready = (id === "pm" ? prd : architecture).trim().length > 0;
+              const ready = docFor(id).trim().length > 0;
               return (
                 <button
                   key={id}
@@ -221,16 +269,11 @@ export function PlanningStudio() {
                     borderRadius: "var(--c-radius-full)",
                     padding: "2px 10px",
                     cursor: "pointer",
+                    transition: "background var(--c-dur) var(--c-ease-out)",
                   }}
                 >
                   <P.icon size={13} strokeWidth={2} /> {P.label}
-                  {ready && (
-                    <Check
-                      size={12}
-                      strokeWidth={3}
-                      style={{ color: "var(--c-success)" }}
-                    />
-                  )}
+                  {ready && <Check size={12} strokeWidth={3} style={{ color: "var(--c-success)" }} />}
                 </button>
               );
             })}
@@ -279,7 +322,7 @@ export function PlanningStudio() {
                   {meta.intro}
                 </p>
                 <div style={{ fontSize: "var(--c-fs-xl)", fontWeight: 600 as const, marginTop: "var(--c-space-4)" }}>
-                  {persona === "pm" ? "What do you want to build?" : "How should we build it?"}
+                  {meta.opener}
                 </div>
               </div>
             ) : (
@@ -287,16 +330,34 @@ export function PlanningStudio() {
                 {messages.map((m, i) => (
                   <Bubble key={i} role={m.role} content={m.content} attachments={m.attachments} />
                 ))}
-                {thinking && (
-                  <div style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text-muted)" }}>
-                    The {meta.label} is thinking…
-                  </div>
-                )}
+                {thinking && <TypingBubble label={meta.label} />}
               </div>
             )}
           </div>
 
           <div style={{ padding: "0 var(--c-space-4) var(--c-space-4)" }}>
+            {suggestions.length > 0 && !thinking && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: "var(--c-space-2)" }}>
+                {suggestions.map((s, i) => (
+                  <button
+                    key={i}
+                    className="cadre-chip"
+                    onClick={() => send(s)}
+                    style={{
+                      fontSize: "var(--c-fs-sm)",
+                      color: "var(--c-accent)",
+                      background: "var(--c-accent-subtle)",
+                      border: "1px solid var(--c-accent-ring)",
+                      borderRadius: "var(--c-radius-full)",
+                      padding: "4px 12px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
             {attachments.length > 0 && (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: "var(--c-space-2)" }}>
                 {attachments.map((a, i) => (
@@ -364,7 +425,7 @@ export function PlanningStudio() {
                 }}
               />
               <button
-                onClick={send}
+                onClick={() => send()}
                 disabled={!canSend}
                 style={{
                   display: "inline-flex",
@@ -386,34 +447,86 @@ export function PlanningStudio() {
           </div>
         </div>
 
-        {/* Live document */}
+        {/* Live document / mockup */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", borderLeft: "1px solid var(--c-border)", background: "var(--c-bg)", minWidth: 0 }}>
           <div style={paneHead}>
             <FileText size={13} strokeWidth={2} style={{ color: "var(--c-text-muted)" }} />
             <span style={{ fontSize: "var(--c-fs-sm)", fontFamily: "var(--c-font-mono)", color: "var(--c-text-secondary)" }}>
-              {meta.file}
+              {showDesignPreview ? "docs/mockup.html" : meta.file}
             </span>
             <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-faint)" }}>
-              {doc ? `${wordCount(doc)} words` : "writes itself as you talk"}
+              {showDesignPreview
+                ? mockupHtml
+                  ? "live preview"
+                  : "mockup appears here"
+                : doc
+                  ? `${wordCount(doc)} words`
+                  : "writes itself as you talk"}
             </span>
             <div style={{ flex: 1 }} />
-            {doc && <CopyButton text={doc} />}
+            {persona === "design" && (
+              <div style={{ display: "flex", gap: 2, marginRight: "var(--c-space-2)" }}>
+                {(["preview", "spec"] as const).map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => setDesignView(v)}
+                    title={v === "preview" ? "Rendered mockup" : "UX spec"}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                      fontSize: "var(--c-fs-xs)",
+                      fontWeight: 550 as const,
+                      textTransform: "capitalize",
+                      padding: "2px 9px",
+                      borderRadius: "var(--c-radius-full)",
+                      border: "1px solid transparent",
+                      background: designView === v ? "var(--c-surface-3)" : "transparent",
+                      color: designView === v ? "var(--c-text)" : "var(--c-text-muted)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {v === "preview" ? <Eye size={11} strokeWidth={2} /> : <Code2 size={11} strokeWidth={2} />}
+                    {v}
+                  </button>
+                ))}
+              </div>
+            )}
+            {showDesignPreview ? mockupHtml && <CopyButton text={mockupHtml} label="HTML" /> : doc && <CopyButton text={doc} />}
           </div>
-          <div style={{ flex: 1, overflow: "auto", padding: "var(--c-space-5)" }}>
-            {doc ? (
+
+          {showDesignPreview ? (
+            mockupHtml ? (
+              <div style={{ flex: 1, padding: "var(--c-space-3)", minHeight: 0 }}>
+                <iframe
+                  title="UI mockup"
+                  srcDoc={mockupHtml}
+                  sandbox=""
+                  style={{ width: "100%", height: "100%", border: "1px solid var(--c-border)", borderRadius: "var(--c-radius)", background: "#fff" }}
+                />
+              </div>
+            ) : (
+              <EmptyPane text="The Designer mocks up the actual screens here — describe the UI to begin." />
+            )
+          ) : doc ? (
+            <div style={{ flex: 1, overflow: "auto", padding: "var(--c-space-5)" }}>
               <div
                 className="cadre-doc"
                 style={{ fontSize: "var(--c-fs-md)", lineHeight: 1.6, color: "var(--c-text-secondary)" }}
                 dangerouslySetInnerHTML={{ __html: marked.parse(doc) as string }}
               />
-            ) : (
-              <div style={{ color: "var(--c-text-faint)", fontSize: "var(--c-fs-sm)", textAlign: "center", marginTop: "var(--c-space-6)" }}>
-                {persona === "pm"
+            </div>
+          ) : (
+            <EmptyPane
+              text={
+                persona === "pm"
                   ? "Your PRD appears here, section by section, as you and the PM talk it through."
-                  : "The architecture appears here as you and the Architect design the build."}
-              </div>
-            )}
-          </div>
+                  : persona === "architect"
+                    ? "The architecture appears here as you and the Architect design the build."
+                    : "The UX spec appears here as you and the Designer shape the experience."
+              }
+            />
+          )}
         </div>
       </div>
 
@@ -501,7 +614,7 @@ export function PlanningStudio() {
           }}
         >
           <Lock size={12} strokeWidth={2} />
-          Fleet locked — draft a PRD (PM) and an architecture (Architect) to unlock dispatch.
+          Fleet locked — draft a PRD (PM) and an architecture (Architect) to unlock dispatch. Design is optional.
         </div>
       )}
     </div>
@@ -519,7 +632,15 @@ const miniBtn: CSSProperties = {
   cursor: "pointer",
 };
 
-function CopyButton({ text }: { text: string }) {
+function EmptyPane({ text }: { text: string }) {
+  return (
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "var(--c-space-5)" }}>
+      <div style={{ color: "var(--c-text-faint)", fontSize: "var(--c-fs-sm)", textAlign: "center", maxWidth: 320 }}>{text}</div>
+    </div>
+  );
+}
+
+function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   async function copy() {
     try {
@@ -533,7 +654,7 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={copy}
-      title="Copy document"
+      title="Copy"
       style={{
         display: "inline-flex",
         alignItems: "center",
@@ -548,7 +669,7 @@ function CopyButton({ text }: { text: string }) {
       }}
     >
       {copied ? <Check size={12} strokeWidth={2.5} /> : <Copy size={12} strokeWidth={2} />}
-      {copied ? "Copied" : "Copy"}
+      {copied ? "Copied" : label}
     </button>
   );
 }
@@ -576,20 +697,42 @@ function AttachChip({ name, chars, onRemove }: { name: string; chars: number; on
         <button
           onClick={onRemove}
           title="Remove"
-          style={{
-            display: "inline-flex",
-            background: "transparent",
-            border: "none",
-            color: "var(--c-text-muted)",
-            cursor: "pointer",
-            padding: 0,
-            flexShrink: 0,
-          }}
+          style={{ display: "inline-flex", background: "transparent", border: "none", color: "var(--c-text-muted)", cursor: "pointer", padding: 0, flexShrink: 0 }}
         >
           <X size={12} strokeWidth={2.5} />
         </button>
       )}
     </span>
+  );
+}
+
+/** Animated "…is typing" bubble, shaped like an assistant message. */
+function TypingBubble({ label }: { label: string }) {
+  return (
+    <div
+      className="cadre-bubble"
+      style={{
+        alignSelf: "flex-start",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        background: "var(--c-surface-2)",
+        border: "1px solid var(--c-border)",
+        borderRadius: "var(--c-radius-lg)",
+        padding: "9px 13px",
+      }}
+    >
+      <span style={{ display: "inline-flex", gap: 4 }}>
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className="cadre-typing-dot"
+            style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--c-text-muted)", display: "inline-block" }}
+          />
+        ))}
+      </span>
+      <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-faint)" }}>the {label} is typing</span>
+    </div>
   );
 }
 
@@ -605,6 +748,7 @@ function Bubble({
   const isUser = role === "user";
   return (
     <div
+      className="cadre-bubble"
       style={{
         alignSelf: isUser ? "flex-end" : "flex-start",
         maxWidth: "82%",

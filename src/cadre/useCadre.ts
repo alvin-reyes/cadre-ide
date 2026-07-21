@@ -45,12 +45,17 @@ function basename(path: string): string {
 /** The relative path a document lives at under the project root. */
 const PRD_PATH = "docs/prd.md";
 const ARCH_PATH = "docs/architecture.md";
+const UX_PATH = "docs/ux-spec.md";
+const MOCKUP_PATH = "docs/mockup.html";
 
 interface CadreState {
   phase: Phase;
-  /** the two planning artifacts, as they form in the Planning Studio */
+  /** the planning artifacts, as they form in the Planning Studio */
   prd: string;
   architecture: string;
+  /** optional UX/design artifacts (Design tab) — spec + a live HTML mockup */
+  uxSpec: string;
+  mockupHtml: string;
   /** the frozen verification command(s) once the plan is approved */
   verification: string[];
   /** live agent + verification output, keyed by "epic.story" (streamed on dispatch) */
@@ -64,6 +69,8 @@ interface CadreState {
   setPhase: (phase: Phase) => void;
   setPrd: (md: string) => void;
   setArchitecture: (md: string) => void;
+  setUxSpec: (md: string) => void;
+  setMockupHtml: (html: string) => void;
   setFleetProvider: (id: string) => void;
   clearError: () => void;
 
@@ -104,6 +111,8 @@ export const useCadre = create<CadreState>((set, get) => ({
   phase: "PLAN",
   prd: "",
   architecture: "",
+  uxSpec: "",
+  mockupHtml: "",
   verification: [],
   logs: {},
   fleetProvider: "claude",
@@ -113,6 +122,8 @@ export const useCadre = create<CadreState>((set, get) => ({
   setPhase: (phase) => set({ phase }),
   setPrd: (prd) => set({ prd }),
   setArchitecture: (architecture) => set({ architecture }),
+  setUxSpec: (uxSpec) => set({ uxSpec }),
+  setMockupHtml: (mockupHtml) => set({ mockupHtml }),
   setFleetProvider: (fleetProvider) => set({ fleetProvider }),
   clearError: () => set({ error: null }),
 
@@ -133,6 +144,14 @@ export const useCadre = create<CadreState>((set, get) => ({
       // Persist the plan so it reloads from git (§3.8) and the Dev agents can read it.
       await invoke("write_text_file", { path: `${root}/${PRD_PATH}`, content: prd });
       await invoke("write_text_file", { path: `${root}/${ARCH_PATH}`, content: architecture });
+      // Optional UX/design artifacts (Design tab), when present.
+      const { uxSpec, mockupHtml } = get();
+      if (uxSpec.trim()) {
+        await invoke("write_text_file", { path: `${root}/${UX_PATH}`, content: uxSpec });
+      }
+      if (mockupHtml.trim()) {
+        await invoke("write_text_file", { path: `${root}/${MOCKUP_PATH}`, content: mockupHtml });
+      }
       // Freeze the verification command in engine-owned state (agents can't forge it).
       await invoke("approve_plan", { verification: cmds });
       set({ verification: cmds, phase: "FLEET", busy: null });
@@ -146,10 +165,12 @@ export const useCadre = create<CadreState>((set, get) => ({
     try {
       const root = requireRoot();
       const apiKey = requireKey();
-      const { prd, architecture } = get();
+      const { prd, architecture, uxSpec } = get();
       const ids = useBmadStore.getState().stories.map((s) => s.id);
       const story = nextStoryNumber(epic, ids);
-      const planContext = `# PRD\n\n${prd}\n\n---\n\n# Architecture\n\n${architecture}`;
+      const planContext =
+        `# PRD\n\n${prd}\n\n---\n\n# Architecture\n\n${architecture}` +
+        (uxSpec.trim() ? `\n\n---\n\n# UX / Design Spec\n\n${uxSpec}` : "");
 
       await generateStory(
         {
@@ -250,12 +271,19 @@ export const useCadre = create<CadreState>((set, get) => ({
         return "";
       }
     };
-    const [prd, architecture] = await Promise.all([readOr(PRD_PATH), readOr(ARCH_PATH)]);
+    const [prd, architecture, uxSpec, mockupHtml] = await Promise.all([
+      readOr(PRD_PATH),
+      readOr(ARCH_PATH),
+      readOr(UX_PATH),
+      readOr(MOCKUP_PATH),
+    ]);
     const approval = await invoke<PlanApproval | null>("get_plan_approval").catch(() => null);
     const approved = !!approval?.approved && (approval?.verification?.length ?? 0) > 0;
     set((s) => ({
       prd: prd || s.prd,
       architecture: architecture || s.architecture,
+      uxSpec: uxSpec || s.uxSpec,
+      mockupHtml: mockupHtml || s.mockupHtml,
       verification: approval?.verification ?? s.verification,
       // If the plan was already approved in a prior session, jump to the fleet.
       phase: approved ? "FLEET" : s.phase,
