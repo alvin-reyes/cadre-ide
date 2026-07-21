@@ -1,3 +1,5 @@
+#[allow(dead_code)] // wired to Tauri commands with the reconciler (Plan 3)
+mod cadre_state;
 mod pty;
 mod verify;
 mod watcher;
