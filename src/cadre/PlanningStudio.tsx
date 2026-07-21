@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, type CSSProperties, type ClipboardEvent, type KeyboardEvent } from "react";
 import { marked } from "marked";
-import { Lock, ArrowUp, FileText, PencilRuler, Ruler, KeyRound, ShieldCheck, Paperclip, X } from "lucide-react";
+import { Lock, ArrowUp, FileText, PencilRuler, Ruler, KeyRound, ShieldCheck, Paperclip, X, Check, Copy } from "lucide-react";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre, MODEL } from "./useCadre";
 import { planningTurn, type ChatMessage, type Attachment } from "../lib/planning/planningChat";
@@ -26,6 +26,10 @@ function guessName(text: string): string {
 // Treat a paste as a document (not inline text) when it's large or multi-paragraph.
 const DOC_PASTE_MIN_CHARS = 800;
 const DOC_PASTE_MIN_LINES = 4;
+
+function wordCount(text: string): number {
+  return text.trim() ? text.trim().split(/\s+/).length : 0;
+}
 
 type PersonaId = "pm" | "architect";
 
@@ -200,6 +204,7 @@ export function PlanningStudio() {
             {(["pm", "architect"] as PersonaId[]).map((id) => {
               const P = PERSONAS[id];
               const active = id === persona;
+              const ready = (id === "pm" ? prd : architecture).trim().length > 0;
               return (
                 <button
                   key={id}
@@ -219,6 +224,13 @@ export function PlanningStudio() {
                   }}
                 >
                   <P.icon size={13} strokeWidth={2} /> {P.label}
+                  {ready && (
+                    <Check
+                      size={12}
+                      strokeWidth={3}
+                      style={{ color: "var(--c-success)" }}
+                    />
+                  )}
                 </button>
               );
             })}
@@ -382,8 +394,10 @@ export function PlanningStudio() {
               {meta.file}
             </span>
             <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-faint)" }}>
-              writes itself as you talk
+              {doc ? `${wordCount(doc)} words` : "writes itself as you talk"}
             </span>
+            <div style={{ flex: 1 }} />
+            {doc && <CopyButton text={doc} />}
           </div>
           <div style={{ flex: 1, overflow: "auto", padding: "var(--c-space-5)" }}>
             {doc ? (
@@ -504,6 +518,40 @@ const miniBtn: CSSProperties = {
   border: "none",
   cursor: "pointer",
 };
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+    } catch {
+      /* clipboard unavailable */
+    }
+  }
+  return (
+    <button
+      onClick={copy}
+      title="Copy document"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        fontSize: "var(--c-fs-xs)",
+        color: copied ? "var(--c-success)" : "var(--c-text-muted)",
+        background: "transparent",
+        border: "1px solid var(--c-border)",
+        borderRadius: "var(--c-radius-sm)",
+        padding: "3px 8px",
+        cursor: "pointer",
+      }}
+    >
+      {copied ? <Check size={12} strokeWidth={2.5} /> : <Copy size={12} strokeWidth={2} />}
+      {copied ? "Copied" : "Copy"}
+    </button>
+  );
+}
 
 function AttachChip({ name, chars, onRemove }: { name: string; chars: number; onRemove?: () => void }) {
   return (
