@@ -46,20 +46,32 @@ that proves the thesis end-to-end on one story, then grow it in tight stages (§
 
 ## 2. Target user & guiding principles
 
-### The user
-A spectrum of **people who own product outcomes**, not just people who write code:
+### The user (v0 beachhead: the technical builder-orchestrator)
+**Primary user, v0: an architect / engineer / eng-lead** — CLI-comfortable, operating *above* the code but
+dropping *into* it when needed, and orchestrating a **fleet of agents** rather than typing every line.
+Full-stack across the lifecycle. **The author is this user** — Cadre is dogfooded, not designed for a
+persona we'd have to guess at. This focus is deliberate: build the engine + the power-user experience
+first, prove it, then widen.
 
-- **The architect-engineer** — CLI-first, operating *above* the code but dropping *into* it when needed.
-  Full-stack across the lifecycle. The power user.
-- **The product manager / product owner** — plans, prioritizes, and oversees delivery, and may *not* be
-  hands-on in the code at all. They live in the **Planning Studio** (talk out the PRD, UX, and plan) and
-  the **Fleet board** (watch outcomes land), and rarely need the terminal.
+**Why *verified, not vibed* is sharp for engineers — trust at fleet scale.** The point is *not* that an
+engineer can't verify (they can). It's that at **concurrency, no one can babysit N parallel agents and
+read every diff.** The engine running each story's verification and gating `Done` itself is precisely what
+lets you **let a fleet run unattended and still trust the board** — *trustworthy autonomous agents*. The
+value grows with the number of agents, exactly where hand-checking breaks down.
 
-**Why the PO is a first-class user, not a bolt-on:** Cadre's thesis — *the engine verifies; the worker
-never self-reports Done* — is precisely what a product owner needs. It lets them **trust that a story is
-actually finished (tests green) without reading the diff or being the engineer who checks**. *Verified,
-not vibed* is a PO value proposition as much as an engineering one. This also motivates the **human fleet**
-(§3.10): a PO can hand a story to a teammate *or* an agent and hold both to the same gate.
+**Adjacent, served by the same v0 surface: the technical PM / product owner** — comfortable with a repo,
+lives in the **Planning Studio** (talk out the PRD/UX/plan, PO-validate it) and the **Fleet board** (watch
+outcomes land), rarely needs the terminal. The planning personas (PM · Architect · Design · PO) and the
+human fleet (§3.10, a PO can hand a story to a teammate *or* an agent under the same gate) serve them
+without a separate build.
+
+**Later expansion (NOT a v0 audience): the non-technical founder / "idea person."** Same engine, a guided
+**"Simple mode"** surface (progressive disclosure) that hides git/branches/commands and speaks plain
+language ("Building the login screen" · "Checked & working"). This is the *ultimate* test of the thesis —
+a non-technical user genuinely *cannot* verify code, so the engine proving it is the only thing that makes
+the result trustworthy — **but it requires a UX layer (guided onboarding, relabeling, hidden plumbing)
+that comes *after* the engine + architect experience is proven.** Parked deliberately so we don't
+foreclose it or dilute v0.
 
 v0/v1 are **single-player and local**. **Mobile full-control access and project sharing** (own devices +
 teammates) are a defined **later pillar** on an engine seam reserved in v0 — see §3.7.
@@ -628,7 +640,9 @@ secrets.
 **v1 — make it a fleet:** parallel worktrees + integration-merge queue · auto-delegation (policy B) at
 concurrency > 1 · full budget/runaway + real cost measurement · `ContextStore` · sub-agent grid.
 
-**later:** multi-model routing (**after the spike**) · **engine + clients pillar** (network transport,
+**later:** **Simple mode** (the non-technical founder, §2 — guided "start a new idea" onboarding +
+plain-language relabeling + hidden plumbing, all as progressive disclosure over the *same* engine) ·
+multi-model routing (**after the spike**) · **engine + clients pillar** (network transport,
 **mobile full control**, **relay/sync + project sharing**, per-collaborator permissions, multi-actor
 coordination — a second, cloud product) · SSH · logs · themes · v6 · orchestrator-lead · **teaching
 layer** (§10).
