@@ -211,6 +211,11 @@
 .cadre-md {
   color: var(--c-text-secondary);
 }
+/* Rendered docs (PRD/architecture/UX, fleet story) read at the same comfortable size. */
+.cadre-doc {
+  font-size: var(--c-fs-chat);
+  line-height: 1.7;
+}
 .cadre-doc > :first-child,
 .cadre-md > :first-child {
   margin-top: 0;

@@ -576,7 +576,7 @@ export function PlanningStudio() {
             <div style={{ flex: 1, overflow: "auto", padding: "var(--c-space-5)" }}>
               <div
                 className="cadre-doc"
-                style={{ fontSize: "var(--c-fs-md)", lineHeight: 1.6, color: "var(--c-text-secondary)" }}
+                style={{ color: "var(--c-text-secondary)" }}
                 dangerouslySetInnerHTML={{ __html: marked.parse(doc) as string }}
               />
             </div>

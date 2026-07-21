@@ -328,7 +328,7 @@ function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
         <div style={{ flex: 1, overflow: "auto", padding: "var(--c-space-5)" }}>
           <div
             className="cadre-doc"
-            style={{ fontSize: "var(--c-fs-md)", lineHeight: 1.6, color: "var(--c-text-secondary)" }}
+            style={{ color: "var(--c-text-secondary)" }}
             dangerouslySetInnerHTML={{ __html: marked.parse(markdown) as string }}
           />
         </div>
@@ -389,8 +389,8 @@ function LiveTerminal({ log, empty }: { log: string; empty: string }) {
         background: "#14100c",
         padding: "var(--c-space-3) var(--c-space-4)",
         fontFamily: "var(--c-font-mono)",
-        fontSize: "var(--c-fs-sm)",
-        lineHeight: 1.55,
+        fontSize: "var(--c-fs-base)",
+        lineHeight: 1.6,
         color: "var(--c-text-secondary)",
         whiteSpace: "pre-wrap",
         wordBreak: "break-word",
