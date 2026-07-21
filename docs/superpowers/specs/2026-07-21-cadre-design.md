@@ -123,9 +123,16 @@ through unchecked. These are **per-process**, so parallel PTYs can each run a di
 and DeepSeek expose Anthropic-compatible endpoints; LiteLLM fronts the rest. **Two gates keep it out of
 early milestones:** (1) **`create_pty` accepts no `env` map today** — a small Rust change adds the seam
 (done in v0.0 for cleanliness); (2) **tool-use fidelity** on non-Claude models behind the shim is
-unproven and needs a **spike** before the `ModelRouter` *module* is built. To be precise: **the env-map
-seam is v0.0; the `ModelRouter` module and any `domain:` routing tag are *later*** (nothing consumes a
-domain tag before then).
+unproven and needs a **spike**.
+
+**Provider *choice* is available now (pulled forward).** `src/lib/engine/providers.ts` lets the user run
+**Claude, Kimi (Moonshot), or DeepSeek** — `resolveAgentEnv` composes the endpoint + auth per provider
+(native `ANTHROPIC_API_KEY` for Claude; `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` for the
+Anthropic-compatible ones), feeding `dispatchStory`'s env/model. **The wedge makes this safe:** whatever
+model writes the code, the engine verifies the output — so choosing a cheaper/faster model is low-risk,
+and a bad route surfaces as `Failed`, not a silent regression. *Still honest:* validate each provider's
+tool-use fidelity per §14; **domain-based auto-routing** (a `domain:` tag choosing the model *per story*)
+remains *later* — this is user-selected provider choice, not automatic routing.
 
 ### 3.4 BMAD integration target: v4 contract, v6 seam
 Target the stable **v4 `.bmad-core/` contract**; **detect-and-refuse** v6 (`_bmad/` + `config.toml`).
