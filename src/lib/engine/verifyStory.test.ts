@@ -19,7 +19,7 @@ function deps(runs: VerificationRun[]) {
   return { d, written };
 }
 
-const base = { epic: 1, story: 1, cwd: "/wt", command: "pnpm test", timeoutSecs: 60 };
+const base = { epic: 1, story: 1, cwd: "/wt", commands: ["pnpm test"], timeoutSecs: 60 };
 
 describe("verifyStory", () => {
   it("writes Done when the test runs green", async () => {
@@ -58,6 +58,47 @@ describe("verifyStory", () => {
     const { d } = deps([{ exitCode: null, timedOut: true }]);
     const r = await verifyStory(d, base);
     expect(r.status).toBe("Failed");
+  });
+
+  it("requires ALL steps to pass (a failing pack check blocks Done)", async () => {
+    // e.g. `pnpm test` passes but `slither` fails
+    let calls = 0;
+    const written: string[] = [];
+    const d = {
+      runVerification: async () => {
+        calls++;
+        return calls === 1
+          ? { exitCode: 0, timedOut: false } // step 1 (pnpm test) passes
+          : { exitCode: 1, timedOut: false }; // step 2 (slither) fails
+      },
+      setStatus: async (_e: number, _s: number, status: "Done" | "Failed") => {
+        written.push(status);
+      },
+    };
+    const r = await verifyStory(d as never, {
+      ...base,
+      commands: ["pnpm test", "slither . --fail-high"],
+    });
+    expect(r.status).toBe("Failed");
+    expect(calls).toBe(2); // both steps attempted
+    expect(written).toEqual(["Failed"]);
+  });
+
+  it("is Done only when every step passes", async () => {
+    let calls = 0;
+    const d = {
+      runVerification: async () => {
+        calls++;
+        return { exitCode: 0, timedOut: false };
+      },
+      setStatus: async () => {},
+    };
+    const r = await verifyStory(d as never, {
+      ...base,
+      commands: ["pnpm test", "slither ."],
+    });
+    expect(r.status).toBe("Done");
+    expect(calls).toBe(2);
   });
 
   it("never returns Done without a green run (agent cannot self-report)", async () => {

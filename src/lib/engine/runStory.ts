@@ -24,8 +24,8 @@ export interface RunStoryInput {
   story: number;
   /** composed agent prompt (see composeDispatchPrompt) */
   prompt: string;
-  /** human-approved verification command */
-  command: string;
+  /** verification steps: project command + any pack checks (composeVerification) */
+  commands: string[];
   timeoutSecs: number;
   model?: string;
   env?: Record<string, string>;
@@ -76,7 +76,7 @@ export async function runStory(
       epic: input.epic,
       story: input.story,
       cwd: dispatch.worktree,
-      command: input.command,
+      commands: input.commands,
       timeoutSecs: input.timeoutSecs,
       retriesOnNonZero: input.retriesOnNonZero,
     }

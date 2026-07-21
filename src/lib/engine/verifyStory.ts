@@ -32,8 +32,12 @@ export interface VerifyInput {
   story: number;
   /** the worktree the story was implemented in */
   cwd: string;
-  /** the human-approved verification command (frozen at the PLAN gate) */
-  command: string;
+  /**
+   * The verification steps to run, in order — the project's own command plus any
+   * vertical-pack checks (see `composeVerification`, e.g. web3's Slither). The
+   * story is `Done` only if ALL steps pass; the first failure short-circuits.
+   */
+  commands: string[];
   timeoutSecs: number;
   /** re-run on non-zero this many times before declaring Failed (flaky suites) */
   retriesOnNonZero?: number;
@@ -55,15 +59,16 @@ export async function verifyStory(
 
   while (attempts < maxAttempts) {
     attempts++;
-    const run = await deps.runVerification(
-      input.cwd,
-      input.command,
-      input.timeoutSecs
-    );
-    if (!run.timedOut && run.exitCode === 0) {
-      passed = true;
-      break;
+    // Every step must pass; the first failure short-circuits this attempt.
+    passed = true;
+    for (const command of input.commands) {
+      const run = await deps.runVerification(input.cwd, command, input.timeoutSecs);
+      if (run.timedOut || run.exitCode !== 0) {
+        passed = false;
+        break;
+      }
     }
+    if (passed) break;
   }
 
   const status: Status = passed ? "Done" : "Failed";

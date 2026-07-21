@@ -37,7 +37,7 @@ const input = {
   epic: 1,
   story: 1,
   prompt: "P",
-  command: "pnpm test",
+  commands: ["pnpm test"],
   timeoutSecs: 60,
 };
 
