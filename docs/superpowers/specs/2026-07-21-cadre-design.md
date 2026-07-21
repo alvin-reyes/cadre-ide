@@ -297,11 +297,13 @@ git sync, chips — is **[v0.1]**, built directly on the v0.0 engine (no new bac
 - **[v0.0] Planning Studio (PM-first, multi-persona)** — conversational planning producing `docs/prd.md` +
   `docs/architecture.md` (+ optional `docs/ux-spec.md` + mockup, `docs/po-validation.md`), with the
   **PLAN gate** always visible. **The PM is the single entry point and orchestrator:** *everyone* starts
-  with the Product Manager, who closes down the requirements first; the **Architect, Design (UX), and PO
-  personas are locked until the PRD exists**, then unlock in sequence (PM → Architect → optional Design/PO
-  → approve). This enforces "requirements before design/build" at the UI level and removes the "which
-  persona do I start with?" ambiguity — you can't skip the requirements step. Full
-  **Analyst→PM→Architect→UX→PO** walk depth is **[v0.1]** (quality, not thesis).
+  with the Product Manager, who closes down the requirements first. **You cannot self-navigate to the
+  Architect/Design/PO** — they are reachable ONLY when the **PM hands off** to them (a `handoff` tool the
+  PM calls once requirements are solid), which unlocks that role; before that they show locked. So the flow
+  is PM → (PM hands off to) Architect → optional Design/PO → approve. **New scope re-enters through the PM
+  too** (§5.1): the PM sees the current PRD, amends it in place, and hands off again — new requirements
+  never get hand-injected past the PM. This makes "requirements before design/build" a hard UI rule, not a
+  suggestion. Full **Analyst→PM→Architect→UX→PO** walk depth is **[v0.1]** (quality, not thesis).
 - **[v0.1] Plan viewer** — a rendered, navigable reading surface for the plan: formatted Markdown,
   **Mermaid architecture diagrams rendered as visuals** (not code fences), an **outline/TOC**, a
   **sharded-doc tree** (PRD→epics; architecture→tech-stack/coding-standards/source-tree/data-models/API-
