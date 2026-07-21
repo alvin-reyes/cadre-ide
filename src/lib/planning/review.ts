@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { recordUsage } from "../../stores/usageStore";
 
 /**
  * Adversarial review (§3.11): every artifact is critiqued by a same-discipline
@@ -73,6 +74,7 @@ export async function reviewArtifact(opts: {
     tool_choice: { type: "tool", name: "report_findings" },
     messages: [{ role: "user", content: userPrompt }],
   });
+  recordUsage(response.usage, opts.model);
 
   for (const block of response.content) {
     if (block.type === "tool_use" && block.name === "report_findings") {

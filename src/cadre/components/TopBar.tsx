@@ -1,7 +1,12 @@
-import { Hexagon } from "lucide-react";
+import { Hexagon, ArrowUp, ArrowDown } from "lucide-react";
 import { PhaseStepper, type Phase } from "./PhaseStepper";
+import { useUsageStore } from "../../stores/usageStore";
 
-/** The Cockpit top bar: wordmark + phase stepper. */
+function fmtK(n: number): string {
+  return n < 1000 ? String(n) : `${(n / 1000).toFixed(1)}k`;
+}
+
+/** The Cockpit top bar: wordmark + phase stepper + session token/cost meter. */
 export function TopBar({
   phase,
   onNavigate,
@@ -9,6 +14,11 @@ export function TopBar({
   phase: Phase;
   onNavigate?: (phase: Phase) => void;
 }) {
+  const input = useUsageStore((s) => s.input);
+  const output = useUsageStore((s) => s.output);
+  const cost = useUsageStore((s) => s.costUsd);
+  const calls = useUsageStore((s) => s.calls);
+
   return (
     <div
       style={{
@@ -31,6 +41,28 @@ export function TopBar({
       <PhaseStepper current={phase} onNavigate={onNavigate} />
 
       <div style={{ flex: 1 }} />
+
+      <div
+        title={`${calls} model call${calls === 1 ? "" : "s"} this session · ${input.toLocaleString()} in / ${output.toLocaleString()} out tokens · estimated cost`}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          fontSize: "var(--c-fs-xs)",
+          fontFamily: "var(--c-font-mono)",
+          color: "var(--c-text-muted)",
+        }}
+      >
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+          <ArrowUp size={11} strokeWidth={2.5} />
+          {fmtK(input)}
+        </span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+          <ArrowDown size={11} strokeWidth={2.5} />
+          {fmtK(output)}
+        </span>
+        <span style={{ color: "var(--c-text-secondary)" }}>~${cost.toFixed(cost < 1 ? 3 : 2)}</span>
+      </div>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { recordUsage } from "../../stores/usageStore";
 
 /**
  * The Planning Studio's live SDK binding. The PM/Architect persona converses
@@ -166,6 +167,7 @@ export async function planningTurn(opts: {
     stream.on("text", (delta: string) => onText(delta));
   }
   const response = await stream.finalMessage();
+  recordUsage(response.usage, opts.model);
 
   let reply = "";
   let document: string | undefined;
@@ -220,6 +222,7 @@ export async function callTool(opts: {
     tool_choice: { type: "tool", name: tool.name },
     messages: [{ role: "user", content: opts.userPrompt }],
   });
+  recordUsage(response.usage, opts.model);
   for (const block of response.content) {
     if (block.type === "tool_use") return block.input;
   }
