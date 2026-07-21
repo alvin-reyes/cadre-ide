@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect, type CSSProperties, type ClipboardEvent, type KeyboardEvent } from "react";
 import { marked } from "marked";
-import { ArrowUp, ArrowRight, Lock, RefreshCw, AlertTriangle, FileText, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, Paperclip, X, Check, Copy, Eye, Code2 } from "lucide-react";
+import { ArrowUp, ArrowRight, Lock, RefreshCw, AlertTriangle, FileText, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, ShieldAlert, Gavel, Paperclip, X, Check, Copy, Eye, Code2 } from "lucide-react";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre, MODEL } from "./useCadre";
 import { Markdown } from "./components/Markdown";
 import { planningTurn, type ChatMessage, type Attachment } from "../lib/planning/planningChat";
-import { PM_SYSTEM_PROMPT, ARCHITECT_SYSTEM_PROMPT, DESIGN_SYSTEM_PROMPT, PO_SYSTEM_PROMPT } from "../lib/planning/personas";
+import { PM_SYSTEM_PROMPT, ARCHITECT_SYSTEM_PROMPT, DESIGN_SYSTEM_PROMPT, PO_SYSTEM_PROMPT, ADVERSARIAL_REVIEW_PROMPTS } from "../lib/planning/personas";
+import { reviewArtifact, type ReviewResult, type Severity } from "../lib/planning/review";
 
 /** Read a pasted/dropped File as text. */
 function readFileText(file: File): Promise<string> {
@@ -117,6 +118,38 @@ export function PlanningStudio() {
   const [verifySuggested, setVerifySuggested] = useState(false);
   // Which roles the PM has brought in this session (the user reaches them only via the PM).
   const [handedOff, setHandedOff] = useState<Record<PersonaId, boolean>>({ pm: true, architect: false, design: false, po: false });
+  // Adversarial review state per artifact (a reviewer agent is part of the fleet).
+  type ReviewState = { status: "idle" | "reviewing" | "done"; result?: ReviewResult };
+  const [reviews, setReviews] = useState<Record<PersonaId, ReviewState>>({
+    pm: { status: "idle" },
+    architect: { status: "idle" },
+    design: { status: "idle" },
+    po: { status: "idle" },
+  });
+  const review = reviews[persona];
+
+  async function runReview() {
+    if (!apiKey || !doc.trim() || review.status === "reviewing") return;
+    const active = persona;
+    setReviews((r) => ({ ...r, [active]: { status: "reviewing" } }));
+    try {
+      // Reviewers hold the artifact against its upstream (the PRD), except the PM's own.
+      const context = active === "pm" ? undefined : prd.trim() || undefined;
+      const result = await reviewArtifact({
+        apiKey,
+        model: MODEL,
+        systemPrompt: ADVERSARIAL_REVIEW_PROMPTS[active],
+        artifact: doc,
+        context,
+      });
+      setReviews((r) => ({ ...r, [active]: { status: "done", result } }));
+    } catch (e) {
+      setReviews((r) => ({
+        ...r,
+        [active]: { status: "done", result: { verdict: "block", summary: String(e), findings: [] } },
+      }));
+    }
+  }
 
   const docFor = (id: PersonaId) =>
     id === "pm" ? prd : id === "architect" ? architecture : id === "design" ? uxSpec : poValidation;
@@ -334,7 +367,16 @@ export function PlanningStudio() {
                   }}
                 >
                   <P.icon size={13} strokeWidth={2} /> {P.label}
-                  {ready ? (
+                  {reviews[id].status === "done" && reviews[id].result ? (
+                    reviews[id].result.verdict === "accept" ? (
+                      <ShieldCheck size={12} strokeWidth={2.5} style={{ color: "var(--c-success)" }} />
+                    ) : (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 2, color: "var(--c-warning)", fontSize: "var(--c-fs-xs)", fontWeight: 600 as const }}>
+                        <ShieldAlert size={12} strokeWidth={2.5} />
+                        {reviews[id].result.findings.length}
+                      </span>
+                    )
+                  ) : ready ? (
                     <Check size={12} strokeWidth={3} style={{ color: "var(--c-success)" }} />
                   ) : locked ? (
                     <Lock size={11} strokeWidth={2} />
@@ -576,6 +618,28 @@ export function PlanningStudio() {
                 ))}
               </div>
             )}
+            {!showDesignPreview && doc.trim() && (
+              <button
+                onClick={runReview}
+                disabled={review.status === "reviewing"}
+                title="Run an adversarial same-role review of this artifact"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  fontSize: "var(--c-fs-xs)",
+                  color: review.status === "reviewing" ? "var(--c-text-muted)" : "var(--c-text-secondary)",
+                  background: "transparent",
+                  border: "1px solid var(--c-border)",
+                  borderRadius: "var(--c-radius-sm)",
+                  padding: "3px 8px",
+                  cursor: review.status === "reviewing" ? "default" : "pointer",
+                }}
+              >
+                <Gavel size={12} strokeWidth={2} />
+                {review.status === "reviewing" ? "Reviewing…" : "Review"}
+              </button>
+            )}
             {showDesignPreview ? mockupHtml && <CopyButton text={mockupHtml} label="HTML" /> : doc && <CopyButton text={doc} />}
           </div>
 
@@ -612,6 +676,10 @@ export function PlanningStudio() {
                       : "The validation report appears here as the PO reviews the plan."
               }
             />
+          )}
+
+          {!showDesignPreview && review.status !== "idle" && (
+            <ReviewPanel state={review} label={meta.label} />
           )}
         </div>
       </div>
@@ -865,6 +933,102 @@ function DocDrafting({ label, file, verb }: { label: string; file: string; verb:
           <span style={{ fontFamily: "var(--c-font-mono)", color: "var(--c-text-secondary)" }}>{file}</span>…
         </span>
       </div>
+    </div>
+  );
+}
+
+function sevColor(sev: Severity): string {
+  return sev === "blocker" ? "var(--c-danger)" : sev === "major" ? "var(--c-warning)" : "var(--c-text-muted)";
+}
+
+/** The adversarial reviewer's verdict + findings for the current artifact (review fleet, visible). */
+function ReviewPanel({
+  state,
+  label,
+}: {
+  state: { status: "idle" | "reviewing" | "done"; result?: ReviewResult };
+  label: string;
+}) {
+  if (state.status === "reviewing") {
+    return (
+      <div
+        style={{
+          flexShrink: 0,
+          borderTop: "1px solid var(--c-border)",
+          background: "var(--c-surface-1)",
+          padding: "10px var(--c-space-5)",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <span style={{ color: "var(--c-accent)" }}>
+          <Dots />
+        </span>
+        <span style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text-muted)" }}>
+          The adversarial {label} is reviewing this artifact…
+        </span>
+      </div>
+    );
+  }
+  const r = state.result;
+  if (!r) return null;
+  const blocked = r.verdict === "block";
+  return (
+    <div
+      style={{
+        flexShrink: 0,
+        borderTop: "1px solid var(--c-border)",
+        background: "var(--c-surface-1)",
+        maxHeight: 260,
+        overflow: "auto",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "8px var(--c-space-5)",
+          position: "sticky",
+          top: 0,
+          background: "var(--c-surface-1)",
+          borderBottom: "1px solid var(--c-border)",
+        }}
+      >
+        {blocked ? (
+          <ShieldAlert size={15} strokeWidth={2} style={{ color: "var(--c-warning)", flexShrink: 0 }} />
+        ) : (
+          <ShieldCheck size={15} strokeWidth={2} style={{ color: "var(--c-success)", flexShrink: 0 }} />
+        )}
+        <span style={{ fontSize: "var(--c-fs-sm)", fontWeight: 600 as const, color: blocked ? "var(--c-warning)" : "var(--c-success)" }}>
+          {blocked ? `Blocked · ${r.findings.length} finding${r.findings.length === 1 ? "" : "s"}` : "Accepted"}
+        </span>
+        <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-faint)" }}>adversarial {label} review</span>
+        {r.summary && (
+          <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            — {r.summary}
+          </span>
+        )}
+      </div>
+      {r.findings.length > 0 && (
+        <div style={{ padding: "var(--c-space-3) var(--c-space-5)", display: "flex", flexDirection: "column", gap: 11 }}>
+          {r.findings.map((f, i) => (
+            <div key={i} style={{ display: "flex", gap: 8 }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: sevColor(f.severity), marginTop: 6, flexShrink: 0 }} />
+              <div>
+                <div style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text)" }}>
+                  <span style={{ textTransform: "uppercase", fontSize: 9, letterSpacing: "0.06em", color: sevColor(f.severity), marginRight: 6, fontWeight: 600 as const }}>
+                    {f.severity}
+                  </span>
+                  {f.title}
+                </div>
+                <div style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text-muted)", lineHeight: 1.5 }}>{f.detail}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
