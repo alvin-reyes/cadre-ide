@@ -343,6 +343,7 @@ pub fn run() {
             cadre_state::open_project,
             cadre_state::story_set_status,
             cadre_state::story_get_status,
+            cadre_state::is_own_write,
             pty::create_pty,
             pty::write_pty,
             pty::resize_pty,

@@ -3,10 +3,12 @@ import { invoke, Channel } from "@tauri-apps/api/core";
 import {
   emptyBoard,
   reconcile,
+  applyStatus,
   boardStories,
   type BoardState,
   type StoryCard,
 } from "../lib/engine/board";
+import type { Status } from "../lib/engine/status";
 
 /**
  * bmadStore: the live Fleet board. Opens a project, hydrates the board from the
@@ -36,6 +38,13 @@ interface BmadState {
   board: BoardState;
   stories: StoryCard[];
   openProject: (root: string) => Promise<void>;
+  /**
+   * Authoritative status write: updates the board immediately (so the UI is
+   * live) AND writes the engine-owned state file. The watcher echo of this
+   * write is then suppressed by `is_own_write`, leaving the watcher to surface
+   * only external changes. The engine's setStatus dep should route through here.
+   */
+  setStatus: (epic: number, story: number, status: Status) => Promise<void>;
 }
 
 export const useBmadStore = create<BmadState>((set, get) => {
@@ -48,6 +57,10 @@ export const useBmadStore = create<BmadState>((set, get) => {
   async function reconcileState(path: string) {
     try {
       const content = await invoke<string>("read_file", { path });
+      // Write-origin suppression (§5): if this is cadre's own write, the board
+      // was already updated by setStatus — don't re-process the echo. Only
+      // genuine external changes fall through to reconcile.
+      if (await invoke<boolean>("is_own_write", { path, content })) return;
       push(
         reconcile(get().board, { kind: "state", filename: basename(path), content })
       );
@@ -64,6 +77,12 @@ export const useBmadStore = create<BmadState>((set, get) => {
     projectRoot: null,
     board: emptyBoard(),
     stories: [],
+
+    setStatus: async (epic: number, story: number, status: Status) => {
+      // Optimistic board update, then the engine writes the authoritative file.
+      push(applyStatus(get().board, epic, story, status));
+      await invoke("story_set_status", { epic, story, status });
+    },
 
     openProject: async (root: string) => {
       await invoke("open_project", { root });

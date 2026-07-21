@@ -153,6 +153,23 @@ pub fn story_get_status(
     state.get_status(epic, story)
 }
 
+/// Write-origin suppression bridge (§5): true if `content` at `path` matches
+/// what the engine last wrote there. The reconciler consults this to drop the
+/// watcher event caused by cadre's own write, so the watcher only surfaces
+/// genuine *external* changes. Returns false if no project is open.
+#[tauri::command]
+pub fn is_own_write(
+    engine: tauri::State<'_, CadreEngine>,
+    path: String,
+    content: String,
+) -> Result<bool, String> {
+    let guard = engine.state.lock().unwrap();
+    Ok(match guard.as_ref() {
+        Some(state) => state.is_own_write(std::path::Path::new(&path), &content),
+        None => false,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
