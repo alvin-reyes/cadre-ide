@@ -164,13 +164,25 @@ cadre runs its own engine, so it's decoupled from BMAD's activation-file scheme;
 **content** and honors its **artifact contract** only, all via `BmadAdapter`. Pin/validate a known-good
 v4 point release and **bundle it** for onboarding (§7).
 
-### 3.5 The Context Store (module deferred to v1)
-A multi-model fleet shares no hidden state, so coherence needs an explicit, model-agnostic context
-substrate. **v0** does *not* build a module: agents get BMAD's `devLoadAlwaysFiles` injected inline
-(already exists in BMAD). **v1** adds `ContextStore` owning cadre's **ADRs + agent memory**, composing
-per-dispatch slices *by pointer* over BMAD's canonical artifacts — no duplication. ADRs live under
-**`.cadre/decisions/`** and are **committed** (part of the durable project record, §3.8); agent memory is
-opt-in to commit. *(Context-Store failure is therefore a v1 error state, not v0.)*
+### 3.5 The Context Store — grounding against hallucination
+**Hallucination is the core failure mode of an agent fleet** — an agent invents an API, forgets a decision,
+or drifts from the plan. Cadre attacks it from **both sides**: the engine's verification (§6.1) **detects**
+hallucinated *output* (invented code fails the real tests), and the **Context Store prevents** it at the
+*input* by **grounding every agent in the durable, committed project record instead of its own memory**.
+
+**Everything is saved, committed, and retrievable (§3.8) — nothing important lives only in a chat
+transcript.** The record holds the PRD, architecture, UX spec, every **decision (ADR)**, every story + its
+dev notes, every **QA report** and **adversarial review finding**, and agent memory. Agents don't work from
+imagination: the SM **context-engineers** each story so the Dev needs nothing beyond it (the relevant
+architecture, standards, and file pointers are carried inline in the dev notes), and each agent loads the
+always-files plus retrieved slices of the record. This is *why* the disciplined pipeline exists — a grounded
+agent hallucinates less, and whatever slips through is caught by verification.
+
+**v0 vs v1.** v0 **already grounds**: docs + stories + state are committed, the SM writes complete dev notes,
+BMAD's `devLoadAlwaysFiles` is injected inline, and reload-from-git rebuilds everything from the record.
+**v1** adds the `ContextStore` module — `.cadre/decisions/` **ADRs** (committed), agent memory (opt-in to
+commit), and per-dispatch **retrieval by pointer** over BMAD's canonical artifacts (no duplication).
+*(Context-Store failure is therefore a v1 error state, not v0.)*
 
 ### 3.6 Secrets & credentials
 Secrets live in the **OS keychain** via a thin `src-tauri` wrapper over the Rust **`keyring` crate** —
@@ -301,14 +313,36 @@ not hardcoded in the engine. The DoD is the concrete bar the work must clear, an
 The SM composes each story's DoD from the **role's base DoD + the story's acceptance criteria**; the frozen
 verification command(s) are the machine-checkable subset the QA gate re-runs.
 
-**Adversarial review — reviewers try to BREAK the code, not bless it.** Between implementation and the
-QA/verify gate sits a **Reviewer** step (an Cadre-added role, not a BMAD persona): one or more **adversarial
-reviewer agents** read the diff with a **default-to-reject posture**, instructed to hunt bugs, security
-holes, missing tests, and drift from the PRD/architecture — *never* to rubber-stamp. A blocking finding
-bounces the story to `InProgress` (visible, retry-ceiling-bounded). **Multiple independent reviewers with
-diverse lenses** (correctness / security / does-it-match-the-story) raise the catch rate; a story clears
-review only when no reviewer raises a blocker. This is the **qualitative** gate; the mechanical test run is
-the **quantitative** one — a story needs both to reach `Done`.
+**Adversarial review at EVERY step — every artifact is reviewed by a same-discipline critic.** This is a
+universal rule, not just a code step: **every resource a role produces is reviewed by an adversarial peer of
+that same role** before it is accepted. An **adversarial PM** critiques the PRD; an **adversarial Architect**
+the architecture; an **adversarial Designer** the UX spec + mockup; an **adversarial PO** the validation; an
+**adversarial Reviewer** the code; an **adversarial QA** the test evidence. Each reviewer runs with a
+**default-to-reject posture** — instructed to find flaws (gaps, unstated assumptions, scope drift, security
+holes, missing tests, untestable requirements), *never* to rubber-stamp. The artifact is **not accepted while
+any reviewer raises a blocker**; findings bounce back to the author (the original persona) for revision, then
+re-review — visibly, bounded by a retry ceiling. So the PM can't hand off a PRD an adversarial PM would
+shred, and the Architect can't ship an architecture an adversarial Architect would reject.
+
+For **code** specifically, this is the qualitative gate that sits before the QA/verify gate, and it runs
+**multiple independent reviewers with diverse lenses** (correctness / security / does-it-match-the-story) to
+raise the catch rate; buildable work then also needs the **quantitative** gate (the engine's real test run).
+Everywhere else the adversarial review is the acceptance gate for that artifact.
+
+**Mandatory QA agent & documented test evidence — every project, no exceptions.** Every project has a **QA
+agent** (BMAD's Quinn) and the **QA gate is non-skippable** — no story reaches `Done` without it. QA
+ensures the work complies with the project's quality standards **and leaves an auditable evidence trail**:
+for each story the QA agent writes a **QA report** (`docs/qa/{epic}.{story}.md`, committed) that documents
+**every test case** — id, what it checks, preconditions, steps, expected result — each **traced back to a
+story acceptance criterion and the PRD**. Consistent with *verified, not vibed*, the split is deliberate:
+the **QA agent designs and documents the cases; the ENGINE executes** the verification (§6.1), and the
+**actual results** (real exit codes, per case where decomposable) are written into the report — *the agent
+cannot record a pass the engine did not produce*. QA sign-off therefore means a precise thing — **the story provably meets its Definition of Done** (the
+role's base DoD + the story's acceptance criteria, defined above): **every acceptance criterion / DoD item
+has a documented, engine-executed test case, and all are green**. The report follows
+the documentation standard (thorough, with a **coverage matrix** — AC ↔ test case ↔ result — and a
+test-flow diagram where useful). Gaps (an AC with no test, a flaky case, an untestable requirement) are
+**surfaced, not hidden** — an uncovered AC blocks sign-off.
 
 **Tool integrations & deploy — the agent prepares, the ENGINE runs it (creds never touch the agent).**
 Fleet agents sometimes must act on the world — chiefly **deploy**. An **integration** is a declarative,
@@ -344,9 +378,17 @@ UX spec, deploy runbook — must be **thorough and elaborate, with diagrams**. P
 fenced blocks (flowcharts, sequence, ER, C4-ish component diagrams) and Cadre **renders them as visuals** in
 the document pane (not raw code). Detail and diagrams are a requirement of the output, not an option.
 
-**Milestone:** per-role DoD + adversarial Reviewer are **[v0.1/v0.2]** (the Reviewer/QA gates); tool
-integrations + deploy are **[v1]** (they build on packs + secrets + verification, all reserved in v0). The
-documentation standard (thorough docs + rendered Mermaid) applies **now [v0.0]**.
+**Visibility (required) — the tool SHOWS the adversarial fleet at work.** The discipline must be visible,
+never implicit. The Cockpit surfaces, for **every artifact** (the PRD, architecture, UX, PO validation, and
+each story's code + QA), its **review state** — `reviewing` · `blocked (N findings)` · `accepted` — the
+**adversarial reviewer agents currently running**, and their **findings**. You literally watch a fleet of
+adversary agents review every step; nothing is accepted silently. This lives alongside the Fleet board (the
+build fleet) as a **review fleet** view.
+
+**Milestone:** the documentation standard (thorough docs + rendered Mermaid) applies **now [v0.0]**. Per-role
+DoD, the mandatory **QA agent + committed QA report**, and **adversarial review at every step** (planning
+artifacts *and* code) — with the Cockpit visibility above — are **[v0.1/v0.2]**, built on the existing
+gate / verify / state seams. Tool integrations + deploy are **[v1]**.
 
 ---
 
@@ -449,9 +491,12 @@ Draft ─▶ Approved ─▶ InProgress ─▶ InReview ─▶ Done
   `Draft → Approved` requires **human approval**, not an agent edit.
 - **FLEET:** Dev (TDD) → [Reviewer v0.1] → [QA v0.2], on **branch-per-story** (§6.2). Only the **engine**
   writes `InReview`/`Done`, and only after it **actually runs the verification** (§6.1).
-- **QA gate:** `→ Done` only if verification runs green (and QA persona passes, v0.2+). Otherwise
-  `Failed` → bounce to `InProgress`, visibly, bounded by an **explicit retry ceiling** (an integer, in
-  v0 — not deferred).
+- **Review + QA gates (§3.11):** before `→ Done`, code passes **adversarial review** (default-to-reject
+  peers) *and* the **mandatory QA gate** — the engine runs the verification green *and* the story provably
+  meets its **Definition of Done** with a committed **QA report** (every AC ↔ engine-executed test case).
+  `→ Done` only when all hold; otherwise `Failed` → bounce to `InProgress`, visibly, bounded by an
+  **explicit retry ceiling** (an integer, in v0 — not deferred). *(Adversarial review also gates planning
+  artifacts — a PRD/architecture/UX/PO doc is accepted only past its same-role adversarial reviewer.)*
 - **Re-open (scope change) [v1]:** `Done → Approved`, **human-gated** — the only path back out of `Done`,
   triggered by §5.1 impact analysis. (Added to the machine so a changed dependency can legitimately
   re-open completed work instead of silently drifting.)
@@ -694,13 +739,17 @@ engine-owned, self-trigger-suppressed) · **PLAN + SHARD gates** on one engine-o
 file/code/preview (as-is).
 
 **v0.1 — quality of planning & review + human fleet:** full **Analyst→PM→Architect→UX→PO** walk ·
-**Reviewer** pass · **rich Plan viewer** (outline + sharded-doc tree + traceability links) · **plan
-annotations** (highlight → comment → scoped re-planning, anchored to section id + quoted snippet, persisted
-as a decision record) · **human fleet (§3.10)** — `assignee` on story state, git identity, **Claim/Verify**
-for human workers (same frozen command), git-native sync + assignee chips (hybrid human/agent board).
+**adversarial review at every planning step (§3.11)** — a same-role critic gates each artifact (adversarial
+PM/Architect/Designer/PO) before hand-off · **per-role Definition of Done** carried by the role · **rich
+Plan viewer** (outline + sharded-doc tree + traceability links, **rendered Mermaid diagrams**) · **plan
+annotations** (highlight → comment → scoped re-planning) · **human fleet (§3.10)** — `assignee`, git
+identity, **Claim/Verify**, git-native sync + assignee chips.
 
-**v0.2 — the full gate:** **QA/Quinn** persona gate atop verification · retry-ceiling on QA-fail bounce ·
-richer escalation inbox.
+**v0.2 — the full gate + review/QA fleet:** **adversarial code review** (multiple diverse-lens reviewers,
+default-to-reject) atop the mechanical run · **mandatory QA/Quinn gate** with a committed **QA report**
+(every AC ↔ engine-executed test case, coverage matrix) · **DoD enforcement** · **review-fleet visibility**
+(§3.11) — the Cockpit shows every artifact's review state, the adversary agents running, and their findings ·
+retry-ceiling on QA-fail bounce · richer escalation inbox.
 
 **v0.3 — Workbench DB viewer** (independent track): `sqlx` + `mongodb` + DB Connections + DB-password
 secrets.
