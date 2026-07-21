@@ -1,0 +1,44 @@
+import { describe, it, expect } from "vitest";
+import { runApprovedStory, type OrchestratorDeps } from "./orchestrator";
+import type { PlanApproval } from "./planApproval";
+
+function makeDeps(approval: PlanApproval | null) {
+  const verifyCommands: string[] = [];
+  const deps: OrchestratorDeps = {
+    getPlanApproval: async () => approval,
+    setStatus: async () => {},
+    runGit: async () => {},
+    spawnAgent: async () => 1,
+    waitForExit: async () => ({ exitCode: 0 }),
+    runVerification: async (_cwd, command) => {
+      verifyCommands.push(command);
+      return { exitCode: 0, timedOut: false };
+    },
+  };
+  return { deps, verifyCommands };
+}
+
+const input = { root: "/proj", epic: 1, story: 1, prompt: "P", timeoutSecs: 60 };
+
+describe("runApprovedStory", () => {
+  it("refuses to dispatch when the plan is not approved", async () => {
+    const { deps } = makeDeps(null);
+    await expect(runApprovedStory(deps, input)).rejects.toThrow(/PLAN gate/);
+  });
+
+  it("refuses when approved but no verification command was frozen", async () => {
+    const { deps } = makeDeps({ approved: true, verification: [] });
+    await expect(runApprovedStory(deps, input)).rejects.toThrow(/PLAN gate/);
+  });
+
+  it("verifies against the FROZEN command from the approval, not a caller arg", async () => {
+    const { deps, verifyCommands } = makeDeps({
+      approved: true,
+      verification: ["forge test", "slither ."],
+    });
+    const r = await runApprovedStory(deps, input);
+    expect(r.status).toBe("Done");
+    // both frozen steps were run, in order
+    expect(verifyCommands).toEqual(["forge test", "slither ."]);
+  });
+});

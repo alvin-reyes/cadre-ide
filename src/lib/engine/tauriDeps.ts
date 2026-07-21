@@ -1,5 +1,7 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
 import type { RunStoryDeps } from "./runStory";
+import type { OrchestratorDeps } from "./orchestrator";
+import type { PlanApproval } from "./planApproval";
 import type { Status } from "./status";
 import type { BmadFileReader } from "../bmad/adapter";
 import { ExitRegistry } from "./exitRegistry";
@@ -100,9 +102,18 @@ async function setStatus(
   await invoke("story_set_status", { epic, story, status });
 }
 
+async function getPlanApproval(): Promise<PlanApproval | null> {
+  return invoke<PlanApproval | null>("get_plan_approval");
+}
+
 /** The full set of engine deps backed by Tauri. */
 export function tauriRunStoryDeps(): RunStoryDeps {
   return { setStatus, runGit, spawnAgent, waitForExit, runVerification };
+}
+
+/** Orchestrator deps (run-story deps + the PLAN approval reader). */
+export function tauriOrchestratorDeps(): OrchestratorDeps {
+  return { ...tauriRunStoryDeps(), getPlanApproval };
 }
 
 /** A BmadFileReader that reads `${projectRoot}/.bmad-core/<relPath>` via Tauri. */
