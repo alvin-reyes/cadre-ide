@@ -21,9 +21,25 @@ export const WRITE_DOCUMENT_TOOL = {
   },
 };
 
+export interface Attachment {
+  name: string;
+  content: string;
+}
+
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  /** documents pasted/attached to this turn; folded into the content the model sees */
+  attachments?: Attachment[];
+}
+
+/** The text actually sent to the model: attached docs as fenced blocks, then the message. */
+export function toApiContent(m: ChatMessage): string {
+  if (!m.attachments || m.attachments.length === 0) return m.content;
+  const blocks = m.attachments.map(
+    (a) => `<attached-document name="${a.name}">\n${a.content}\n</attached-document>`
+  );
+  return [...blocks, m.content].filter((s) => s.length > 0).join("\n\n");
 }
 
 export interface PlanningTurnResult {
@@ -48,7 +64,7 @@ export async function planningTurn(opts: {
     max_tokens: 4096,
     system: opts.systemPrompt,
     tools: [WRITE_DOCUMENT_TOOL],
-    messages: opts.messages.map((m) => ({ role: m.role, content: m.content })),
+    messages: opts.messages.map((m) => ({ role: m.role, content: toApiContent(m) })),
   });
 
   let reply = "";

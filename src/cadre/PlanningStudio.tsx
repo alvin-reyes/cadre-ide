@@ -1,9 +1,31 @@
-import { useState, type CSSProperties } from "react";
+import { useState, type CSSProperties, type ClipboardEvent } from "react";
 import { marked } from "marked";
-import { Lock, ArrowUp, FileText, PencilRuler, Ruler, KeyRound, ShieldCheck } from "lucide-react";
+import { Lock, ArrowUp, FileText, PencilRuler, Ruler, KeyRound, ShieldCheck, Paperclip, X } from "lucide-react";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre, MODEL } from "./useCadre";
-import { planningTurn, type ChatMessage } from "../lib/planning/planningChat";
+import { planningTurn, type ChatMessage, type Attachment } from "../lib/planning/planningChat";
+
+/** Read a pasted/dropped File as text. */
+function readFileText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result ?? ""));
+    r.onerror = () => reject(r.error);
+    r.readAsText(file);
+  });
+}
+
+/** Name an attachment from a markdown heading or its first line. */
+function guessName(text: string): string {
+  const heading = text.match(/^#{1,6}\s+(.+)$/m)?.[1];
+  const first = heading ?? text.split("\n").find((l) => l.trim().length > 0) ?? "pasted";
+  const slug = first.trim().slice(0, 40).replace(/[^\w.\- ]+/g, "").trim();
+  return slug ? `${slug}.md` : "pasted.md";
+}
+
+// Treat a paste as a document (not inline text) when it's large or multi-paragraph.
+const DOC_PASTE_MIN_CHARS = 800;
+const DOC_PASTE_MIN_LINES = 4;
 
 type PersonaId = "pm" | "architect";
 
@@ -63,6 +85,7 @@ export function PlanningStudio() {
   const [persona, setPersona] = useState<PersonaId>("pm");
   const [threads, setThreads] = useState<Record<PersonaId, ChatMessage[]>>({ pm: [], architect: [] });
   const [draft, setDraft] = useState("");
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [thinking, setThinking] = useState(false);
   const [keyDraft, setKeyDraft] = useState("");
   const [verifyCmd, setVerifyCmd] = useState("npm test");
@@ -72,13 +95,53 @@ export function PlanningStudio() {
   const messages = threads[persona];
   const meta = PERSONAS[persona];
   const canApprove = prd.trim().length > 0 && architecture.trim().length > 0;
+  const canSend = (draft.trim().length > 0 || attachments.length > 0) && !!apiKey && !thinking;
+
+  function addAttachments(items: Attachment[]) {
+    if (items.length) setAttachments((a) => [...a, ...items]);
+  }
+
+  // Paste a doc → attach it to the turn. Files always attach; large/multi-line
+  // text attaches as a document; short text pastes into the input as normal.
+  async function onPaste(e: ClipboardEvent<HTMLInputElement>) {
+    const dt = e.clipboardData;
+    if (dt.files && dt.files.length > 0) {
+      e.preventDefault();
+      const files = Array.from(dt.files);
+      const atts = await Promise.all(
+        files.map(async (f) => ({ name: f.name || "pasted.md", content: await readFileText(f) }))
+      );
+      addAttachments(atts);
+      return;
+    }
+    const text = dt.getData("text");
+    const lines = text ? (text.match(/\n/g)?.length ?? 0) + 1 : 0;
+    if (text && (text.length >= DOC_PASTE_MIN_CHARS || lines >= DOC_PASTE_MIN_LINES)) {
+      e.preventDefault();
+      addAttachments([{ name: guessName(text), content: text }]);
+    }
+  }
+
+  // Explicit "attach whatever's on the clipboard" affordance.
+  async function attachFromClipboard() {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text.trim()) addAttachments([{ name: guessName(text), content: text }]);
+    } catch {
+      /* clipboard unavailable / permission denied */
+    }
+  }
 
   async function send() {
     const text = draft.trim();
-    if (!text || thinking || !apiKey) return;
-    const next: ChatMessage[] = [...messages, { role: "user", content: text }];
+    if ((!text && attachments.length === 0) || thinking || !apiKey) return;
+    const next: ChatMessage[] = [
+      ...messages,
+      { role: "user", content: text, attachments: attachments.length ? attachments : undefined },
+    ];
     setThreads((t) => ({ ...t, [persona]: next }));
     setDraft("");
+    setAttachments([]);
     setThinking(true);
     try {
       // The Architect sees the PRD as context so the architecture derives from it.
@@ -186,7 +249,7 @@ export function PlanningStudio() {
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "var(--c-space-3)" }}>
                 {messages.map((m, i) => (
-                  <Bubble key={i} role={m.role} content={m.content} />
+                  <Bubble key={i} role={m.role} content={m.content} attachments={m.attachments} />
                 ))}
                 {thinking && (
                   <div style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text-muted)" }}>
@@ -198,6 +261,18 @@ export function PlanningStudio() {
           </div>
 
           <div style={{ padding: "0 var(--c-space-4) var(--c-space-4)" }}>
+            {attachments.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: "var(--c-space-2)" }}>
+                {attachments.map((a, i) => (
+                  <AttachChip
+                    key={i}
+                    name={a.name}
+                    chars={a.content.length}
+                    onRemove={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+                  />
+                ))}
+              </div>
+            )}
             <div
               style={{
                 display: "flex",
@@ -206,14 +281,35 @@ export function PlanningStudio() {
                 background: "var(--c-surface-1)",
                 border: "1px solid var(--c-border-strong)",
                 borderRadius: "var(--c-radius-lg)",
-                padding: "10px 10px 10px 14px",
+                padding: "10px 10px 10px 12px",
               }}
             >
+              <button
+                onClick={attachFromClipboard}
+                disabled={!apiKey || thinking}
+                title="Attach a document from the clipboard"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 26,
+                  height: 26,
+                  borderRadius: "var(--c-radius-sm)",
+                  background: "transparent",
+                  border: "none",
+                  color: "var(--c-text-muted)",
+                  cursor: apiKey && !thinking ? "pointer" : "default",
+                  flexShrink: 0,
+                }}
+              >
+                <Paperclip size={16} strokeWidth={2} />
+              </button>
               <input
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
+                onPaste={onPaste}
                 onKeyDown={(e) => e.key === "Enter" && send()}
-                placeholder={apiKey ? `Talk to the ${meta.label}…` : "Add your API key above to start"}
+                placeholder={apiKey ? `Talk to the ${meta.label}… (paste a doc to attach)` : "Add your API key above to start"}
                 disabled={!apiKey || thinking}
                 style={{
                   flex: 1,
@@ -227,7 +323,7 @@ export function PlanningStudio() {
               />
               <button
                 onClick={send}
-                disabled={!draft.trim() || thinking || !apiKey}
+                disabled={!canSend}
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
@@ -235,10 +331,10 @@ export function PlanningStudio() {
                   width: 30,
                   height: 30,
                   borderRadius: "var(--c-radius)",
-                  background: draft.trim() && apiKey ? "var(--c-accent)" : "var(--c-surface-3)",
-                  color: draft.trim() && apiKey ? "var(--c-on-accent)" : "var(--c-text-muted)",
+                  background: canSend ? "var(--c-accent)" : "var(--c-surface-3)",
+                  color: canSend ? "var(--c-on-accent)" : "var(--c-text-muted)",
                   border: "none",
-                  cursor: draft.trim() && apiKey ? "pointer" : "default",
+                  cursor: canSend ? "pointer" : "default",
                 }}
               >
                 <ArrowUp size={16} strokeWidth={2.5} />
@@ -378,7 +474,55 @@ const miniBtn: CSSProperties = {
   cursor: "pointer",
 };
 
-function Bubble({ role, content }: { role: "user" | "assistant"; content: string }) {
+function AttachChip({ name, chars, onRemove }: { name: string; chars: number; onRemove?: () => void }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        maxWidth: 220,
+        fontSize: "var(--c-fs-xs)",
+        color: "var(--c-text-secondary)",
+        background: "var(--c-surface-2)",
+        border: "1px solid var(--c-border)",
+        borderRadius: "var(--c-radius-sm)",
+        padding: "3px 8px",
+      }}
+    >
+      <FileText size={12} strokeWidth={2} style={{ color: "var(--c-text-muted)", flexShrink: 0 }} />
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+      <span style={{ color: "var(--c-text-faint)", flexShrink: 0 }}>{(chars / 1000).toFixed(1)}k</span>
+      {onRemove && (
+        <button
+          onClick={onRemove}
+          title="Remove"
+          style={{
+            display: "inline-flex",
+            background: "transparent",
+            border: "none",
+            color: "var(--c-text-muted)",
+            cursor: "pointer",
+            padding: 0,
+            flexShrink: 0,
+          }}
+        >
+          <X size={12} strokeWidth={2.5} />
+        </button>
+      )}
+    </span>
+  );
+}
+
+function Bubble({
+  role,
+  content,
+  attachments,
+}: {
+  role: "user" | "assistant";
+  content: string;
+  attachments?: Attachment[];
+}) {
   const isUser = role === "user";
   return (
     <div
@@ -393,9 +537,19 @@ function Bubble({ role, content }: { role: "user" | "assistant"; content: string
         lineHeight: 1.5,
         color: "var(--c-text)",
         whiteSpace: "pre-wrap",
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
       }}
     >
-      {content}
+      {attachments && attachments.length > 0 && (
+        <span style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {attachments.map((a, i) => (
+            <AttachChip key={i} name={a.name} chars={a.content.length} />
+          ))}
+        </span>
+      )}
+      {content && <span>{content}</span>}
     </div>
   );
 }
