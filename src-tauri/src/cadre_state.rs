@@ -28,6 +28,26 @@ pub struct StoryState {
     pub status: Status,
 }
 
+/// Legal next statuses per §5 (mirrors `src/lib/engine/transitions.ts`). Enforced
+/// by the sole writer (`set_status`) so illegal edges — e.g. Draft → Done — are
+/// impossible, not merely discouraged.
+fn legal_next(from: Status) -> &'static [Status] {
+    use Status::*;
+    match from {
+        Draft => &[Approved, Blocked],
+        Approved => &[InProgress, Blocked],
+        InProgress => &[InReview, Failed, Blocked],
+        InReview => &[Done, Failed, Blocked],
+        Failed => &[InProgress, Blocked],
+        Blocked => &[Approved, InProgress],
+        Done => &[Approved], // re-open (scope change, human-gated)
+    }
+}
+
+pub fn can_transition(from: Status, to: Status) -> bool {
+    legal_next(from).contains(&to)
+}
+
 /// The engine-owned state store: the **sole writer** of everything under
 /// `.cadre/state`, `.cadre/approvals`, and `.cadre/decisions`. Agents run in
 /// worktrees with no write path here (§5/§6.3).
@@ -83,8 +103,18 @@ impl CadreState {
         Ok(())
     }
 
-    /// Write a story's authoritative `Status`.
+    /// Write a story's authoritative `Status`, enforcing legal transitions (§5).
+    /// The first write for a story (no current status) is always allowed; after
+    /// that, only legal edges are accepted.
     pub fn set_status(&self, epic: u32, story: u32, status: Status) -> Result<(), String> {
+        if let Some(current) = self.get_status(epic, story)? {
+            if !can_transition(current.status, status) {
+                return Err(format!(
+                    "illegal status transition: {:?} -> {:?}",
+                    current.status, status
+                ));
+            }
+        }
         let state = StoryState { epic, story, status };
         let json = serde_json::to_string_pretty(&state).map_err(|e| e.to_string())?;
         self.atomic_write(&self.status_path(epic, story), &json)
@@ -227,12 +257,34 @@ mod tests {
     }
 
     #[test]
-    fn status_overwrite_is_atomic_and_latest_wins() {
+    fn status_advances_through_legal_edges_latest_wins() {
         let root = tmp_root("overwrite");
         let s = CadreState::new(&root);
         s.set_status(1, 1, Status::InProgress).unwrap();
+        s.set_status(1, 1, Status::InReview).unwrap();
         s.set_status(1, 1, Status::Done).unwrap();
         assert_eq!(s.get_status(1, 1).unwrap().unwrap().status, Status::Done);
+    }
+
+    #[test]
+    fn set_status_rejects_an_illegal_transition() {
+        let root = tmp_root("illegal");
+        let s = CadreState::new(&root);
+        s.set_status(1, 1, Status::InProgress).unwrap();
+        // InProgress -> Done must go through InReview
+        let err = s.set_status(1, 1, Status::Done).unwrap_err();
+        assert!(err.contains("illegal status transition"));
+        // and the stored status is unchanged
+        assert_eq!(s.get_status(1, 1).unwrap().unwrap().status, Status::InProgress);
+    }
+
+    #[test]
+    fn can_transition_matches_the_state_machine() {
+        assert!(can_transition(Status::Draft, Status::Approved));
+        assert!(!can_transition(Status::Draft, Status::Done));
+        assert!(can_transition(Status::InReview, Status::Done));
+        assert!(can_transition(Status::Done, Status::Approved)); // re-open
+        assert!(!can_transition(Status::Done, Status::InProgress));
     }
 
     #[test]
