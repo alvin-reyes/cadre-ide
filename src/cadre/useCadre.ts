@@ -65,6 +65,15 @@ interface CadreState {
   shardNextStory: (epic?: number) => Promise<void>;
   /** Dispatch a Dev agent for a story; Cadre verifies and writes the status. */
   dispatchStory: (epic: number, story: number) => Promise<void>;
+  /** Read a story's markdown (docs/stories/{epic}.{story}.*.md), or "" if none. */
+  getStoryMarkdown: (epic: number, story: number) => Promise<string>;
+}
+
+/** Locate a story file by its {epic}.{story} prefix under docs/stories. */
+async function findStoryPath(root: string, epic: number, story: number): Promise<string | null> {
+  const entries = await invoke<DirEntry[]>("list_directory", { path: `${root}/docs/stories` });
+  const prefix = `${epic}.${story}.`;
+  return entries.find((e) => !e.is_dir && basename(e.path).startsWith(prefix))?.path ?? null;
 }
 
 function requireRoot(): string {
@@ -151,13 +160,9 @@ export const useCadre = create<CadreState>((set, get) => ({
       const root = requireRoot();
 
       // Find the story file (docs/stories/{epic}.{story}.{slug}.md) and read it.
-      const entries = await invoke<DirEntry[]>("list_directory", {
-        path: `${root}/docs/stories`,
-      });
-      const prefix = `${epic}.${story}.`;
-      const entry = entries.find((e) => !e.is_dir && basename(e.path).startsWith(prefix));
-      if (!entry) throw new Error(`No story file for ${epic}.${story} — shard it first.`);
-      const storyMarkdown = await invoke<string>("read_file", { path: entry.path });
+      const storyPath = await findStoryPath(root, epic, story);
+      if (!storyPath) throw new Error(`No story file for ${epic}.${story} — shard it first.`);
+      const storyMarkdown = await invoke<string>("read_file", { path: storyPath });
 
       const prompt = composeDispatchPrompt({
         systemPrompt: DEV_SYSTEM_PROMPT,
@@ -182,6 +187,18 @@ export const useCadre = create<CadreState>((set, get) => ({
       set({ busy: null });
     } catch (e) {
       set({ error: String(e), busy: null });
+    }
+  },
+
+  getStoryMarkdown: async (epic, story) => {
+    const root = useBmadStore.getState().projectRoot;
+    if (!root) return "";
+    try {
+      const path = await findStoryPath(root, epic, story);
+      if (!path) return "";
+      return await invoke<string>("read_file", { path });
+    } catch {
+      return "";
     }
   },
 }));

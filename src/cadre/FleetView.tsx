@@ -1,9 +1,29 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { marked } from "marked";
 import { Terminal, FolderTree, FileCode2, Eye, Database, Circle, Plus, Play } from "lucide-react";
 import { FleetBoard } from "./components/FleetBoard";
 import { useBmadStore } from "../stores/bmadStore";
 import { useCadre } from "./useCadre";
 import type { StoryCard } from "../lib/engine/board";
+import type { Status } from "../lib/engine/status";
+
+// How each engine Status reads in the agent pane (the thesis: cadre verifies).
+function stateInfo(status: Status): { label: string; color: string; live: boolean } {
+  switch (status) {
+    case "InProgress":
+      return { label: "Agent working — cadre verifies before Done", color: "var(--c-accent)", live: true };
+    case "InReview":
+      return { label: "Verifying — running the frozen command", color: "var(--c-warning)", live: true };
+    case "Done":
+      return { label: "Verified — Done", color: "var(--c-success)", live: false };
+    case "Failed":
+      return { label: "Failed verification — bounce to fix", color: "var(--c-danger)", live: false };
+    case "Blocked":
+      return { label: "Blocked", color: "var(--c-danger)", live: false };
+    default:
+      return { label: "Ready to dispatch", color: "var(--c-text-muted)", live: false };
+  }
+}
 
 // Shown only in UI-preview (no project open), so the layout isn't empty.
 const DEMO: StoryCard[] = [
@@ -76,10 +96,25 @@ export function FleetView() {
 }
 
 function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
-  const running = card.status === "InProgress" || card.status === "InReview";
   const dispatchStory = useCadre((s) => s.dispatchStory);
+  const getStoryMarkdown = useCadre((s) => s.getStoryMarkdown);
   const busy = useCadre((s) => s.busy);
   const canDispatch = !preview && !busy && (card.status === "Draft" || card.status === "Failed");
+  const info = stateInfo(card.status);
+
+  const [markdown, setMarkdown] = useState<string>("");
+  useEffect(() => {
+    if (preview) return;
+    let alive = true;
+    setMarkdown("");
+    getStoryMarkdown(card.epic, card.story).then((md) => {
+      if (alive) setMarkdown(md);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [preview, card.epic, card.story, card.status, getStoryMarkdown]);
+
   return (
     <>
       <div
@@ -135,36 +170,76 @@ function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
             alignItems: "center",
             gap: 5,
             fontSize: "var(--c-fs-xs)",
-            color: running ? "var(--c-success)" : "var(--c-text-muted)",
+            color: info.live ? info.color : "var(--c-text-muted)",
           }}
         >
           <Circle size={7} fill="currentColor" strokeWidth={0} />
-          {running ? "live" : "idle"}
+          {info.live ? "live" : "idle"}
         </span>
       </div>
 
+      {/* Status strip — the engine, not the agent, decides Done. */}
       <div
         style={{
-          flex: 1,
-          background: "#0a0a0f",
-          margin: 0,
-          padding: "var(--c-space-3) var(--c-space-4)",
-          fontFamily: "var(--c-font-mono)",
-          fontSize: "var(--c-fs-sm)",
-          lineHeight: 1.6,
-          color: "var(--c-success)",
-          overflow: "auto",
+          display: "flex",
+          alignItems: "center",
+          gap: 7,
+          padding: "6px var(--c-space-4)",
+          borderBottom: "1px solid var(--c-border)",
+          fontSize: "var(--c-fs-xs)",
+          color: info.color,
+          background: "var(--c-surface-1)",
+          flexShrink: 0,
         }}
       >
-        <div style={{ color: "var(--c-text-muted)" }}>▸ writing the failing test first…</div>
-        <div style={{ color: "var(--c-text-faint)" }}>&nbsp;&nbsp;src/auth/jwt.spec.ts</div>
-        <div style={{ color: "var(--c-accent)" }}>$ pnpm test jwt</div>
-        <div>&nbsp;&nbsp;✓ signs and verifies a token</div>
-        <div style={{ color: "var(--c-text-muted)" }}>▸ implementing…</div>
-        <div style={{ color: "var(--c-text-faint)" }}>
-          &nbsp;&nbsp;(cadre runs the verification itself before Done)
-        </div>
+        <Circle size={7} fill="currentColor" strokeWidth={0} />
+        {info.label}
       </div>
+
+      {preview ? (
+        <div
+          style={{
+            flex: 1,
+            background: "#0a0a0f",
+            padding: "var(--c-space-3) var(--c-space-4)",
+            fontFamily: "var(--c-font-mono)",
+            fontSize: "var(--c-fs-sm)",
+            lineHeight: 1.6,
+            color: "var(--c-success)",
+            overflow: "auto",
+          }}
+        >
+          <div style={{ color: "var(--c-text-muted)" }}>▸ writing the failing test first…</div>
+          <div style={{ color: "var(--c-text-faint)" }}>&nbsp;&nbsp;src/auth/jwt.spec.ts</div>
+          <div style={{ color: "var(--c-accent)" }}>$ pnpm test jwt</div>
+          <div>&nbsp;&nbsp;✓ signs and verifies a token</div>
+          <div style={{ color: "var(--c-text-muted)" }}>▸ implementing…</div>
+          <div style={{ color: "var(--c-text-faint)" }}>
+            &nbsp;&nbsp;(cadre runs the verification itself before Done)
+          </div>
+        </div>
+      ) : markdown ? (
+        <div style={{ flex: 1, overflow: "auto", padding: "var(--c-space-5)" }}>
+          <div
+            className="cadre-doc"
+            style={{ fontSize: "var(--c-fs-md)", lineHeight: 1.6, color: "var(--c-text-secondary)" }}
+            dangerouslySetInnerHTML={{ __html: marked.parse(markdown) as string }}
+          />
+        </div>
+      ) : (
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "var(--c-text-faint)",
+            fontSize: "var(--c-fs-sm)",
+          }}
+        >
+          Loading story…
+        </div>
+      )}
     </>
   );
 }
