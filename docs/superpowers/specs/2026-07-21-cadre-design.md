@@ -463,15 +463,27 @@ to a UI hint only.** Instead:
 - **Onboarding — one adaptive path (v0.0).** A single first-run flow serves both audiences (no hard
   fork), with a **"hints" toggle** (on for first-timers, off for the architect) that sprinkles short
   explainers — the seed that later grows into the teaching layer (§10). The flow:
-  1. **Welcome / zero-state** — *Start a project* or *Try the sample project*.
+  1. **Welcome / zero-state** — three entries: **New project (greenfield)** · **Open existing project
+     (brownfield)** · **Try the sample**.
   2. **Setup (mostly automatic)** — prereq check (Claude Code installed? if not, guide the install) and a
      **one-time model-key entry → keychain** (§3.6: asked once per provider, re-prompted only on
      failure). Then **scaffold the bundled, pinned `.bmad-core` v4**.
-  3. **Project** — *Try the sample* seeds a project that **ships a real failing-then-passing test and a
-     declared verification command** (so §6.1 has something to run and v0.0 can demonstrate itself); or
-     *Start a project* opens your folder/repo and scaffolds `.bmad-core` into it.
+  3. **Project**
+     - *Try the sample* seeds a project that **ships a real failing-then-passing test and a declared
+       verification command** (so §6.1 has something to run and v0.0 can demonstrate itself).
+     - *New (greenfield)* opens an empty folder/repo and scaffolds `.bmad-core`; planning starts from
+       scratch.
+     - *Existing (brownfield)* — **the common real-world case.** Open a repo that already has code but no
+       BMAD artifacts. Cadre runs BMAD's **`document-project`** task (the Architect **reads the actual
+       codebase** and backfills `docs/architecture.md`: source tree, tech stack, existing patterns) so
+       there is a real architecture to plan and verify against. It also **auto-detects the project's
+       existing test command** (for the §6.1 verification gate) for the human to confirm. Then new scope
+       is planned as a **brownfield PRD/epics** and the SM shards **brownfield stories**
+       (`create-brownfield-story`) that reference existing code; the fleet's Dev agents **modify** the
+       existing codebase rather than greenfield it. (BMAD ships full brownfield support:
+       `brownfield-*` workflows + `document-project`.)
   4. **Land in the Planning Studio** — the phase stepper appears on `PLAN` with a single prompt: *"What do
-     you want to build?"* You're now in the product.
+     you want to build?"* (brownfield: *"What do you want to change or add?"*). You're now in the product.
   The **rich guided teaching** (gate rationale, worked examples, progression) is the *later* teaching
   layer (§10); v0.0 ships the adaptive flow + the hints hook only.
 - **Onboarding failure paths (v0.0 robustness):**
