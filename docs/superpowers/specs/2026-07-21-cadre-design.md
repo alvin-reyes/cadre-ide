@@ -230,6 +230,39 @@ core. A pack layers on three things:
 **Milestone:** v0.0 ships **core roles only**. Role packs are a post-v0.0 capability; the architecture
 already reserves the seam (arbitrary-persona loading is done; the pipeline just becomes a role sequence).
 
+### 3.10 Human fleet (hybrid workers) [v0.1]
+The "worker" that executes a story is **not necessarily an AI agent**. Cadre's thesis — *the worker never
+self-reports Done; the engine runs the frozen verification command and decides* — is **worker-agnostic**.
+So the same board can dispatch a story to an **AI agent** *or* hand it to a **human teammate**, and both
+clear the identical gate. This widens the product from "an AI fleet for one architect" to **disciplined
+delivery for mixed human + AI teams**: the lead ideates (PM/Architect → PRD), then routes each story to an
+agent or a person, and every result is *verified, not vibed*.
+
+The design is deliberately **additive** — it fills the existing worker slot; it does not touch the loop:
+
+- **One new state field: `assignee`.** The engine-owned `.cadre/state/{epic}.{story}.json` gains an
+  optional `assignee: { kind: "agent" | "human"; id: string; name?: string } | null`. `kind:"agent"` →
+  `id` is the model/agent (e.g. `"claude"`); `kind:"human"` → `id` is the teammate (their `git
+  config user.email`). Nothing else in the state model changes; the board, reload-from-git, and the
+  verification gate are unchanged.
+- **Identity is free (no accounts, no server).** "Who am I" is read from `git config user.name/user.email`
+  via a one-line Tauri call. A teammate *is* their git identity.
+- **Human worker flow preserves the discipline.** A human gets **Claim** and **Verify** where an agent gets
+  **Dispatch**: `Draft ──(Claim: assignee = me)──▶ InProgress ──(Verify)──▶` the engine runs the **same**
+  frozen command via `run_verification` → `Done` on pass, `Failed (+output)` on fail. A human **never marks
+  their own story Done** — identical rule to agents; they hit *Verify*, and Cadre decides.
+- **Sync is git — there is no server.** Writing a status/claim **auto-commits** `.cadre/state` +
+  `docs/stories`, so the board is always a clean function of git. A **Sync** action = `git pull --rebase`
+  then reconcile → you see everyone's moves. Claim races resolve last-push-wins; a conflicting claim
+  surfaces "Ben already has 1.2" rather than silently stomping (good enough for v0.1).
+- **Board UX.** Each card shows an **assignee chip** (`🤖 claude` / `🧑 Ana` / *unassigned*) and a
+  **mine / all** filter; per-row actions depend on kind — unassigned → *Dispatch to agent* or *Claim*;
+  mine → *Verify*; a teammate's → read-only. *(Chips use icons in the actual UI, not emoji — §4.3.)*
+
+**Milestone:** the AI worker slot is **[v0.0]** (built). The human worker slot — `assignee`, Claim/Verify,
+git sync, chips — is **[v0.1]**, built directly on the v0.0 engine (no new backend; `run_verification`,
+`cadre_state`, and reload-from-git already exist).
+
 ---
 
 ## 4. The two hats — components
@@ -336,6 +369,10 @@ Draft ─▶ Approved ─▶ InProgress ─▶ InReview ─▶ Done
   writes never echo back as spurious transitions.
 - **Error/Blocked states:** crashed PTY · broken test infra (distinct from test-fail) · unsatisfiable/
   cyclic deps · **merge conflict [v1]** · hung agent (§6.4). *(Context-Store write failure is a v1 state.)*
+- **Worker assignment (hybrid human/agent) [v0.1]:** the state file carries an optional `assignee`
+  (§3.10). The transitions are worker-agnostic — an **agent** reaches `InProgress` via *Dispatch*, a
+  **human** via *Claim*; both reach `Done`/`Failed` **only** through the engine's `run_verification`
+  (a human's *Verify* runs the identical frozen command). No worker — agent or human — writes `Done`.
 
 ### 5.1 Scope changes & re-planning
 New scope **always re-enters through the front of the loop** — never a hand-injected loose story. **You
@@ -564,9 +601,11 @@ engine-owned, self-trigger-suppressed) · **PLAN + SHARD gates** on one engine-o
 (Anthropic key) · in-process engine interface · **manual kill-switch + wall-clock timeout** · Workbench
 file/code/preview (as-is).
 
-**v0.1 — quality of planning & review:** full **Analyst→PM→Architect→UX→PO** walk · **Reviewer** pass ·
-**rich Plan viewer** (outline + sharded-doc tree + traceability links) · **plan annotations** (highlight
-→ comment → scoped re-planning, anchored to section id + quoted snippet, persisted as a decision record).
+**v0.1 — quality of planning & review + human fleet:** full **Analyst→PM→Architect→UX→PO** walk ·
+**Reviewer** pass · **rich Plan viewer** (outline + sharded-doc tree + traceability links) · **plan
+annotations** (highlight → comment → scoped re-planning, anchored to section id + quoted snippet, persisted
+as a decision record) · **human fleet (§3.10)** — `assignee` on story state, git identity, **Claim/Verify**
+for human workers (same frozen command), git-native sync + assignee chips (hybrid human/agent board).
 
 **v0.2 — the full gate:** **QA/Quinn** persona gate atop verification · retry-ceiling on QA-fail bounce ·
 richer escalation inbox.
