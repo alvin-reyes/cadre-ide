@@ -858,9 +858,9 @@ function Message({
           background: "var(--c-surface-2)",
           border: "1px solid var(--c-border)",
           borderRadius: "var(--c-radius-lg)",
-          padding: "9px 13px",
-          fontSize: "var(--c-fs-md)",
-          lineHeight: 1.5,
+          padding: "10px 14px",
+          fontSize: "var(--c-fs-chat)",
+          lineHeight: 1.6,
           color: "var(--c-text)",
         }}
       >
@@ -876,9 +876,9 @@ function Message({
     );
   }
   return (
-    <div className="cadre-bubble" style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+    <div className="cadre-bubble" style={{ display: "flex", gap: 11, alignItems: "flex-start" }}>
       <Avatar Icon={Icon} />
-      <div style={{ flex: 1, minWidth: 0, paddingTop: 3, fontSize: "var(--c-fs-md)", lineHeight: 1.6, color: "var(--c-text)" }}>
+      <div style={{ flex: 1, minWidth: 0, paddingTop: 3, fontSize: "var(--c-fs-chat)", lineHeight: 1.7, color: "var(--c-text)" }}>
         <div className="cadre-md" style={{ display: "inline" }} dangerouslySetInnerHTML={{ __html: marked.parse(content) as string }} />
         {streaming && <span className="cadre-caret" />}
       </div>

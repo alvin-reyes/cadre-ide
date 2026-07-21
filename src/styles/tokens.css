@@ -39,10 +39,10 @@
   --c-danger-subtle: rgba(219, 101, 96, 0.15);
   --c-info: #d97757;
 
-  /* Typography — serif display (editorial), premium sans body, crafted mono */
-  --c-font-display: "Tiempos Text", "Charter", "Iowan Old Style", "Palatino Linotype",
-    Palatino, Georgia, ui-serif, serif;
-  --c-font-ui: -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif;
+  /* Typography — Anthropic-style: Newsreader (~Tiempos) display, Inter (~Styrene) body */
+  --c-font-display: "Newsreader", "Tiempos Text", "Charter", "Iowan Old Style",
+    Georgia, ui-serif, serif;
+  --c-font-ui: "Inter", -apple-system, "SF Pro Text", system-ui, sans-serif;
   --c-font-mono: "SF Mono", "JetBrains Mono", ui-monospace, "Cascadia Code",
     monospace;
   --c-fs-xs: 11px;
@@ -52,6 +52,7 @@
   --c-fs-lg: 16px;
   --c-fs-xl: 20px;
   --c-fs-2xl: 26px;
+  --c-fs-chat: 15px; /* comfortable reading size for conversation text */
   --c-lh-tight: 1.25;
   --c-lh: 1.5;
   --c-tracking-tight: -0.01em;
@@ -338,9 +339,11 @@
   background: var(--c-surface-2);
 }
 
-/* Chat-bubble Markdown: tighter, no oversized headings. */
+/* Chat Markdown: comfortable reading size + generous line-height (Claude-style). */
 .cadre-md {
   color: inherit;
+  font-size: var(--c-fs-chat);
+  line-height: 1.7;
 }
 .cadre-md p,
 .cadre-md ul,
