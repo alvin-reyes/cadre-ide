@@ -127,8 +127,9 @@ v4 point release and **bundle it** for onboarding (§7).
 A multi-model fleet shares no hidden state, so coherence needs an explicit, model-agnostic context
 substrate. **v0** does *not* build a module: agents get BMAD's `devLoadAlwaysFiles` injected inline
 (already exists in BMAD). **v1** adds `ContextStore` owning cadre's **ADRs + agent memory**, composing
-per-dispatch slices *by pointer* over BMAD's canonical artifacts — no duplication. ADRs/memory live under
-**`.cadre/`** (gitignored by default). *(Context-Store failure is therefore a v1 error state, not v0.)*
+per-dispatch slices *by pointer* over BMAD's canonical artifacts — no duplication. ADRs live under
+**`.cadre/decisions/`** and are **committed** (part of the durable project record, §3.8); agent memory is
+opt-in to commit. *(Context-Store failure is therefore a v1 error state, not v0.)*
 
 ### 3.6 Secrets & credentials
 Secrets live in the **OS keychain** via a thin `src-tauri` wrapper over the Rust **`keyring` crate** —
@@ -167,6 +168,31 @@ host-side.
 calls it directly through that boundary. A network transport wraps this interface *later*. So "all
 clients are peers over the API" is a **later** property; the v0 obligation is only: **the engine holds no
 UI state and emits serializable events**, so a transport can be added without a rewrite.
+
+### 3.8 Project persistence & reload (committed to the user's repo) [v0.0]
+A cadre project is **fully reconstructable from git**. When the user pushes their project to GitHub, the
+committed files carry everything needed to **reload exactly where they left off** — and a teammate who
+clones gets the same. **Git is the source of truth; no cadre server or external state is required.**
+
+- **Committed (travels with the project):**
+  - **`.bmad-core/`** — the **BMAD strategy** (personas, templates, tasks, `core-config.yaml`). Committed
+    so everyone shares the same method.
+  - **`docs/`** — the plan artifacts (`prd.md`, `architecture.md`, sharded docs, `docs/stories/*.md`).
+  - **`.cadre/state/`** — authoritative story `Status` (so the board reconstructs).
+  - **`.cadre/approvals/`** — approval markers **+ the confirmed verification command** (the decision
+    record + the gate rule).
+  - **`.cadre/decisions/`** — ADRs (and, v1, committed agent memory if enabled).
+- **Gitignored (ephemeral / machine-local):** `.cadre/markers/` (transient agent result drops),
+  `.cadre/worktrees/` (worktree scratch), live PTY/session state, `node_modules`, `src-tauri/target`,
+  `dist`.
+- **Reload behavior:** on opening a cloned or reopened project, cadre **reconstructs the Cockpit** —
+  phase, Fleet board, story statuses, plan viewer, and the gate rule — from the committed `.bmad-core/`
+  + `docs/` + `.cadre/state|approvals|decisions`.
+- cadre **scaffolds the project's `.gitignore`** (onboarding, §7) to encode this committed-vs-ephemeral
+  split.
+
+*(This refines §3.5's "gitignored by default": the **durable project record is committed** — only
+ephemeral scratch is ignored.)*
 
 ---
 
