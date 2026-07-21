@@ -47,6 +47,7 @@ const PRD_PATH = "docs/prd.md";
 const ARCH_PATH = "docs/architecture.md";
 const UX_PATH = "docs/ux-spec.md";
 const MOCKUP_PATH = "docs/mockup.html";
+const PO_PATH = "docs/po-validation.md";
 
 interface CadreState {
   phase: Phase;
@@ -56,6 +57,8 @@ interface CadreState {
   /** optional UX/design artifacts (Design tab) — spec + a live HTML mockup */
   uxSpec: string;
   mockupHtml: string;
+  /** optional PO validation report (PO tab) — sign-off / gaps vs the PRD */
+  poValidation: string;
   /** the frozen verification command(s) once the plan is approved */
   verification: string[];
   /** live agent + verification output, keyed by "epic.story" (streamed on dispatch) */
@@ -71,6 +74,7 @@ interface CadreState {
   setArchitecture: (md: string) => void;
   setUxSpec: (md: string) => void;
   setMockupHtml: (html: string) => void;
+  setPoValidation: (md: string) => void;
   setFleetProvider: (id: string) => void;
   clearError: () => void;
 
@@ -113,6 +117,7 @@ export const useCadre = create<CadreState>((set, get) => ({
   architecture: "",
   uxSpec: "",
   mockupHtml: "",
+  poValidation: "",
   verification: [],
   logs: {},
   fleetProvider: "claude",
@@ -124,6 +129,7 @@ export const useCadre = create<CadreState>((set, get) => ({
   setArchitecture: (architecture) => set({ architecture }),
   setUxSpec: (uxSpec) => set({ uxSpec }),
   setMockupHtml: (mockupHtml) => set({ mockupHtml }),
+  setPoValidation: (poValidation) => set({ poValidation }),
   setFleetProvider: (fleetProvider) => set({ fleetProvider }),
   clearError: () => set({ error: null }),
 
@@ -144,13 +150,16 @@ export const useCadre = create<CadreState>((set, get) => ({
       // Persist the plan so it reloads from git (§3.8) and the Dev agents can read it.
       await invoke("write_text_file", { path: `${root}/${PRD_PATH}`, content: prd });
       await invoke("write_text_file", { path: `${root}/${ARCH_PATH}`, content: architecture });
-      // Optional UX/design artifacts (Design tab), when present.
-      const { uxSpec, mockupHtml } = get();
+      // Optional UX/design + PO artifacts, when present.
+      const { uxSpec, mockupHtml, poValidation } = get();
       if (uxSpec.trim()) {
         await invoke("write_text_file", { path: `${root}/${UX_PATH}`, content: uxSpec });
       }
       if (mockupHtml.trim()) {
         await invoke("write_text_file", { path: `${root}/${MOCKUP_PATH}`, content: mockupHtml });
+      }
+      if (poValidation.trim()) {
+        await invoke("write_text_file", { path: `${root}/${PO_PATH}`, content: poValidation });
       }
       // Freeze the verification command in engine-owned state (agents can't forge it).
       await invoke("approve_plan", { verification: cmds });
@@ -271,11 +280,12 @@ export const useCadre = create<CadreState>((set, get) => ({
         return "";
       }
     };
-    const [prd, architecture, uxSpec, mockupHtml] = await Promise.all([
+    const [prd, architecture, uxSpec, mockupHtml, poValidation] = await Promise.all([
       readOr(PRD_PATH),
       readOr(ARCH_PATH),
       readOr(UX_PATH),
       readOr(MOCKUP_PATH),
+      readOr(PO_PATH),
     ]);
     const approval = await invoke<PlanApproval | null>("get_plan_approval").catch(() => null);
     const approved = !!approval?.approved && (approval?.verification?.length ?? 0) > 0;
@@ -284,6 +294,7 @@ export const useCadre = create<CadreState>((set, get) => ({
       architecture: architecture || s.architecture,
       uxSpec: uxSpec || s.uxSpec,
       mockupHtml: mockupHtml || s.mockupHtml,
+      poValidation: poValidation || s.poValidation,
       verification: approval?.verification ?? s.verification,
       // If the plan was already approved in a prior session, jump to the fleet.
       phase: approved ? "FLEET" : s.phase,

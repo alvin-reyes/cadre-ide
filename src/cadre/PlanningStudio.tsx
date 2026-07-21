@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, type CSSProperties, type ClipboardEvent, type KeyboardEvent } from "react";
 import { marked } from "marked";
-import { Lock, ArrowUp, FileText, PencilRuler, Ruler, Palette, KeyRound, ShieldCheck, Paperclip, X, Check, Copy, Eye, Code2 } from "lucide-react";
+import { Lock, ArrowUp, FileText, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, Paperclip, X, Check, Copy, Eye, Code2 } from "lucide-react";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre, MODEL } from "./useCadre";
 import { planningTurn, type ChatMessage, type Attachment } from "../lib/planning/planningChat";
@@ -31,7 +31,7 @@ function wordCount(text: string): number {
   return text.trim() ? text.trim().split(/\s+/).length : 0;
 }
 
-type PersonaId = "pm" | "architect" | "design";
+type PersonaId = "pm" | "architect" | "design" | "po";
 
 const PM_SYSTEM_PROMPT = `You are a sharp, pragmatic Product Manager (PM) helping the user turn an idea into a clear, complete PRD.
 
@@ -43,7 +43,9 @@ const ARCHITECT_SYSTEM_PROMPT = `You are a pragmatic System Architect. Given the
 
 Converse to resolve: the stack, key components and their boundaries, the data model, external integrations, and the testing/verification strategy. Ask focused questions one or two at a time. Keep replies concise and concrete. Refer to yourself as "the Architect", not by a personal name.
 
-Whenever the architecture should change, call the write_document tool with the FULL current architecture in Markdown, using sections like: ## Tech Stack, ## Components, ## Data Model, ## Integrations, ## Testing Strategy.`;
+Whenever the architecture should change, call the write_document tool with the FULL current architecture in Markdown, using sections like: ## Tech Stack, ## Components, ## Data Model, ## Integrations, ## Testing Strategy.
+
+Once the testing/verification strategy is clear, call the suggest_verification tool with the single shell command Cadre should run to verify each story (e.g. "npm test", "pnpm test", "cargo test") — so the product owner can just confirm it at approval instead of needing to know it.`;
 
 const DESIGN_SYSTEM_PROMPT = `You are a pragmatic UX/UI Designer. Given the PRD, design the product's interface and user experience.
 
@@ -54,6 +56,12 @@ You have two tools:
 - write_mockup: a self-contained HTML mockup of the key screen(s) — inline CSS only, NO external resources, fonts, or scripts. Make it look polished and realistic.
 
 Keep BOTH the spec and the mockup current as the design evolves so the user can see it.`;
+
+const PO_SYSTEM_PROMPT = `You are a pragmatic Product Owner (PO). Validate the plan against the goals before the fleet builds it — this is a sign-off gate, written for a product owner who may not read code.
+
+Read the PRD (and the architecture/UX spec if present) and check the epics/stories for: coverage of the goals, correct scope (no gold-plating, nothing missing), testable acceptance criteria, and sensible sequencing. Converse to surface gaps, scope creep, and risks. Ask focused questions. Refer to yourself as "the PO".
+
+Whenever your assessment changes, call write_document with the FULL validation report in Markdown, using: ## Verdict (Ready to build / Needs work), ## Coverage vs goals, ## Gaps & risks, ## Recommended changes, ## Sign-off checklist. Be concrete and honest — flag real problems.`;
 
 const PERSONAS: Record<
   PersonaId,
@@ -83,9 +91,17 @@ const PERSONAS: Record<
     intro: "I'm your Designer. From the PRD I'll shape the UX and mock up the actual screens.",
     opener: "What should it look and feel like?",
   },
+  po: {
+    label: "PO",
+    icon: ClipboardCheck,
+    sub: "Product Owner · validating the plan",
+    file: "docs/po-validation.md",
+    intro: "I'm your PO. I check the plan against your goals and flag gaps before the fleet builds it.",
+    opener: "Ready for a plan review?",
+  },
 };
 
-const PERSONA_IDS: PersonaId[] = ["pm", "architect", "design"];
+const PERSONA_IDS: PersonaId[] = ["pm", "architect", "design", "po"];
 
 const paneHead: CSSProperties = {
   display: "flex",
@@ -104,16 +120,18 @@ export function PlanningStudio() {
   const architecture = useCadre((s) => s.architecture);
   const uxSpec = useCadre((s) => s.uxSpec);
   const mockupHtml = useCadre((s) => s.mockupHtml);
+  const poValidation = useCadre((s) => s.poValidation);
   const setPrd = useCadre((s) => s.setPrd);
   const setArchitecture = useCadre((s) => s.setArchitecture);
   const setUxSpec = useCadre((s) => s.setUxSpec);
   const setMockupHtml = useCadre((s) => s.setMockupHtml);
+  const setPoValidation = useCadre((s) => s.setPoValidation);
   const approvePlan = useCadre((s) => s.approvePlan);
   const busy = useCadre((s) => s.busy);
   const error = useCadre((s) => s.error);
 
   const [persona, setPersona] = useState<PersonaId>("pm");
-  const [threads, setThreads] = useState<Record<PersonaId, ChatMessage[]>>({ pm: [], architect: [], design: [] });
+  const [threads, setThreads] = useState<Record<PersonaId, ChatMessage[]>>({ pm: [], architect: [], design: [], po: [] });
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [thinking, setThinking] = useState(false);
@@ -121,10 +139,19 @@ export function PlanningStudio() {
   const [verifyCmd, setVerifyCmd] = useState("npm test");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [designView, setDesignView] = useState<"spec" | "preview">("preview");
+  const [verifySuggested, setVerifySuggested] = useState(false);
 
-  const docFor = (id: PersonaId) => (id === "pm" ? prd : id === "architect" ? architecture : uxSpec);
+  const docFor = (id: PersonaId) =>
+    id === "pm" ? prd : id === "architect" ? architecture : id === "design" ? uxSpec : poValidation;
   const doc = docFor(persona);
-  const setDoc = persona === "pm" ? setPrd : persona === "architect" ? setArchitecture : setUxSpec;
+  const setDoc =
+    persona === "pm"
+      ? setPrd
+      : persona === "architect"
+        ? setArchitecture
+        : persona === "design"
+          ? setUxSpec
+          : setPoValidation;
   const messages = threads[persona];
   const meta = PERSONAS[persona];
   const canApprove = prd.trim().length > 0 && architecture.trim().length > 0;
@@ -196,6 +223,14 @@ export function PlanningStudio() {
 
   function systemPromptFor(id: PersonaId): string {
     if (id === "pm") return PM_SYSTEM_PROMPT;
+    if (id === "po") {
+      // The PO validates against everything produced so far.
+      let ctx = PO_SYSTEM_PROMPT;
+      if (prd.trim()) ctx += `\n\n## PRD (context)\n${prd}`;
+      if (architecture.trim()) ctx += `\n\n## Architecture (context)\n${architecture}`;
+      if (uxSpec.trim()) ctx += `\n\n## UX Spec (context)\n${uxSpec}`;
+      return ctx;
+    }
     const base = id === "architect" ? ARCHITECT_SYSTEM_PROMPT : DESIGN_SYSTEM_PROMPT;
     return prd.trim() ? `${base}\n\n## PRD (context)\n${prd}` : base;
   }
@@ -220,6 +255,7 @@ export function PlanningStudio() {
         systemPrompt: systemPromptFor(persona),
         messages: next,
         allowMockup: persona === "design",
+        allowVerification: persona === "architect",
       });
       setThreads((t) => ({
         ...t,
@@ -229,6 +265,11 @@ export function PlanningStudio() {
       if (result.mockup) {
         setMockupHtml(result.mockup);
         setDesignView("preview");
+      }
+      // The Architect proposes the verify command; pre-fill it for one-click confirm.
+      if (result.verification) {
+        setVerifyCmd(result.verification);
+        setVerifySuggested(true);
       }
       if (result.suggestions && result.suggestions.length) setSuggestions(result.suggestions);
     } catch (e) {
@@ -562,7 +603,10 @@ export function PlanningStudio() {
           </span>
           <input
             value={verifyCmd}
-            onChange={(e) => setVerifyCmd(e.target.value)}
+            onChange={(e) => {
+              setVerifyCmd(e.target.value);
+              setVerifySuggested(false);
+            }}
             placeholder="npm test"
             style={{
               flex: 1,
@@ -577,6 +621,20 @@ export function PlanningStudio() {
               padding: "5px 10px",
             }}
           />
+          {verifySuggested && (
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: "var(--c-fs-xs)",
+                color: "var(--c-accent)",
+                flexShrink: 0,
+              }}
+            >
+              <Ruler size={11} strokeWidth={2} /> Architect's suggestion
+            </span>
+          )}
           <button
             onClick={() => approvePlan([verifyCmd])}
             disabled={!!busy || !verifyCmd.trim()}

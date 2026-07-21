@@ -43,6 +43,23 @@ export const WRITE_MOCKUP_TOOL = {
   },
 };
 
+/** The Architect proposes the shell command Cadre should verify every story against. */
+export const SUGGEST_VERIFICATION_TOOL = {
+  name: "suggest_verification" as const,
+  description:
+    "Propose the single shell command Cadre should run to verify each story is done (e.g. 'npm test', 'pnpm test', 'cargo test'). Call this once the testing strategy is clear so the user can just confirm it.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      command: {
+        type: "string" as const,
+        description: "One shell command that exits 0 on success (the verification gate).",
+      },
+    },
+    required: ["command"],
+  },
+};
+
 /** Any persona may offer short quick-reply suggestions so the user can answer with one click. */
 export const SUGGEST_REPLIES_TOOL = {
   name: "suggest_replies" as const,
@@ -83,6 +100,8 @@ export interface PlanningTurnResult {
   document?: string;
   /** present if the Design persona produced/updated an HTML mockup */
   mockup?: string;
+  /** present if the Architect proposed the verification command */
+  verification?: string;
   /** short quick-reply suggestions the user can tap instead of typing */
   suggestions?: string[];
 }
@@ -94,6 +113,8 @@ export async function planningTurn(opts: {
   messages: ChatMessage[];
   /** allow the persona to emit an HTML mockup (Design tab) */
   allowMockup?: boolean;
+  /** allow the persona to propose the verification command (Architect) */
+  allowVerification?: boolean;
 }): Promise<PlanningTurnResult> {
   const client = new Anthropic({
     apiKey: opts.apiKey,
@@ -103,6 +124,7 @@ export async function planningTurn(opts: {
   const tools = [
     WRITE_DOCUMENT_TOOL,
     ...(opts.allowMockup ? [WRITE_MOCKUP_TOOL] : []),
+    ...(opts.allowVerification ? [SUGGEST_VERIFICATION_TOOL] : []),
     SUGGEST_REPLIES_TOOL,
   ] as Anthropic.Tool[];
 
@@ -117,6 +139,7 @@ export async function planningTurn(opts: {
   let reply = "";
   let document: string | undefined;
   let mockup: string | undefined;
+  let verification: string | undefined;
   let suggestions: string[] | undefined;
   for (const block of response.content) {
     if (block.type === "text") {
@@ -127,6 +150,9 @@ export async function planningTurn(opts: {
     } else if (block.type === "tool_use" && block.name === "write_mockup") {
       const input = block.input as { html?: string };
       if (typeof input.html === "string") mockup = input.html;
+    } else if (block.type === "tool_use" && block.name === "suggest_verification") {
+      const input = block.input as { command?: string };
+      if (typeof input.command === "string" && input.command.trim()) verification = input.command.trim();
     } else if (block.type === "tool_use" && block.name === "suggest_replies") {
       const input = block.input as { replies?: unknown };
       if (Array.isArray(input.replies)) {
@@ -135,7 +161,7 @@ export async function planningTurn(opts: {
     }
   }
 
-  return { reply: reply.trim(), document, mockup, suggestions };
+  return { reply: reply.trim(), document, mockup, verification, suggestions };
 }
 
 /** Force a single tool call (used by the SM's create_story). Returns the tool input. */
