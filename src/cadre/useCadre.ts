@@ -9,7 +9,10 @@ import { runApprovedStory } from "../lib/engine/orchestrator";
 import { tauriOrchestratorDeps } from "../lib/engine/tauriDeps";
 import { composeDispatchPrompt } from "../lib/engine/dispatch";
 import { nextStoryNumber } from "../lib/engine/shard";
+import { getProvider, resolveAgentEnv } from "../lib/engine/providers";
+import { secretGet } from "../lib/secrets";
 import type { Status } from "../lib/engine/status";
+import type { PlanApproval } from "../lib/engine/planApproval";
 
 /**
  * useCadre: the app-level orchestration seam. It holds the plan the Planning
@@ -52,6 +55,8 @@ interface CadreState {
   verification: string[];
   /** live agent + verification output, keyed by "epic.story" (streamed on dispatch) */
   logs: Record<string, string>;
+  /** which model provider the Dev fleet runs on (id from engine PROVIDERS) */
+  fleetProvider: string;
   /** a human-readable status while an async action runs (null = idle) */
   busy: string | null;
   error: string | null;
@@ -59,6 +64,7 @@ interface CadreState {
   setPhase: (phase: Phase) => void;
   setPrd: (md: string) => void;
   setArchitecture: (md: string) => void;
+  setFleetProvider: (id: string) => void;
   clearError: () => void;
 
   /** Freeze the verification command, write the plan to disk, unlock the fleet. */
@@ -69,6 +75,8 @@ interface CadreState {
   dispatchStory: (epic: number, story: number) => Promise<void>;
   /** Read a story's markdown (docs/stories/{epic}.{story}.*.md), or "" if none. */
   getStoryMarkdown: (epic: number, story: number) => Promise<string>;
+  /** Reload the plan (prd/architecture), frozen verification, and phase from disk (§3.8). */
+  hydrateFromProject: () => Promise<void>;
 }
 
 /** Locate a story file by its {epic}.{story} prefix under docs/stories. */
@@ -98,12 +106,14 @@ export const useCadre = create<CadreState>((set, get) => ({
   architecture: "",
   verification: [],
   logs: {},
+  fleetProvider: "claude",
   busy: null,
   error: null,
 
   setPhase: (phase) => set({ phase }),
   setPrd: (prd) => set({ prd }),
   setArchitecture: (architecture) => set({ architecture }),
+  setFleetProvider: (fleetProvider) => set({ fleetProvider }),
   clearError: () => set({ error: null }),
 
   approvePlan: async (verification) => {
@@ -182,6 +192,20 @@ export const useCadre = create<CadreState>((set, get) => ({
         alwaysFiles: [],
       });
 
+      // Resolve the model + per-agent env for the selected fleet provider. The
+      // claude CLI runs every model; non-Claude providers just point it at their
+      // Anthropic-compatible endpoint via env (§3.3).
+      const provider = getProvider(get().fleetProvider);
+      let token = await secretGet(provider.secretKey);
+      if (!token && provider.id === "claude") {
+        token = useSettingsStore.getState().anthropicApiKey || null;
+      }
+      if (!token) {
+        throw new Error(`No API key for ${provider.name} — add it in the fleet model picker.`);
+      }
+      const { env, model } = resolveAgentEnv(provider, token, provider.defaultModel);
+      onOutput(`[cadre] dispatching on ${provider.name} (${model})\n`);
+
       // Route engine status writes through bmadStore so the board updates
       // optimistically (its own-write echo is then suppressed by the watcher).
       const setStatus = (e: number, s: number, status: Status) =>
@@ -195,6 +219,8 @@ export const useCadre = create<CadreState>((set, get) => ({
         prompt,
         timeoutSecs: 1800,
         retriesOnNonZero: 0,
+        model,
+        env,
       });
       set({ busy: null });
     } catch (e) {
@@ -212,5 +238,27 @@ export const useCadre = create<CadreState>((set, get) => ({
     } catch {
       return "";
     }
+  },
+
+  hydrateFromProject: async () => {
+    const root = useBmadStore.getState().projectRoot;
+    if (!root) return;
+    const readOr = async (rel: string): Promise<string> => {
+      try {
+        return await invoke<string>("read_file", { path: `${root}/${rel}` });
+      } catch {
+        return "";
+      }
+    };
+    const [prd, architecture] = await Promise.all([readOr(PRD_PATH), readOr(ARCH_PATH)]);
+    const approval = await invoke<PlanApproval | null>("get_plan_approval").catch(() => null);
+    const approved = !!approval?.approved && (approval?.verification?.length ?? 0) > 0;
+    set((s) => ({
+      prd: prd || s.prd,
+      architecture: architecture || s.architecture,
+      verification: approval?.verification ?? s.verification,
+      // If the plan was already approved in a prior session, jump to the fleet.
+      phase: approved ? "FLEET" : s.phase,
+    }));
   },
 }));

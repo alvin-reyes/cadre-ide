@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Provider } from "../data/agentProfiles";
+import { isTauri, secretGet, secretSet } from "../lib/secrets";
 
 export interface ThemeColors {
   bgPrimary: string;
@@ -314,6 +315,8 @@ interface SettingsStore extends Settings {
   setScrollback: (lines: number) => void;
   setDefaultProvider: (provider: Provider) => void;
   setAnthropicApiKey: (key: string) => void;
+  /** Load secrets (API key) from the OS keychain into the store (desktop only). */
+  hydrateSecrets: () => Promise<void>;
   setOrchestratorModel: (model: string) => void;
   setOllamaEndpoint: (endpoint: string) => void;
   setOllamaModel: (model: string) => void;
@@ -334,7 +337,9 @@ function loadSettings(): Partial<Settings> {
 }
 
 function persistSettings(s: Settings) {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+  // On desktop the API key lives in the OS keychain, never localStorage.
+  const toStore = isTauri() ? { ...s, anthropicApiKey: "" } : s;
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(toStore));
 }
 
 function loadWorkspaces(): WorkspacePreset[] {
@@ -440,6 +445,13 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   setAnthropicApiKey: (key) => {
     set({ anthropicApiKey: key });
     persistSettings(get());
+    // Mirror into the OS keychain on desktop (no-op in the browser preview).
+    void secretSet("anthropic_api_key", key);
+  },
+
+  hydrateSecrets: async () => {
+    const key = await secretGet("anthropic_api_key");
+    if (key) set({ anthropicApiKey: key });
   },
   setOrchestratorModel: (model) => {
     set({ orchestratorModel: model });
