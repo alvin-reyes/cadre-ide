@@ -2,115 +2,184 @@
 //! crate — never plaintext, never committed. v0.0 stores the Anthropic model
 //! key (asked once, reused silently); DB passwords and other providers reuse
 //! the same store later.
+//!
+//! The store logic sits behind a `SecretBackend` trait so it is testable
+//! without touching (or prompting) the real OS keychain.
 
 use keyring::{Entry, Error as KeyringError};
 
 /// Keychain service namespace for all cadre secrets.
 const SERVICE: &str = "dev.cadre.ide";
 
-fn entry(key: &str) -> Result<Entry, String> {
-    Entry::new(SERVICE, key).map_err(|e| e.to_string())
+/// A place secrets are kept, keyed by name.
+pub trait SecretBackend: Send + Sync {
+    fn set(&self, key: &str, value: &str) -> Result<(), String>;
+    fn get(&self, key: &str) -> Result<Option<String>, String>;
+    fn delete(&self, key: &str) -> Result<(), String>;
 }
 
-/// Store (or overwrite) a secret under `key`.
-pub fn set_secret(key: &str, value: &str) -> Result<(), String> {
-    entry(key)?.set_password(value).map_err(|e| e.to_string())
-}
+/// Production backend: the OS keychain.
+pub struct KeyringBackend;
 
-/// Read a secret, or `None` if it hasn't been set.
-pub fn get_secret(key: &str) -> Result<Option<String>, String> {
-    match entry(key)?.get_password() {
-        Ok(p) => Ok(Some(p)),
-        Err(KeyringError::NoEntry) => Ok(None),
-        Err(e) => Err(e.to_string()),
+impl SecretBackend for KeyringBackend {
+    fn set(&self, key: &str, value: &str) -> Result<(), String> {
+        Entry::new(SERVICE, key)
+            .map_err(|e| e.to_string())?
+            .set_password(value)
+            .map_err(|e| e.to_string())
+    }
+
+    fn get(&self, key: &str) -> Result<Option<String>, String> {
+        match Entry::new(SERVICE, key)
+            .map_err(|e| e.to_string())?
+            .get_password()
+        {
+            Ok(p) => Ok(Some(p)),
+            Err(KeyringError::NoEntry) => Ok(None),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    fn delete(&self, key: &str) -> Result<(), String> {
+        match Entry::new(SERVICE, key)
+            .map_err(|e| e.to_string())?
+            .delete_credential()
+        {
+            Ok(()) => Ok(()),
+            Err(KeyringError::NoEntry) => Ok(()), // idempotent
+            Err(e) => Err(e.to_string()),
+        }
     }
 }
 
-/// True if a secret exists for `key`.
-pub fn has_secret(key: &str) -> Result<bool, String> {
-    Ok(get_secret(key)?.is_some())
+/// The store logic over any backend.
+pub struct SecretsStore<B: SecretBackend> {
+    backend: B,
 }
 
-/// Delete a secret. Missing keys are treated as success (idempotent).
-pub fn delete_secret(key: &str) -> Result<(), String> {
-    match entry(key)?.delete_credential() {
-        Ok(()) => Ok(()),
-        Err(KeyringError::NoEntry) => Ok(()),
-        Err(e) => Err(e.to_string()),
+impl<B: SecretBackend> SecretsStore<B> {
+    pub fn new(backend: B) -> Self {
+        Self { backend }
+    }
+
+    pub fn set_secret(&self, key: &str, value: &str) -> Result<(), String> {
+        self.backend.set(key, value)
+    }
+
+    pub fn get_secret(&self, key: &str) -> Result<Option<String>, String> {
+        self.backend.get(key)
+    }
+
+    pub fn has_secret(&self, key: &str) -> Result<bool, String> {
+        Ok(self.get_secret(key)?.is_some())
+    }
+
+    pub fn delete_secret(&self, key: &str) -> Result<(), String> {
+        self.backend.delete(key)
     }
 }
 
-// --- Tauri commands (thin wrappers) ---
+fn keyring_store() -> SecretsStore<KeyringBackend> {
+    SecretsStore::new(KeyringBackend)
+}
+
+// --- Tauri commands (thin wrappers over the real keychain) ---
 
 #[tauri::command]
 pub fn secret_set(key: String, value: String) -> Result<(), String> {
-    set_secret(&key, &value)
+    keyring_store().set_secret(&key, &value)
 }
 
 #[tauri::command]
 pub fn secret_get(key: String) -> Result<Option<String>, String> {
-    get_secret(&key)
+    keyring_store().get_secret(&key)
 }
 
 #[tauri::command]
 pub fn secret_has(key: String) -> Result<bool, String> {
-    has_secret(&key)
+    keyring_store().has_secret(&key)
 }
 
 #[tauri::command]
 pub fn secret_delete(key: String) -> Result<(), String> {
-    delete_secret(&key)
+    keyring_store().delete_secret(&key)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Once;
+    use std::collections::HashMap;
+    use std::sync::Mutex;
 
-    static INIT: Once = Once::new();
+    /// In-memory backend that behaves like a real keyed store (unlike keyring's
+    /// per-Entry mock), so the store's set/get/delete semantics are testable.
+    struct MemoryBackend {
+        map: Mutex<HashMap<String, String>>,
+    }
 
-    // Route the keyring through an in-memory mock so tests never touch (or
-    // prompt) the real OS keychain.
-    fn mock() {
-        INIT.call_once(|| {
-            keyring::set_default_credential_builder(keyring::mock::default_credential_builder());
-        });
+    impl MemoryBackend {
+        fn new() -> Self {
+            Self {
+                map: Mutex::new(HashMap::new()),
+            }
+        }
+    }
+
+    impl SecretBackend for MemoryBackend {
+        fn set(&self, key: &str, value: &str) -> Result<(), String> {
+            self.map
+                .lock()
+                .unwrap()
+                .insert(key.to_string(), value.to_string());
+            Ok(())
+        }
+        fn get(&self, key: &str) -> Result<Option<String>, String> {
+            Ok(self.map.lock().unwrap().get(key).cloned())
+        }
+        fn delete(&self, key: &str) -> Result<(), String> {
+            self.map.lock().unwrap().remove(key);
+            Ok(())
+        }
+    }
+
+    fn store() -> SecretsStore<MemoryBackend> {
+        SecretsStore::new(MemoryBackend::new())
     }
 
     #[test]
     fn set_get_roundtrip() {
-        mock();
-        set_secret("test_rt", "sk-abc123").unwrap();
-        assert_eq!(get_secret("test_rt").unwrap(), Some("sk-abc123".to_string()));
+        let s = store();
+        s.set_secret("anthropic", "sk-abc123").unwrap();
+        assert_eq!(s.get_secret("anthropic").unwrap(), Some("sk-abc123".to_string()));
     }
 
     #[test]
     fn get_missing_returns_none() {
-        mock();
-        assert_eq!(get_secret("test_missing").unwrap(), None);
-        assert!(!has_secret("test_missing").unwrap());
+        let s = store();
+        assert_eq!(s.get_secret("missing").unwrap(), None);
+        assert!(!s.has_secret("missing").unwrap());
     }
 
     #[test]
     fn overwrite_updates_value() {
-        mock();
-        set_secret("test_ow", "old").unwrap();
-        set_secret("test_ow", "new").unwrap();
-        assert_eq!(get_secret("test_ow").unwrap(), Some("new".to_string()));
+        let s = store();
+        s.set_secret("k", "old").unwrap();
+        s.set_secret("k", "new").unwrap();
+        assert_eq!(s.get_secret("k").unwrap(), Some("new".to_string()));
     }
 
     #[test]
     fn delete_removes_secret() {
-        mock();
-        set_secret("test_del", "v").unwrap();
-        assert!(has_secret("test_del").unwrap());
-        delete_secret("test_del").unwrap();
-        assert_eq!(get_secret("test_del").unwrap(), None);
+        let s = store();
+        s.set_secret("k", "v").unwrap();
+        assert!(s.has_secret("k").unwrap());
+        s.delete_secret("k").unwrap();
+        assert_eq!(s.get_secret("k").unwrap(), None);
     }
 
     #[test]
     fn delete_missing_is_ok() {
-        mock();
-        delete_secret("test_never_existed").unwrap();
+        let s = store();
+        s.delete_secret("never_existed").unwrap();
     }
 }
