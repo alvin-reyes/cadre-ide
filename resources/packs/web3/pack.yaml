@@ -1,0 +1,24 @@
+# Cadre vertical role pack — web3 / smart contracts (§3.9).
+# Additive on top of the general BMAD core; adds roles, pipeline gates, and a
+# verification profile. Authored by Cadre (not upstream BMAD).
+id: web3
+name: Web3 / Smart Contracts
+description: >
+  Disciplined AI development for smart contracts, where unverified generated
+  code means lost funds. Adds security roles and wires real audit tooling into
+  the verification gate.
+
+# Persona roles this pack adds (files under agents/).
+roles:
+  - auditor
+  - pentester
+
+# Gate-roles appended to the story pipeline after the core dev -> reviewer -> qa.
+extraGates:
+  - auditor
+  - pentester
+
+# Verification steps wired into the QA gate (run by the engine; all must pass).
+verification:
+  - forge test
+  - slither . --fail-high
