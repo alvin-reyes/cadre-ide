@@ -28,6 +28,18 @@ pub struct StoryState {
     pub status: Status,
 }
 
+/// The PLAN gate approval (§6.1/§6.3). Written *only* by the engine at human
+/// approval, into `.cadre/approvals/plan.json` (outside every agent worktree, so
+/// agents cannot forge it). Freezes the human-confirmed **verification command(s)**
+/// so the QA gate re-reads them from disk — an agent can never set or alter what
+/// it will be judged against.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PlanApproval {
+    pub approved: bool,
+    /// verification steps to run at the QA gate (project command + pack checks)
+    pub verification: Vec<String>,
+}
+
 /// Legal next statuses per §5 (mirrors `src/lib/engine/transitions.ts`). Enforced
 /// by the sole writer (`set_status`) so illegal edges — e.g. Draft → Done — are
 /// impossible, not merely discouraged.
@@ -130,6 +142,29 @@ impl CadreState {
         }
     }
 
+    fn plan_path(&self) -> PathBuf {
+        self.root.join(".cadre").join("approvals").join("plan.json")
+    }
+
+    /// Approve the PLAN gate, freezing the human-confirmed verification steps.
+    pub fn approve_plan(&self, verification: Vec<String>) -> Result<(), String> {
+        let approval = PlanApproval {
+            approved: true,
+            verification,
+        };
+        let json = serde_json::to_string_pretty(&approval).map_err(|e| e.to_string())?;
+        self.atomic_write(&self.plan_path(), &json)
+    }
+
+    /// Read the PLAN approval, or `None` if the plan hasn't been approved yet.
+    pub fn get_plan_approval(&self) -> Result<Option<PlanApproval>, String> {
+        match fs::read_to_string(self.plan_path()) {
+            Ok(s) => serde_json::from_str(&s).map(Some).map_err(|e| e.to_string()),
+            Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
     /// True if `content` at `path` matches what the engine last wrote there.
     /// The reconciler uses this to suppress the watcher event caused by cadre's
     /// own write, so it doesn't re-process it as an external change.
@@ -198,6 +233,25 @@ pub fn is_own_write(
         Some(state) => state.is_own_write(std::path::Path::new(&path), &content),
         None => false,
     })
+}
+
+#[tauri::command]
+pub fn approve_plan(
+    engine: tauri::State<'_, CadreEngine>,
+    verification: Vec<String>,
+) -> Result<(), String> {
+    let guard = engine.state.lock().unwrap();
+    let state = guard.as_ref().ok_or("no project open")?;
+    state.approve_plan(verification)
+}
+
+#[tauri::command]
+pub fn get_plan_approval(
+    engine: tauri::State<'_, CadreEngine>,
+) -> Result<Option<PlanApproval>, String> {
+    let guard = engine.state.lock().unwrap();
+    let state = guard.as_ref().ok_or("no project open")?;
+    state.get_plan_approval()
 }
 
 #[cfg(test)]
@@ -285,6 +339,26 @@ mod tests {
         assert!(can_transition(Status::InReview, Status::Done));
         assert!(can_transition(Status::Done, Status::Approved)); // re-open
         assert!(!can_transition(Status::Done, Status::InProgress));
+    }
+
+    #[test]
+    fn plan_approval_freezes_the_verification_command() {
+        let root = tmp_root("plan");
+        let s = CadreState::new(&root);
+        assert_eq!(s.get_plan_approval().unwrap(), None); // not approved yet
+        s.approve_plan(vec!["pnpm test".into(), "slither .".into()])
+            .unwrap();
+        let approval = s.get_plan_approval().unwrap().unwrap();
+        assert!(approval.approved);
+        assert_eq!(approval.verification, vec!["pnpm test", "slither ."]);
+    }
+
+    #[test]
+    fn plan_approval_lives_outside_worktrees() {
+        // approvals path is under .cadre/approvals, not in any story worktree,
+        // so an agent (running in .cadre/worktrees/...) has no write path to it.
+        let s = CadreState::new("/proj");
+        assert_eq!(s.plan_path(), PathBuf::from("/proj/.cadre/approvals/plan.json"));
     }
 
     #[test]
