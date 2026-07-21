@@ -27,14 +27,6 @@ function stateInfo(status: Status): { label: string; color: string; live: boolea
   }
 }
 
-// Shown only in UI-preview (no project open), so the layout isn't empty.
-const DEMO: StoryCard[] = [
-  { id: "1.1", epic: 1, story: 1, title: "JWT sign/verify", status: "InProgress" },
-  { id: "1.2", epic: 1, story: 2, title: "Login endpoint", status: "InReview" },
-  { id: "1.0", epic: 1, story: 0, title: "Scaffold + config", status: "Done" },
-  { id: "2.1", epic: 2, story: 1, title: "Session store", status: "Draft" },
-];
-
 export function FleetView() {
   const stories = useBmadStore((s) => s.stories);
   const projectRoot = useBmadStore((s) => s.projectRoot);
@@ -42,8 +34,9 @@ export function FleetView() {
   const busy = useCadre((s) => s.busy);
   const error = useCadre((s) => s.error);
 
+  // No project = UI preview: real (empty) board, actions gated off. No fake data.
   const preview = !projectRoot;
-  const display = preview ? DEMO : stories;
+  const display = stories;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = display.find((c) => c.id === selectedId) ?? display[0] ?? null;
 
@@ -329,9 +322,7 @@ function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
         )}
       </div>
 
-      {preview ? (
-        <DemoTerminal />
-      ) : view === "output" ? (
+      {view === "output" ? (
         <LiveTerminal log={log} empty="No agent output yet — Dispatch to run the story." />
       ) : markdown ? (
         <div style={{ flex: 1, overflow: "auto", padding: "var(--c-space-5)" }}>
@@ -411,31 +402,6 @@ function LiveTerminal({ log, empty }: { log: string; empty: string }) {
   );
 }
 
-function DemoTerminal() {
-  return (
-    <div
-      style={{
-        flex: 1,
-        background: "#14100c",
-        padding: "var(--c-space-3) var(--c-space-4)",
-        fontFamily: "var(--c-font-mono)",
-        fontSize: "var(--c-fs-sm)",
-        lineHeight: 1.6,
-        color: "var(--c-success)",
-        overflow: "auto",
-      }}
-    >
-      <div style={{ color: "var(--c-text-muted)" }}>▸ writing the failing test first…</div>
-      <div style={{ color: "var(--c-text-faint)" }}>&nbsp;&nbsp;src/auth/jwt.spec.ts</div>
-      <div style={{ color: "var(--c-accent)" }}>$ pnpm test jwt</div>
-      <div>&nbsp;&nbsp;✓ signs and verifies a token</div>
-      <div style={{ color: "var(--c-text-muted)" }}>▸ implementing…</div>
-      <div style={{ color: "var(--c-text-faint)" }}>
-        &nbsp;&nbsp;(cadre runs the verification itself before Done)
-      </div>
-    </div>
-  );
-}
 
 function EmptyAgent() {
   return (
