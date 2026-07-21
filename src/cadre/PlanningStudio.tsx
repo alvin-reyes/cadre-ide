@@ -520,15 +520,21 @@ export function PlanningStudio() {
             <span style={{ fontSize: "var(--c-fs-sm)", fontFamily: "var(--c-font-mono)", color: "var(--c-text-secondary)" }}>
               {showDesignPreview ? "docs/mockup.html" : meta.file}
             </span>
-            <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-faint)" }}>
-              {showDesignPreview
-                ? mockupHtml
-                  ? "live preview"
-                  : "mockup appears here"
-                : doc
-                  ? `${wordCount(doc)} words`
-                  : "writes itself as you talk"}
-            </span>
+            {thinking ? (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: "var(--c-fs-xs)", color: "var(--c-accent)" }}>
+                <Dots /> {showDesignPreview ? "rendering" : "drafting"}
+              </span>
+            ) : (
+              <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-faint)" }}>
+                {showDesignPreview
+                  ? mockupHtml
+                    ? "live preview"
+                    : "mockup appears here"
+                  : doc
+                    ? `${wordCount(doc)} words`
+                    : "writes itself as you talk"}
+              </span>
+            )}
             <div style={{ flex: 1 }} />
             {persona === "design" && (
               <div style={{ display: "flex", gap: 2, marginRight: "var(--c-space-2)" }}>
@@ -571,6 +577,8 @@ export function PlanningStudio() {
                   style={{ width: "100%", height: "100%", border: "1px solid var(--c-border)", borderRadius: "var(--c-radius)", background: "#fff" }}
                 />
               </div>
+            ) : thinking ? (
+              <DocDrafting label={meta.label} file="docs/mockup.html" verb="mocking up" />
             ) : (
               <EmptyPane text="The Designer mocks up the actual screens here — describe the UI to begin." />
             )
@@ -582,6 +590,8 @@ export function PlanningStudio() {
                 dangerouslySetInnerHTML={{ __html: marked.parse(doc) as string }}
               />
             </div>
+          ) : thinking ? (
+            <DocDrafting label={meta.label} file={meta.file} verb="drafting" />
           ) : (
             <EmptyPane
               text={
@@ -589,7 +599,9 @@ export function PlanningStudio() {
                   ? "Your PRD appears here, section by section, as you and the PM talk it through."
                   : persona === "architect"
                     ? "The architecture appears here as you and the Architect design the build."
-                    : "The UX spec appears here as you and the Designer shape the experience."
+                    : persona === "design"
+                      ? "The UX spec appears here as you and the Designer shape the experience."
+                      : "The validation report appears here as the PO reviews the plan."
               }
             />
           )}
@@ -714,6 +726,38 @@ const miniBtn: CSSProperties = {
   border: "none",
   cursor: "pointer",
 };
+
+/** Three animated typing dots that inherit color. */
+function Dots() {
+  return (
+    <span style={{ display: "inline-flex", gap: 3 }}>
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="cadre-typing-dot"
+          style={{ width: 5, height: 5, borderRadius: "50%", background: "currentColor", display: "inline-block" }}
+        />
+      ))}
+    </span>
+  );
+}
+
+/** Doc-pane placeholder shown while a persona is writing the document. */
+function DocDrafting({ label, file, verb }: { label: string; file: string; verb: string }) {
+  return (
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "var(--c-space-5)" }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+        <span style={{ color: "var(--c-accent)" }}>
+          <Dots />
+        </span>
+        <span style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text-muted)", textAlign: "center" }}>
+          The {label} is {verb}{" "}
+          <span style={{ fontFamily: "var(--c-font-mono)", color: "var(--c-text-secondary)" }}>{file}</span>…
+        </span>
+      </div>
+    </div>
+  );
+}
 
 function EmptyPane({ text }: { text: string }) {
   return (
