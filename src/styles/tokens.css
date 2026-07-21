@@ -142,6 +142,27 @@
   animation-delay: 0.3s;
 }
 
+/* Streaming caret at the tail of an assistant message. */
+@keyframes cadre-caret-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+.cadre-caret {
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--c-accent);
+  border-radius: 1px;
+  animation: cadre-caret-blink 1s steps(1) infinite;
+}
+
 .cadre-chip {
   animation: cadre-bubble-in var(--c-dur) var(--c-ease-out);
   transition: background var(--c-dur-fast) var(--c-ease-out), transform var(--c-dur-fast) var(--c-ease-out);
@@ -155,7 +176,8 @@
 @media (prefers-reduced-motion: reduce) {
   .cadre-bubble,
   .cadre-typing-dot,
-  .cadre-chip {
+  .cadre-chip,
+  .cadre-caret {
     animation: none;
   }
 }

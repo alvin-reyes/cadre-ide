@@ -115,6 +115,8 @@ export async function planningTurn(opts: {
   allowMockup?: boolean;
   /** allow the persona to propose the verification command (Architect) */
   allowVerification?: boolean;
+  /** streamed assistant text deltas (Claude-style progressive rendering) */
+  onText?: (delta: string) => void;
 }): Promise<PlanningTurnResult> {
   const client = new Anthropic({
     apiKey: opts.apiKey,
@@ -128,13 +130,18 @@ export async function planningTurn(opts: {
     SUGGEST_REPLIES_TOOL,
   ] as Anthropic.Tool[];
 
-  const response = await client.messages.create({
+  const stream = client.messages.stream({
     model: opts.model,
     max_tokens: 4096,
     system: opts.systemPrompt,
     tools,
     messages: opts.messages.map((m) => ({ role: m.role, content: toApiContent(m) })),
   });
+  if (opts.onText) {
+    const onText = opts.onText;
+    stream.on("text", (delta: string) => onText(delta));
+  }
+  const response = await stream.finalMessage();
 
   let reply = "";
   let document: string | undefined;

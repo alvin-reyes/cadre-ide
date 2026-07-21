@@ -239,28 +239,41 @@ export function PlanningStudio() {
   async function send(override?: string) {
     const text = (override ?? draft).trim();
     if ((!text && attachments.length === 0) || thinking || !apiKey) return;
-    const next: ChatMessage[] = [
+    const active = persona;
+    const base: ChatMessage[] = [
       ...messages,
       { role: "user", content: text, attachments: attachments.length ? attachments : undefined },
     ];
-    setThreads((t) => ({ ...t, [persona]: next }));
+    // Append an empty assistant placeholder that we stream into (Claude-style).
+    setThreads((t) => ({ ...t, [active]: [...base, { role: "assistant", content: "" }] }));
     setDraft("");
     setAttachments([]);
     setSuggestions([]);
     setThinking(true);
+
+    // Replace the trailing assistant placeholder as tokens arrive.
+    const setAssistant = (content: string) =>
+      setThreads((t) => {
+        const arr = t[active].slice();
+        arr[arr.length - 1] = { role: "assistant", content };
+        return { ...t, [active]: arr };
+      });
+
+    let acc = "";
     try {
       const result = await planningTurn({
         apiKey,
         model: MODEL,
-        systemPrompt: systemPromptFor(persona),
-        messages: next,
-        allowMockup: persona === "design",
-        allowVerification: persona === "architect",
+        systemPrompt: systemPromptFor(active),
+        messages: base,
+        allowMockup: active === "design",
+        allowVerification: active === "architect",
+        onText: (delta) => {
+          acc += delta;
+          setAssistant(acc);
+        },
       });
-      setThreads((t) => ({
-        ...t,
-        [persona]: [...next, { role: "assistant", content: result.reply || "(updated the document)" }],
-      }));
+      setAssistant((result.reply || acc).trim() || "(updated the document)");
       if (result.document) setDoc(result.document);
       if (result.mockup) {
         setMockupHtml(result.mockup);
@@ -273,10 +286,7 @@ export function PlanningStudio() {
       }
       if (result.suggestions && result.suggestions.length) setSuggestions(result.suggestions);
     } catch (e) {
-      setThreads((t) => ({
-        ...t,
-        [persona]: [...next, { role: "assistant", content: `Error: ${String(e)}` }],
-      }));
+      setAssistant(`Error: ${String(e)}`);
     } finally {
       setThinking(false);
     }
@@ -367,11 +377,24 @@ export function PlanningStudio() {
                 </div>
               </div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "var(--c-space-3)" }}>
-                {messages.map((m, i) => (
-                  <Bubble key={i} role={m.role} content={m.content} attachments={m.attachments} />
-                ))}
-                {thinking && <TypingBubble label={meta.label} />}
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--c-space-4)", maxWidth: 720, width: "100%", margin: "0 auto" }}>
+                {messages.map((m, i) => {
+                  if (m.role === "assistant" && !m.content) return null;
+                  const streaming = thinking && i === messages.length - 1 && m.role === "assistant";
+                  return (
+                    <Message
+                      key={i}
+                      role={m.role}
+                      content={m.content}
+                      attachments={m.attachments}
+                      Icon={meta.icon}
+                      streaming={streaming}
+                    />
+                  );
+                })}
+                {thinking &&
+                  messages[messages.length - 1]?.role === "assistant" &&
+                  !messages[messages.length - 1]?.content && <Loading Icon={meta.icon} label={meta.label} />}
               </div>
             )}
           </div>
@@ -764,23 +787,35 @@ function AttachChip({ name, chars, onRemove }: { name: string; chars: number; on
   );
 }
 
-/** Animated "…is typing" bubble, shaped like an assistant message. */
-function TypingBubble({ label }: { label: string }) {
+/** The persona avatar next to assistant messages (Claude-style). */
+function Avatar({ Icon }: { Icon: typeof PencilRuler }) {
   return (
     <div
-      className="cadre-bubble"
       style={{
-        alignSelf: "flex-start",
-        display: "inline-flex",
+        width: 28,
+        height: 28,
+        borderRadius: "50%",
+        background: "var(--c-accent-subtle)",
+        border: "1px solid var(--c-accent-ring)",
+        display: "flex",
         alignItems: "center",
-        gap: 8,
-        background: "var(--c-surface-2)",
-        border: "1px solid var(--c-border)",
-        borderRadius: "var(--c-radius-lg)",
-        padding: "9px 13px",
+        justifyContent: "center",
+        color: "var(--c-accent)",
+        flexShrink: 0,
+        marginTop: 1,
       }}
     >
-      <span style={{ display: "inline-flex", gap: 4 }}>
+      <Icon size={14} strokeWidth={2} />
+    </div>
+  );
+}
+
+/** Loading state before the first token (Claude-style: avatar + animated dots). */
+function Loading({ Icon, label }: { Icon: typeof PencilRuler; label: string }) {
+  return (
+    <div className="cadre-bubble" style={{ display: "flex", gap: 10, alignItems: "center" }}>
+      <Avatar Icon={Icon} />
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
         {[0, 1, 2].map((i) => (
           <span
             key={i}
@@ -788,53 +823,65 @@ function TypingBubble({ label }: { label: string }) {
             style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--c-text-muted)", display: "inline-block" }}
           />
         ))}
+        <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-faint)", marginLeft: 4 }}>
+          the {label} is thinking
+        </span>
       </span>
-      <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-faint)" }}>the {label} is typing</span>
     </div>
   );
 }
 
-function Bubble({
+/** A chat message. User: right-aligned soft bubble. Assistant: full-width with avatar (Claude-style). */
+function Message({
   role,
   content,
   attachments,
+  Icon,
+  streaming,
 }: {
   role: "user" | "assistant";
   content: string;
   attachments?: Attachment[];
+  Icon: typeof PencilRuler;
+  streaming?: boolean;
 }) {
-  const isUser = role === "user";
+  if (role === "user") {
+    return (
+      <div
+        className="cadre-bubble"
+        style={{
+          alignSelf: "flex-end",
+          maxWidth: "82%",
+          display: "flex",
+          flexDirection: "column",
+          gap: 6,
+          background: "var(--c-surface-2)",
+          border: "1px solid var(--c-border)",
+          borderRadius: "var(--c-radius-lg)",
+          padding: "9px 13px",
+          fontSize: "var(--c-fs-md)",
+          lineHeight: 1.5,
+          color: "var(--c-text)",
+        }}
+      >
+        {attachments && attachments.length > 0 && (
+          <span style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {attachments.map((a, i) => (
+              <AttachChip key={i} name={a.name} chars={a.content.length} />
+            ))}
+          </span>
+        )}
+        {content && <span style={{ whiteSpace: "pre-wrap" }}>{content}</span>}
+      </div>
+    );
+  }
   return (
-    <div
-      className="cadre-bubble"
-      style={{
-        alignSelf: isUser ? "flex-end" : "flex-start",
-        maxWidth: "82%",
-        background: isUser ? "var(--c-accent-subtle)" : "var(--c-surface-2)",
-        border: `1px solid ${isUser ? "var(--c-accent-ring)" : "var(--c-border)"}`,
-        borderRadius: "var(--c-radius-lg)",
-        padding: "8px 12px",
-        fontSize: "var(--c-fs-md)",
-        lineHeight: 1.5,
-        color: "var(--c-text)",
-        display: "flex",
-        flexDirection: "column",
-        gap: 6,
-      }}
-    >
-      {attachments && attachments.length > 0 && (
-        <span style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {attachments.map((a, i) => (
-            <AttachChip key={i} name={a.name} chars={a.content.length} />
-          ))}
-        </span>
-      )}
-      {content &&
-        (isUser ? (
-          <span style={{ whiteSpace: "pre-wrap" }}>{content}</span>
-        ) : (
-          <div className="cadre-md" dangerouslySetInnerHTML={{ __html: marked.parse(content) as string }} />
-        ))}
+    <div className="cadre-bubble" style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+      <Avatar Icon={Icon} />
+      <div style={{ flex: 1, minWidth: 0, paddingTop: 3, fontSize: "var(--c-fs-md)", lineHeight: 1.6, color: "var(--c-text)" }}>
+        <div className="cadre-md" style={{ display: "inline" }} dangerouslySetInnerHTML={{ __html: marked.parse(content) as string }} />
+        {streaming && <span className="cadre-caret" />}
+      </div>
     </div>
   );
 }
