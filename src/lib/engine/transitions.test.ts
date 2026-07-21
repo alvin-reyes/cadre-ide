@@ -1,0 +1,43 @@
+import { describe, it, expect } from "vitest";
+import { canTransition, assertTransition } from "./transitions";
+
+describe("canTransition", () => {
+  it("allows the happy-path edges", () => {
+    expect(canTransition("Draft", "Approved")).toBe(true);
+    expect(canTransition("Approved", "InProgress")).toBe(true);
+    expect(canTransition("InProgress", "InReview")).toBe(true);
+    expect(canTransition("InReview", "Done")).toBe(true);
+  });
+
+  it("forbids skipping the discipline (Draft cannot jump to Done)", () => {
+    expect(canTransition("Draft", "Done")).toBe(false);
+    expect(canTransition("Approved", "Done")).toBe(false);
+    expect(canTransition("InProgress", "Done")).toBe(false);
+  });
+
+  it("lets a failed story bounce back to InProgress", () => {
+    expect(canTransition("InReview", "Failed")).toBe(true);
+    expect(canTransition("Failed", "InProgress")).toBe(true);
+  });
+
+  it("makes re-open the only path out of Done (human-gated)", () => {
+    expect(canTransition("Done", "Approved")).toBe(true);
+    expect(canTransition("Done", "InProgress")).toBe(false);
+    expect(canTransition("Done", "Done")).toBe(false);
+  });
+
+  it("allows blocking from any active state and resuming", () => {
+    expect(canTransition("InProgress", "Blocked")).toBe(true);
+    expect(canTransition("Blocked", "InProgress")).toBe(true);
+  });
+});
+
+describe("assertTransition", () => {
+  it("throws on an illegal transition", () => {
+    expect(() => assertTransition("Draft", "Done")).toThrow(/illegal/);
+  });
+
+  it("does not throw on a legal transition", () => {
+    expect(() => assertTransition("InReview", "Done")).not.toThrow();
+  });
+});
