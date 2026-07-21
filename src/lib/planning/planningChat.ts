@@ -64,3 +64,30 @@ export async function planningTurn(opts: {
 
   return { reply: reply.trim(), document };
 }
+
+/** Force a single tool call (used by the SM's create_story). Returns the tool input. */
+export async function callTool(opts: {
+  apiKey: string;
+  model: string;
+  systemPrompt: string;
+  userPrompt: string;
+  tool: unknown;
+}): Promise<unknown> {
+  const client = new Anthropic({
+    apiKey: opts.apiKey,
+    dangerouslyAllowBrowser: true,
+  });
+  const tool = opts.tool as Anthropic.Tool;
+  const response = await client.messages.create({
+    model: opts.model,
+    max_tokens: 4096,
+    system: opts.systemPrompt,
+    tools: [tool],
+    tool_choice: { type: "tool", name: tool.name },
+    messages: [{ role: "user", content: opts.userPrompt }],
+  });
+  for (const block of response.content) {
+    if (block.type === "tool_use") return block.input;
+  }
+  throw new Error("model did not call the tool");
+}

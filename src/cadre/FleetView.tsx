@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { Terminal, FolderTree, FileCode2, Eye, Database, Circle } from "lucide-react";
+import { Terminal, FolderTree, FileCode2, Eye, Database, Circle, Plus, Play } from "lucide-react";
 import { FleetBoard } from "./components/FleetBoard";
 import { useBmadStore } from "../stores/bmadStore";
+import { useCadre } from "./useCadre";
 import type { StoryCard } from "../lib/engine/board";
 
-// Shown until a real project's stories flow in via the reconciler.
+// Shown only in UI-preview (no project open), so the layout isn't empty.
 const DEMO: StoryCard[] = [
   { id: "1.1", epic: 1, story: 1, title: "JWT sign/verify", status: "InProgress" },
   { id: "1.2", epic: 1, story: 2, title: "Login endpoint", status: "InReview" },
@@ -14,23 +15,71 @@ const DEMO: StoryCard[] = [
 
 export function FleetView() {
   const stories = useBmadStore((s) => s.stories);
-  const display = stories.length ? stories : DEMO;
-  const [selectedId, setSelectedId] = useState<string | null>(display[0]?.id ?? null);
-  const selected = display.find((c) => c.id === selectedId) ?? null;
+  const projectRoot = useBmadStore((s) => s.projectRoot);
+  const shardNextStory = useCadre((s) => s.shardNextStory);
+  const busy = useCadre((s) => s.busy);
+  const error = useCadre((s) => s.error);
+
+  const preview = !projectRoot;
+  const display = preview ? DEMO : stories;
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = display.find((c) => c.id === selectedId) ?? display[0] ?? null;
 
   return (
-    <div style={{ height: "100%", display: "flex", minHeight: 0 }}>
-      <FleetBoard stories={display} selectedId={selectedId} onSelect={setSelectedId} />
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        {selected ? <AgentPane card={selected} /> : <EmptyAgent />}
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
+      {/* Fleet toolbar */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--c-space-3)",
+          padding: "var(--c-space-2) var(--c-space-4)",
+          borderBottom: "1px solid var(--c-border)",
+          flexShrink: 0,
+        }}
+      >
+        <button
+          onClick={() => shardNextStory(1)}
+          disabled={preview || !!busy}
+          title={preview ? "Open a project to shard stories" : "Run the SM to shard the next story"}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            fontSize: "var(--c-fs-sm)",
+            fontWeight: 550 as const,
+            padding: "5px 12px",
+            borderRadius: "var(--c-radius)",
+            background: preview || busy ? "var(--c-surface-3)" : "var(--c-accent)",
+            color: preview || busy ? "var(--c-text-muted)" : "var(--c-on-accent)",
+            border: "none",
+            cursor: preview || busy ? "default" : "pointer",
+          }}
+        >
+          <Plus size={14} strokeWidth={2.5} />
+          Generate story (SM)
+        </button>
+        <span style={{ fontSize: "var(--c-fs-xs)", color: busy ? "var(--c-accent)" : error ? "var(--c-danger)" : "var(--c-text-muted)" }}>
+          {busy ?? error ?? (preview ? "Preview — open a project to run the fleet." : `${stories.length} stor${stories.length === 1 ? "y" : "ies"}`)}
+        </span>
       </div>
-      <Dock />
+
+      <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+        <FleetBoard stories={display} selectedId={selected?.id ?? null} onSelect={setSelectedId} />
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+          {selected ? <AgentPane card={selected} preview={preview} /> : <EmptyAgent />}
+        </div>
+        <Dock />
+      </div>
     </div>
   );
 }
 
-function AgentPane({ card }: { card: StoryCard }) {
+function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
   const running = card.status === "InProgress" || card.status === "InReview";
+  const dispatchStory = useCadre((s) => s.dispatchStory);
+  const busy = useCadre((s) => s.busy);
+  const canDispatch = !preview && !busy && (card.status === "Draft" || card.status === "Failed");
   return (
     <>
       <div
@@ -59,6 +108,27 @@ function AgentPane({ card }: { card: StoryCard }) {
           claude · branch story/{card.id}
         </span>
         <div style={{ flex: 1 }} />
+        {canDispatch && (
+          <button
+            onClick={() => dispatchStory(card.epic, card.story)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              fontSize: "var(--c-fs-xs)",
+              fontWeight: 550 as const,
+              padding: "4px 10px",
+              borderRadius: "var(--c-radius-sm)",
+              background: "var(--c-accent)",
+              color: "var(--c-on-accent)",
+              border: "none",
+              cursor: "pointer",
+            }}
+          >
+            <Play size={12} strokeWidth={2.5} />
+            Dispatch
+          </button>
+        )}
         <span
           style={{
             display: "inline-flex",

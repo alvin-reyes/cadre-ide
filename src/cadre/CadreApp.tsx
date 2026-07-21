@@ -1,15 +1,16 @@
 import { useState } from "react";
 import { TopBar } from "./components/TopBar";
-import type { Phase } from "./components/PhaseStepper";
 import { PlanningStudio } from "./PlanningStudio";
 import { FleetView } from "./FleetView";
 import { EscalationInbox } from "./EscalationInbox";
 import { Welcome } from "./Welcome";
 import { useBmadStore } from "../stores/bmadStore";
+import { useCadre } from "./useCadre";
 
 /** The Cadre Cockpit shell. Phase-driven main area (§4.3). */
 export function CadreApp() {
-  const [phase, setPhase] = useState<Phase>("PLAN");
+  const phase = useCadre((s) => s.phase);
+  const setPhase = useCadre((s) => s.setPhase);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [preview, setPreview] = useState(false);
   const projectRoot = useBmadStore((s) => s.projectRoot);
@@ -30,7 +31,7 @@ export function CadreApp() {
         onOpenNeeds={() => setInboxOpen(true)}
       />
       <div style={{ flex: 1, minHeight: 0 }}>
-        {phase === "PLAN" || phase === "SHARD" ? <PlanningStudio /> : <FleetView />}
+        {phase === "PLAN" ? <PlanningStudio /> : <FleetView />}
       </div>
       {inboxOpen && <EscalationInbox onClose={() => setInboxOpen(false)} />}
     </div>
