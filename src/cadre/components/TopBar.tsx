@@ -20,10 +20,12 @@ export function TopBar({
   phase,
   needsYou = 0,
   onNavigate,
+  onOpenNeeds,
 }: {
   phase: Phase;
   needsYou?: number;
   onNavigate?: (phase: Phase) => void;
+  onOpenNeeds?: () => void;
 }) {
   return (
     <div
@@ -50,6 +52,7 @@ export function TopBar({
 
       {needsYou > 0 && (
         <button
+          onClick={onOpenNeeds}
           style={{
             ...iconBtn,
             width: "auto",
