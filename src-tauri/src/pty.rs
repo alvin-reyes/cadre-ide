@@ -6,9 +6,23 @@ use tauri::ipc::Channel;
 
 pub struct PtyInstance {
     writer: Box<dyn Write + Send>,
-    _child: Box<dyn portable_pty::Child + Send + Sync>,
+    child: Box<dyn portable_pty::Child + Send + Sync>,
     master: Box<dyn portable_pty::MasterPty + Send>,
     pid: Option<u32>,
+}
+
+/// Decide the argv for the PTY child. An explicit `command` runs as the PTY's
+/// **direct child** (so process-exit is a clean completion signal — required for
+/// `claude -p` fleet agents); otherwise fall back to an interactive login shell.
+fn resolve_argv(command: Option<&str>, args: &[String], shell: &str) -> Vec<String> {
+    match command {
+        Some(cmd) if !cmd.is_empty() => {
+            let mut v = vec![cmd.to_string()];
+            v.extend(args.iter().cloned());
+            v
+        }
+        _ => vec![shell.to_string(), "-l".to_string()],
+    }
 }
 
 pub struct PtyManager {
@@ -31,7 +45,7 @@ pub enum PtyEvent {
     #[serde(rename = "output")]
     Output { data: Vec<u8> },
     #[serde(rename = "exit")]
-    Exit {},
+    Exit { code: Option<i32> },
     #[serde(rename = "error")]
     Error { message: String },
 }
@@ -42,6 +56,9 @@ pub fn create_pty(
     rows: u16,
     cols: u16,
     cwd: Option<String>,
+    command: Option<String>,
+    args: Option<Vec<String>>,
+    env: Option<HashMap<String, String>>,
     on_event: Channel<PtyEvent>,
 ) -> Result<u32, String> {
     let pty_system = NativePtySystem::default();
@@ -55,9 +72,14 @@ pub fn create_pty(
         })
         .map_err(|e| format!("openpty failed: {}", e))?;
 
+    // Explicit command (e.g. `claude -p ...`) runs as the PTY's direct child;
+    // otherwise fall back to the login shell.
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-    let mut cmd = CommandBuilder::new(&shell);
-    cmd.arg("-l");
+    let argv = resolve_argv(command.as_deref(), &args.unwrap_or_default(), &shell);
+    let mut cmd = CommandBuilder::new(&argv[0]);
+    for a in &argv[1..] {
+        cmd.arg(a);
+    }
 
     if let Some(dir) = cwd {
         cmd.cwd(dir);
@@ -77,6 +99,14 @@ pub fn create_pty(
     }
     if let Ok(lang) = std::env::var("LANG") {
         cmd.env("LANG", lang);
+    }
+
+    // Per-spawn env overrides (ModelRouter: ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN
+    // / ANTHROPIC_MODEL, and any other agent-specific vars). Applied last so they win.
+    if let Some(extra) = env {
+        for (k, v) in extra {
+            cmd.env(k, v);
+        }
     }
 
     let child = pair.slave.spawn_command(cmd).map_err(|e| format!("spawn failed: {}", e))?;
@@ -99,7 +129,7 @@ pub fn create_pty(
             id,
             PtyInstance {
                 writer,
-                _child: child,
+                child,
                 master: pair.master,
                 pid: child_pid,
             },
@@ -125,9 +155,16 @@ pub fn create_pty(
                 }
             }
         }
-        let mut instances = instances_ref.lock().unwrap();
-        instances.remove(&id);
-        let _ = on_event.send(PtyEvent::Exit {});
+        // EOF on the master means the child closed its fds — reap it to get the
+        // real exit code (the clean completion signal §6.1 relies on).
+        let code = {
+            let mut instances = instances_ref.lock().unwrap();
+            match instances.remove(&id) {
+                Some(mut inst) => inst.child.wait().ok().map(|s| s.exit_code() as i32),
+                None => None,
+            }
+        };
+        let _ = on_event.send(PtyEvent::Exit { code });
     });
 
     Ok(id)
@@ -261,4 +298,46 @@ fn get_foreground_pid(shell_pid: u32) -> Option<u32> {
         .lines()
         .filter_map(|line| line.trim().parse::<u32>().ok())
         .last()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn falls_back_to_login_shell_when_no_command() {
+        assert_eq!(
+            resolve_argv(None, &[], "/bin/zsh"),
+            vec!["/bin/zsh".to_string(), "-l".to_string()]
+        );
+    }
+
+    #[test]
+    fn empty_command_falls_back_to_shell() {
+        assert_eq!(
+            resolve_argv(Some(""), &[], "/bin/bash"),
+            vec!["/bin/bash".to_string(), "-l".to_string()]
+        );
+    }
+
+    #[test]
+    fn explicit_command_becomes_direct_child() {
+        let args = vec!["-p".to_string(), "do the thing".to_string()];
+        assert_eq!(
+            resolve_argv(Some("claude"), &args, "/bin/zsh"),
+            vec![
+                "claude".to_string(),
+                "-p".to_string(),
+                "do the thing".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn explicit_command_with_no_args() {
+        assert_eq!(
+            resolve_argv(Some("claude"), &[], "/bin/zsh"),
+            vec!["claude".to_string()]
+        );
+    }
 }
