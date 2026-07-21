@@ -50,6 +50,8 @@ interface CadreState {
   architecture: string;
   /** the frozen verification command(s) once the plan is approved */
   verification: string[];
+  /** live agent + verification output, keyed by "epic.story" (streamed on dispatch) */
+  logs: Record<string, string>;
   /** a human-readable status while an async action runs (null = idle) */
   busy: string | null;
   error: string | null;
@@ -95,6 +97,7 @@ export const useCadre = create<CadreState>((set, get) => ({
   prd: "",
   architecture: "",
   verification: [],
+  logs: {},
   busy: null,
   error: null,
 
@@ -155,7 +158,16 @@ export const useCadre = create<CadreState>((set, get) => ({
   },
 
   dispatchStory: async (epic, story) => {
-    set({ busy: `Dispatching story ${epic}.${story}…`, error: null });
+    const key = `${epic}.${story}`;
+    // Fresh log for this run; the sink appends streamed output (capped).
+    set((s) => ({ busy: `Dispatching story ${epic}.${story}…`, error: null, logs: { ...s.logs, [key]: "" } }));
+    const onOutput = (chunk: string) => {
+      set((s) => {
+        const next = (s.logs[key] ?? "") + chunk;
+        const capped = next.length > 200_000 ? next.slice(next.length - 200_000) : next;
+        return { logs: { ...s.logs, [key]: capped } };
+      });
+    };
     try {
       const root = requireRoot();
 
@@ -174,7 +186,7 @@ export const useCadre = create<CadreState>((set, get) => ({
       // optimistically (its own-write echo is then suppressed by the watcher).
       const setStatus = (e: number, s: number, status: Status) =>
         useBmadStore.getState().setStatus(e, s, status);
-      const deps = { ...tauriOrchestratorDeps(), setStatus };
+      const deps = { ...tauriOrchestratorDeps(onOutput), setStatus };
 
       await runApprovedStory(deps, {
         root,

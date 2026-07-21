@@ -38,34 +38,48 @@ function deferred<T>(): Deferred<T> {
 // Per-PTY exit tracking (fixes the fast-agent exit-code race, #3).
 const exits = new ExitRegistry();
 
-async function spawnAgent(opts: {
-  command: string;
-  args: string[];
-  cwd: string;
-  env?: Record<string, string>;
-}): Promise<number> {
-  const idReady = deferred<number>();
+const textDecoder = new TextDecoder();
+function decodePtyData(data: number[]): string {
+  return textDecoder.decode(new Uint8Array(data));
+}
 
-  const channel = new Channel<PtyEvent>();
-  channel.onmessage = (event) => {
-    if (event.type === "exit") {
-      idReady.promise.then((id) => exits.resolve(id, event.code));
-    }
+/** Sink for streamed agent/verification output (wired to the Fleet agent pane). */
+export type OutputSink = (chunk: string) => void;
+
+function makeSpawnAgent(onOutput?: OutputSink) {
+  return async function spawnAgent(opts: {
+    command: string;
+    args: string[];
+    cwd: string;
+    env?: Record<string, string>;
+  }): Promise<number> {
+    const idReady = deferred<number>();
+
+    const channel = new Channel<PtyEvent>();
+    channel.onmessage = (event) => {
+      if (event.type === "exit") {
+        idReady.promise.then((id) => exits.resolve(id, event.code));
+      } else if (event.type === "output" && onOutput) {
+        onOutput(decodePtyData(event.data));
+      } else if (event.type === "error" && onOutput) {
+        onOutput(`\n[pty error] ${event.message}\n`);
+      }
+    };
+
+    const id = await invoke<number>("create_pty", {
+      rows: 24,
+      cols: 80,
+      cwd: opts.cwd,
+      command: opts.command,
+      args: opts.args,
+      env: opts.env,
+      onEvent: channel,
+    });
+
+    exits.register(id);
+    idReady.resolve(id);
+    return id;
   };
-
-  const id = await invoke<number>("create_pty", {
-    rows: 24,
-    cols: 80,
-    cwd: opts.cwd,
-    command: opts.command,
-    args: opts.args,
-    env: opts.env,
-    onEvent: channel,
-  });
-
-  exits.register(id);
-  idReady.resolve(id);
-  return id;
 }
 
 function waitForExit(ptyId: number): Promise<{ exitCode: number | null }> {
@@ -81,17 +95,29 @@ async function runGit(args: string[], cwd: string): Promise<void> {
   }
 }
 
-async function runVerification(
-  cwd: string,
-  command: string,
-  timeoutSecs: number
-): Promise<{ exitCode: number | null; timedOut: boolean }> {
-  const res = await invoke<RustRunResult>("run_verification", {
-    cwd,
-    cmd: command,
-    timeoutSecs,
-  });
-  return { exitCode: res.exit_code, timedOut: res.timed_out };
+function makeRunVerification(onOutput?: OutputSink) {
+  return async function runVerification(
+    cwd: string,
+    command: string,
+    timeoutSecs: number
+  ): Promise<{ exitCode: number | null; timedOut: boolean }> {
+    if (onOutput) onOutput(`\n$ ${command}\n`);
+    const res = await invoke<RustRunResult>("run_verification", {
+      cwd,
+      cmd: command,
+      timeoutSecs,
+    });
+    if (onOutput) {
+      if (res.stdout) onOutput(res.stdout);
+      if (res.stderr) onOutput(res.stderr);
+      onOutput(
+        res.timed_out
+          ? "\n[verification timed out]\n"
+          : `\n[verification exit ${res.exit_code}]\n`
+      );
+    }
+    return { exitCode: res.exit_code, timedOut: res.timed_out };
+  };
 }
 
 async function setStatus(
@@ -106,14 +132,21 @@ async function getPlanApproval(): Promise<PlanApproval | null> {
   return invoke<PlanApproval | null>("get_plan_approval");
 }
 
-/** The full set of engine deps backed by Tauri. */
-export function tauriRunStoryDeps(): RunStoryDeps {
-  return { setStatus, runGit, spawnAgent, waitForExit, runVerification };
+/** The full set of engine deps backed by Tauri. Pass `onOutput` to stream the
+ * agent's PTY output and verification output to the UI. */
+export function tauriRunStoryDeps(onOutput?: OutputSink): RunStoryDeps {
+  return {
+    setStatus,
+    runGit,
+    spawnAgent: makeSpawnAgent(onOutput),
+    waitForExit,
+    runVerification: makeRunVerification(onOutput),
+  };
 }
 
 /** Orchestrator deps (run-story deps + the PLAN approval reader). */
-export function tauriOrchestratorDeps(): OrchestratorDeps {
-  return { ...tauriRunStoryDeps(), getPlanApproval };
+export function tauriOrchestratorDeps(onOutput?: OutputSink): OrchestratorDeps {
+  return { ...tauriRunStoryDeps(onOutput), getPlanApproval };
 }
 
 /** A BmadFileReader that reads `${projectRoot}/.bmad-core/<relPath>` via Tauri. */

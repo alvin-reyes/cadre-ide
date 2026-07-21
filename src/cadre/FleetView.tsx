@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { marked } from "marked";
 import { Circle, Plus, Play } from "lucide-react";
 import { FleetBoard } from "./components/FleetBoard";
@@ -101,6 +101,9 @@ function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
   const canDispatch = !preview && !busy && (card.status === "Draft" || card.status === "Failed");
   const info = stateInfo(card.status);
 
+  const log = useCadre((s) => s.logs[card.id] ?? "");
+  const hasLog = log.length > 0;
+
   const [markdown, setMarkdown] = useState<string>("");
   useEffect(() => {
     if (preview) return;
@@ -113,6 +116,13 @@ function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
       alive = false;
     };
   }, [preview, card.epic, card.story, card.status, getStoryMarkdown]);
+
+  // Default to the live Output once a dispatch has produced any; Story otherwise.
+  // (Manual toggles below persist — deps only change on card switch / first output.)
+  const [view, setView] = useState<"story" | "output">("story");
+  useEffect(() => {
+    setView(hasLog ? "output" : "story");
+  }, [card.id, hasLog]);
 
   return (
     <>
@@ -183,7 +193,7 @@ function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
           display: "flex",
           alignItems: "center",
           gap: 7,
-          padding: "6px var(--c-space-4)",
+          padding: "5px var(--c-space-4)",
           borderBottom: "1px solid var(--c-border)",
           fontSize: "var(--c-fs-xs)",
           color: info.color,
@@ -193,30 +203,37 @@ function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
       >
         <Circle size={7} fill="currentColor" strokeWidth={0} />
         {info.label}
+        <div style={{ flex: 1 }} />
+        {!preview && (
+          <div style={{ display: "flex", gap: 2 }}>
+            {(["story", "output"] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                style={{
+                  fontSize: "var(--c-fs-xs)",
+                  fontWeight: 550 as const,
+                  textTransform: "capitalize",
+                  padding: "2px 9px",
+                  borderRadius: "var(--c-radius-full)",
+                  border: "1px solid transparent",
+                  background: view === v ? "var(--c-surface-3)" : "transparent",
+                  color: view === v ? "var(--c-text)" : "var(--c-text-muted)",
+                  cursor: "pointer",
+                }}
+              >
+                {v}
+                {v === "output" && hasLog && info.live ? " ·live" : ""}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {preview ? (
-        <div
-          style={{
-            flex: 1,
-            background: "#14100c",
-            padding: "var(--c-space-3) var(--c-space-4)",
-            fontFamily: "var(--c-font-mono)",
-            fontSize: "var(--c-fs-sm)",
-            lineHeight: 1.6,
-            color: "var(--c-success)",
-            overflow: "auto",
-          }}
-        >
-          <div style={{ color: "var(--c-text-muted)" }}>▸ writing the failing test first…</div>
-          <div style={{ color: "var(--c-text-faint)" }}>&nbsp;&nbsp;src/auth/jwt.spec.ts</div>
-          <div style={{ color: "var(--c-accent)" }}>$ pnpm test jwt</div>
-          <div>&nbsp;&nbsp;✓ signs and verifies a token</div>
-          <div style={{ color: "var(--c-text-muted)" }}>▸ implementing…</div>
-          <div style={{ color: "var(--c-text-faint)" }}>
-            &nbsp;&nbsp;(cadre runs the verification itself before Done)
-          </div>
-        </div>
+        <DemoTerminal />
+      ) : view === "output" ? (
+        <LiveTerminal log={log} empty="No agent output yet — Dispatch to run the story." />
       ) : markdown ? (
         <div style={{ flex: 1, overflow: "auto", padding: "var(--c-space-5)" }}>
           <div
@@ -240,6 +257,84 @@ function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
         </div>
       )}
     </>
+  );
+}
+
+// Strip ANSI escape sequences so the streamed PTY output reads cleanly.
+function stripAnsi(s: string): string {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "");
+}
+
+/** The live agent + verification transcript, auto-scrolled to the tail. */
+function LiveTerminal({ log, empty }: { log: string; empty: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [log]);
+
+  if (!log) {
+    return (
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "var(--c-text-faint)",
+          fontSize: "var(--c-fs-sm)",
+          background: "#14100c",
+        }}
+      >
+        {empty}
+      </div>
+    );
+  }
+  return (
+    <div
+      ref={ref}
+      style={{
+        flex: 1,
+        background: "#14100c",
+        padding: "var(--c-space-3) var(--c-space-4)",
+        fontFamily: "var(--c-font-mono)",
+        fontSize: "var(--c-fs-sm)",
+        lineHeight: 1.55,
+        color: "var(--c-text-secondary)",
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-word",
+        overflow: "auto",
+      }}
+    >
+      {stripAnsi(log)}
+    </div>
+  );
+}
+
+function DemoTerminal() {
+  return (
+    <div
+      style={{
+        flex: 1,
+        background: "#14100c",
+        padding: "var(--c-space-3) var(--c-space-4)",
+        fontFamily: "var(--c-font-mono)",
+        fontSize: "var(--c-fs-sm)",
+        lineHeight: 1.6,
+        color: "var(--c-success)",
+        overflow: "auto",
+      }}
+    >
+      <div style={{ color: "var(--c-text-muted)" }}>▸ writing the failing test first…</div>
+      <div style={{ color: "var(--c-text-faint)" }}>&nbsp;&nbsp;src/auth/jwt.spec.ts</div>
+      <div style={{ color: "var(--c-accent)" }}>$ pnpm test jwt</div>
+      <div>&nbsp;&nbsp;✓ signs and verifies a token</div>
+      <div style={{ color: "var(--c-text-muted)" }}>▸ implementing…</div>
+      <div style={{ color: "var(--c-text-faint)" }}>
+        &nbsp;&nbsp;(cadre runs the verification itself before Done)
+      </div>
+    </div>
   );
 }
 
