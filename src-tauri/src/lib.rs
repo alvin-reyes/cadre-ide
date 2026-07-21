@@ -1,4 +1,5 @@
 mod pty;
+mod verify;
 mod watcher;
 
 #[derive(serde::Serialize)]
@@ -341,6 +342,7 @@ pub fn run() {
             pty::reattach_pty,
             pty::kill_pty,
             pty::get_pty_cwd,
+            verify::run_verification,
             watcher::watch_directory,
             watcher::unwatch_directory,
             check_command_exists,
