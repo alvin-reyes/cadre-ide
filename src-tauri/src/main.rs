@@ -1,14 +1,6 @@
-mod pty;
+// Prevents an extra console window on Windows in release.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    tauri::Builder::default()
-        .manage(pty::PtyManager::new())
-        .invoke_handler(tauri::generate_handler![
-            pty::create_pty,
-            pty::write_pty,
-            pty::resize_pty,
-            pty::kill_pty,
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    cadre_lib::run()
 }

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-const STORAGE_KEY = "better-terminal-agent-tracker";
+const STORAGE_KEY = "cadre-agent-tracker";
 
 export interface AgentSession {
   paneId: string;

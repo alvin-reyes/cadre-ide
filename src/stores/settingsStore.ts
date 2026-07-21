@@ -276,8 +276,8 @@ export interface WorkspacePreset {
   savedAt: number;
 }
 
-const SETTINGS_KEY = "better-terminal-settings";
-const WORKSPACES_KEY = "better-terminal-workspaces";
+const SETTINGS_KEY = "cadre-settings";
+const WORKSPACES_KEY = "cadre-workspaces";
 
 interface Settings {
   themeId: string;

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 
-const TOUR_DONE_KEY = "better-terminal-tour-done";
+const TOUR_DONE_KEY = "cadre-tour-done";
 
 interface TourStep {
   title: string;
@@ -11,7 +11,7 @@ interface TourStep {
 
 const steps: TourStep[] = [
   {
-    title: "Welcome to Better Terminal",
+    title: "Welcome to Cadre",
     body: "A terminal built for agentic AI development. Let's take a quick tour of the key features.",
     position: "center",
   },
@@ -165,7 +165,7 @@ export default function Tour() {
             <div style={{ textAlign: "center", marginBottom: "16px" }}>
               <img
                 src="/ade_logo.png"
-                alt="Better Terminal"
+                alt="Cadre"
                 style={{
                   width: "64px",
                   height: "64px",

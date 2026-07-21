@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-const STORAGE_KEY = "better-terminal-orchestrator";
+const STORAGE_KEY = "cadre-orchestrator";
 
 export interface ChatImage {
   dataUrl: string;

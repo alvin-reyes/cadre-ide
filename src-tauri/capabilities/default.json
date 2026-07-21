@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "Default capabilities for Better Terminal",
+  "description": "Default capabilities for Cadre",
   "windows": ["*"],
   "permissions": [
     "core:default",

@@ -1,7 +1,7 @@
 {
-  "name": "better-terminal",
+  "name": "cadre",
   "version": "1.0.0",
-  "description": "A better terminal for agentic AI development",
+  "description": "Cadre - a disciplined agentic development IDE",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",

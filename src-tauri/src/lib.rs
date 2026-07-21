@@ -216,7 +216,7 @@ fn save_temp_image(base64_data: String, extension: String) -> Result<String, Str
     use std::io::Write;
 
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let dir = format!("{}/.ade/images", home);
+    let dir = format!("{}/.cadre/images", home);
     std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create dir: {}", e))?;
 
     let timestamp = std::time::SystemTime::now()

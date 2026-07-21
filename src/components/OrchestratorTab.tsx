@@ -130,7 +130,7 @@ export default function OrchestratorTab({ sessionId }: OrchestratorTabProps) {
         // Create project folder and write SPEC.md immediately
         const sessionName = (session?.name || "project").replace(/[^a-zA-Z0-9-_]/g, "-").toLowerCase();
         const ts = Date.now().toString(36);
-        const folderPath = `~/.ade/orchestrator/${sessionName}-${ts}`;
+        const folderPath = `~/.cadre/orchestrator/${sessionName}-${ts}`;
         try {
           const dir = await invoke<string>("create_directory", { path: folderPath });
           setProjectDir(sessionId, dir);
@@ -228,7 +228,7 @@ export default function OrchestratorTab({ sessionId }: OrchestratorTabProps) {
       const sessionName = (session?.name || "project").replace(/[^a-zA-Z0-9-_]/g, "-").toLowerCase();
       const timestamp = Date.now().toString(36);
       try {
-        projectDir = await invoke<string>("create_directory", { path: `~/.ade/orchestrator/${sessionName}-${timestamp}` });
+        projectDir = await invoke<string>("create_directory", { path: `~/.cadre/orchestrator/${sessionName}-${timestamp}` });
         setProjectDir(sessionId, projectDir);
         const spec = buildSpec(session!, session!.tasks);
         await invoke("write_text_file", { path: `${projectDir}/SPEC.md`, content: spec });

@@ -41,8 +41,8 @@ export interface ScratchpadHandle {
   isFocused: () => boolean;
 }
 
-const HISTORY_KEY = "better-terminal-prompt-history";
-const NOTES_KEY = "better-terminal-saved-notes";
+const HISTORY_KEY = "cadre-prompt-history";
+const NOTES_KEY = "cadre-saved-notes";
 
 interface SavedNote {
   id: string;
