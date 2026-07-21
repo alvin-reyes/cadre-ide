@@ -3,7 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Phase } from "./components/PhaseStepper";
 import { useBmadStore } from "../stores/bmadStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import { callTool } from "../lib/planning/planningChat";
+import { callTool, planningTurn } from "../lib/planning/planningChat";
+import { ARCHITECT_SYSTEM_PROMPT, DESIGN_SYSTEM_PROMPT } from "../lib/planning/personas";
 import { generateStory } from "../lib/planning/generateStory";
 import { runApprovedStory } from "../lib/engine/orchestrator";
 import { tauriOrchestratorDeps } from "../lib/engine/tauriDeps";
@@ -61,6 +62,8 @@ interface CadreState {
   poValidation: string;
   /** the frozen verification command(s) once the plan is approved */
   verification: string[];
+  /** true when the PRD/plan changed after approval — the fleet must re-approve (§5.1) */
+  needsReplan: boolean;
   /** live agent + verification output, keyed by "epic.story" (streamed on dispatch) */
   logs: Record<string, string>;
   /** which model provider the Dev fleet runs on (id from engine PROVIDERS) */
@@ -88,6 +91,12 @@ interface CadreState {
   getStoryMarkdown: (epic: number, story: number) => Promise<string>;
   /** Reload the plan (prd/architecture), frozen verification, and phase from disk (§3.8). */
   hydrateFromProject: () => Promise<void>;
+  /**
+   * Automatic downstream cascade after a scope change (§5.1): re-run the Architect
+   * (and Designer if a UX spec exists) to update the plan from the amended PRD, then
+   * shard a story for the new scope. Leaves the plan needing human re-approval.
+   */
+  cascadeReplan: () => Promise<void>;
 }
 
 /** Locate a story file by its {epic}.{story} prefix under docs/stories. */
@@ -119,15 +128,18 @@ export const useCadre = create<CadreState>((set, get) => ({
   mockupHtml: "",
   poValidation: "",
   verification: [],
+  needsReplan: false,
   logs: {},
   fleetProvider: "claude",
   busy: null,
   error: null,
 
   setPhase: (phase) => set({ phase }),
-  setPrd: (prd) => set({ prd }),
-  setArchitecture: (architecture) => set({ architecture }),
-  setUxSpec: (uxSpec) => set({ uxSpec }),
+  // Editing a plan artifact after approval marks the plan as needing re-approval.
+  setPrd: (prd) => set((s) => ({ prd, needsReplan: s.verification.length > 0 ? true : s.needsReplan })),
+  setArchitecture: (architecture) =>
+    set((s) => ({ architecture, needsReplan: s.verification.length > 0 ? true : s.needsReplan })),
+  setUxSpec: (uxSpec) => set((s) => ({ uxSpec, needsReplan: s.verification.length > 0 ? true : s.needsReplan })),
   setMockupHtml: (mockupHtml) => set({ mockupHtml }),
   setPoValidation: (poValidation) => set({ poValidation }),
   setFleetProvider: (fleetProvider) => set({ fleetProvider }),
@@ -163,7 +175,7 @@ export const useCadre = create<CadreState>((set, get) => ({
       }
       // Freeze the verification command in engine-owned state (agents can't forge it).
       await invoke("approve_plan", { verification: cmds });
-      set({ verification: cmds, phase: "FLEET", busy: null });
+      set({ verification: cmds, phase: "FLEET", busy: null, needsReplan: false });
     } catch (e) {
       set({ error: String(e), busy: null });
     }
@@ -267,6 +279,68 @@ export const useCadre = create<CadreState>((set, get) => ({
       return await invoke<string>("read_file", { path });
     } catch {
       return "";
+    }
+  },
+
+  cascadeReplan: async () => {
+    if (get().busy) return;
+    set({ busy: "Updating the architecture…", error: null });
+    try {
+      const root = requireRoot();
+      const apiKey = requireKey();
+      const prd = get().prd;
+
+      // 1. Architect re-derives the architecture from the amended PRD.
+      const arch = await planningTurn({
+        apiKey,
+        model: MODEL,
+        systemPrompt: `${ARCHITECT_SYSTEM_PROMPT}\n\n## Current PRD\n${prd}`,
+        messages: [
+          {
+            role: "user",
+            content:
+              "The PRD changed — scope was added or requirements changed. Produce the FULL updated architecture that reflects the current PRD.",
+          },
+        ],
+      });
+      if (arch.document) set({ architecture: arch.document });
+
+      // 2. If a UX spec exists, the Designer updates the spec + mockup.
+      if (get().uxSpec.trim()) {
+        set({ busy: "Updating the UX…" });
+        const ux = await planningTurn({
+          apiKey,
+          model: MODEL,
+          systemPrompt: `${DESIGN_SYSTEM_PROMPT}\n\n## Current PRD\n${prd}`,
+          messages: [
+            {
+              role: "user",
+              content:
+                "The PRD changed. Update the UX spec and the HTML mockup to reflect the current PRD; emit both.",
+            },
+          ],
+          allowMockup: true,
+        });
+        if (ux.document) set({ uxSpec: ux.document });
+        if (ux.mockup) set({ mockupHtml: ux.mockup });
+      }
+
+      // 3. Persist the refreshed plan to disk.
+      set({ busy: "Writing the updated plan…" });
+      const { architecture, uxSpec, mockupHtml } = get();
+      await invoke("write_text_file", { path: `${root}/${PRD_PATH}`, content: prd });
+      await invoke("write_text_file", { path: `${root}/${ARCH_PATH}`, content: architecture });
+      if (uxSpec.trim()) await invoke("write_text_file", { path: `${root}/${UX_PATH}`, content: uxSpec });
+      if (mockupHtml.trim()) await invoke("write_text_file", { path: `${root}/${MOCKUP_PATH}`, content: mockupHtml });
+
+      // 4. Shard a story for the new scope (dispatch stays gated on re-approval).
+      set({ busy: "Sharding a story for the new scope…" });
+      await get().shardNextStory(1);
+
+      // The plan is refreshed but must be RE-APPROVED by a human before dispatch.
+      set({ busy: null });
+    } catch (e) {
+      set({ error: String(e), busy: null });
     }
   },
 

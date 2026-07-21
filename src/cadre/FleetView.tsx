@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { marked } from "marked";
-import { Circle, Plus, Play, Cpu, MessageSquarePlus } from "lucide-react";
+import { Circle, Plus, Play, Cpu, MessageSquarePlus, AlertTriangle, RefreshCw, ShieldCheck } from "lucide-react";
 import { FleetBoard } from "./components/FleetBoard";
 import { useBmadStore } from "../stores/bmadStore";
 import { useCadre } from "./useCadre";
@@ -31,6 +31,10 @@ export function FleetView() {
   const stories = useBmadStore((s) => s.stories);
   const projectRoot = useBmadStore((s) => s.projectRoot);
   const shardNextStory = useCadre((s) => s.shardNextStory);
+  const cascadeReplan = useCadre((s) => s.cascadeReplan);
+  const approvePlan = useCadre((s) => s.approvePlan);
+  const verification = useCadre((s) => s.verification);
+  const needsReplan = useCadre((s) => s.needsReplan);
   const setPhase = useCadre((s) => s.setPhase);
   const busy = useCadre((s) => s.busy);
   const error = useCadre((s) => s.error);
@@ -103,6 +107,67 @@ export function FleetView() {
         )}
         {!preview && <FleetModelPicker />}
       </div>
+
+      {!preview && needsReplan && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--c-space-3)",
+            padding: "8px var(--c-space-4)",
+            background: "var(--c-warning-subtle)",
+            borderBottom: "1px solid var(--c-border)",
+            flexShrink: 0,
+          }}
+        >
+          <AlertTriangle size={14} strokeWidth={2} style={{ color: "var(--c-warning)", flexShrink: 0 }} />
+          <span style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text-secondary)" }}>
+            Scope changed — dispatch is paused until the updated plan is re-approved.
+          </span>
+          <div style={{ flex: 1 }} />
+          <button
+            onClick={() => cascadeReplan()}
+            disabled={!!busy}
+            title="Re-run the Architect (and Designer) and shard a story for the new scope"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              fontSize: "var(--c-fs-sm)",
+              fontWeight: 550 as const,
+              padding: "5px 11px",
+              borderRadius: "var(--c-radius)",
+              background: busy ? "var(--c-surface-3)" : "var(--c-surface-2)",
+              color: busy ? "var(--c-text-muted)" : "var(--c-text)",
+              border: "1px solid var(--c-border-strong)",
+              cursor: busy ? "default" : "pointer",
+            }}
+          >
+            <RefreshCw size={13} strokeWidth={2} />
+            {busy ?? "Apply changes"}
+          </button>
+          <button
+            onClick={() => verification.length && approvePlan(verification)}
+            disabled={!!busy || !verification.length}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              fontSize: "var(--c-fs-sm)",
+              fontWeight: 550 as const,
+              padding: "5px 11px",
+              borderRadius: "var(--c-radius)",
+              background: busy ? "var(--c-surface-3)" : "var(--c-success)",
+              color: busy ? "var(--c-text-muted)" : "var(--c-on-accent)",
+              border: "none",
+              cursor: busy ? "default" : "pointer",
+            }}
+          >
+            <ShieldCheck size={13} strokeWidth={2} />
+            Re-approve
+          </button>
+        </div>
+      )}
 
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
         <FleetBoard stories={display} selectedId={selected?.id ?? null} onSelect={setSelectedId} />
@@ -213,7 +278,9 @@ function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
   const dispatchStory = useCadre((s) => s.dispatchStory);
   const getStoryMarkdown = useCadre((s) => s.getStoryMarkdown);
   const busy = useCadre((s) => s.busy);
-  const canDispatch = !preview && !busy && (card.status === "Draft" || card.status === "Failed");
+  const needsReplan = useCadre((s) => s.needsReplan);
+  // Dispatch is paused while the plan is changed-but-not-re-approved (§5.1).
+  const canDispatch = !preview && !busy && !needsReplan && (card.status === "Draft" || card.status === "Failed");
   const info = stateInfo(card.status);
 
   const log = useCadre((s) => s.logs[card.id] ?? "");

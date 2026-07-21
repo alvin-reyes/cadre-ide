@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, type CSSProperties, type ClipboardEvent, type KeyboardEvent } from "react";
 import { marked } from "marked";
-import { ArrowUp, ArrowRight, Lock, FileText, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, Paperclip, X, Check, Copy, Eye, Code2 } from "lucide-react";
+import { ArrowUp, ArrowRight, Lock, RefreshCw, AlertTriangle, FileText, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, Paperclip, X, Check, Copy, Eye, Code2 } from "lucide-react";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre, MODEL } from "./useCadre";
 import { planningTurn, type ChatMessage, type Attachment } from "../lib/planning/planningChat";
+import { PM_SYSTEM_PROMPT, ARCHITECT_SYSTEM_PROMPT, DESIGN_SYSTEM_PROMPT, PO_SYSTEM_PROMPT } from "../lib/planning/personas";
 
 /** Read a pasted/dropped File as text. */
 function readFileText(file: File): Promise<string> {
@@ -32,38 +33,6 @@ function wordCount(text: string): number {
 }
 
 type PersonaId = "pm" | "architect" | "design" | "po";
-
-const PM_SYSTEM_PROMPT = `You are a sharp, pragmatic Product Manager (PM) helping the user turn an idea into a clear, complete PRD.
-
-Converse to draw out: goals, target users, core requirements, scope, and constraints. Ask focused questions one or two at a time. Keep replies concise and concrete. Never invent facts — ask when unsure. Refer to yourself as "the PM", not by a personal name.
-
-Whenever the PRD should change, call the write_document tool with the FULL current PRD in Markdown, using these sections: ## Goals, ## Target Users, ## Requirements, ## Epics, ## Out of Scope. Keep it updated as the conversation progresses.
-
-You are also the ORCHESTRATOR of the planning team: the user reaches the Architect, Designer, and PO ONLY through you. When the requirements are captured in the PRD and the user is ready to move on, hand off with the handoff tool (role "architect" to design the build; "design" for UX; "po" to validate the plan). Do not hand off before the requirements are solid. Any NEW requirement or added scope comes back to you first — amend the PRD, then hand off again as needed.`;
-
-const ARCHITECT_SYSTEM_PROMPT = `You are a pragmatic System Architect. Given the PRD, design the technical architecture the team will build against.
-
-Converse to resolve: the stack, key components and their boundaries, the data model, external integrations, and the testing/verification strategy. Ask focused questions one or two at a time. Keep replies concise and concrete. Refer to yourself as "the Architect", not by a personal name.
-
-Whenever the architecture should change, call the write_document tool with the FULL current architecture in Markdown, using sections like: ## Tech Stack, ## Components, ## Data Model, ## Integrations, ## Testing Strategy.
-
-Once the testing/verification strategy is clear, call the suggest_verification tool with the single shell command Cadre should run to verify each story (e.g. "npm test", "pnpm test", "cargo test") — so the product owner can just confirm it at approval instead of needing to know it.`;
-
-const DESIGN_SYSTEM_PROMPT = `You are a pragmatic UX/UI Designer. Given the PRD, design the product's interface and user experience.
-
-Converse to resolve: primary user flows, information architecture, the screen/component inventory, key states (empty, loading, error), and the visual + interaction language. Ask focused questions one or two at a time. Keep replies concise. Refer to yourself as "the Designer".
-
-You have two tools:
-- write_document: the FULL UX spec in Markdown (## User Flows, ## Information Architecture, ## Component Inventory, ## Screen States, ## Visual & Interaction Guidelines).
-- write_mockup: a self-contained HTML mockup of the key screen(s) — inline CSS only, NO external resources, fonts, or scripts. Make it look polished and realistic.
-
-Keep BOTH the spec and the mockup current as the design evolves so the user can see it.`;
-
-const PO_SYSTEM_PROMPT = `You are a pragmatic Product Owner (PO). Validate the plan against the goals before the fleet builds it — this is a sign-off gate, written for a product owner who may not read code.
-
-Read the PRD (and the architecture/UX spec if present) and check the epics/stories for: coverage of the goals, correct scope (no gold-plating, nothing missing), testable acceptance criteria, and sensible sequencing. Converse to surface gaps, scope creep, and risks. Ask focused questions. Refer to yourself as "the PO".
-
-Whenever your assessment changes, call write_document with the FULL validation report in Markdown, using: ## Verdict (Ready to build / Needs work), ## Coverage vs goals, ## Gaps & risks, ## Recommended changes, ## Sign-off checklist. Be concrete and honest — flag real problems.`;
 
 const PERSONAS: Record<
   PersonaId,
@@ -129,6 +98,9 @@ export function PlanningStudio() {
   const setMockupHtml = useCadre((s) => s.setMockupHtml);
   const setPoValidation = useCadre((s) => s.setPoValidation);
   const approvePlan = useCadre((s) => s.approvePlan);
+  const cascadeReplan = useCadre((s) => s.cascadeReplan);
+  const needsReplan = useCadre((s) => s.needsReplan);
+  const verification = useCadre((s) => s.verification);
   const busy = useCadre((s) => s.busy);
   const error = useCadre((s) => s.error);
 
@@ -661,7 +633,68 @@ export function PlanningStudio() {
           {error}
         </div>
       )}
-      {canApprove ? (
+      {needsReplan ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--c-space-3)",
+            padding: "9px var(--c-space-4)",
+            background: "var(--c-warning-subtle)",
+            borderTop: "1px solid var(--c-border)",
+            flexShrink: 0,
+          }}
+        >
+          <AlertTriangle size={15} strokeWidth={2} style={{ color: "var(--c-warning)", flexShrink: 0 }} />
+          <span style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text-secondary)" }}>
+            Scope changed since approval — apply it downstream, then re-approve.
+          </span>
+          <div style={{ flex: 1 }} />
+          <button
+            onClick={() => cascadeReplan()}
+            disabled={!!busy}
+            title="Re-run the Architect (and Designer) and shard a story for the new scope"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              fontSize: "var(--c-fs-sm)",
+              fontWeight: 550 as const,
+              padding: "5px 12px",
+              borderRadius: "var(--c-radius)",
+              background: busy ? "var(--c-surface-3)" : "var(--c-surface-2)",
+              color: busy ? "var(--c-text-muted)" : "var(--c-text)",
+              border: "1px solid var(--c-border-strong)",
+              cursor: busy ? "default" : "pointer",
+              flexShrink: 0,
+            }}
+          >
+            <RefreshCw size={13} strokeWidth={2} />
+            {busy ?? "Apply changes"}
+          </button>
+          <button
+            onClick={() => approvePlan(verification.length ? verification : [verifyCmd])}
+            disabled={!!busy}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              fontSize: "var(--c-fs-sm)",
+              fontWeight: 550 as const,
+              padding: "5px 12px",
+              borderRadius: "var(--c-radius)",
+              background: busy ? "var(--c-surface-3)" : "var(--c-success)",
+              color: busy ? "var(--c-text-muted)" : "var(--c-on-accent)",
+              border: "none",
+              cursor: busy ? "default" : "pointer",
+              flexShrink: 0,
+            }}
+          >
+            <ShieldCheck size={13} strokeWidth={2} />
+            Re-approve
+          </button>
+        </div>
+      ) : canApprove ? (
         <div
           style={{
             display: "flex",
