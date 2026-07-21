@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { marked } from "marked";
-import { Circle, Plus, Play, Cpu } from "lucide-react";
+import { Circle, Plus, Play, Cpu, MessageSquarePlus } from "lucide-react";
 import { FleetBoard } from "./components/FleetBoard";
 import { useBmadStore } from "../stores/bmadStore";
 import { useCadre } from "./useCadre";
@@ -31,6 +31,7 @@ export function FleetView() {
   const stories = useBmadStore((s) => s.stories);
   const projectRoot = useBmadStore((s) => s.projectRoot);
   const shardNextStory = useCadre((s) => s.shardNextStory);
+  const setPhase = useCadre((s) => s.setPhase);
   const busy = useCadre((s) => s.busy);
   const error = useCadre((s) => s.error);
 
@@ -78,6 +79,28 @@ export function FleetView() {
           {busy ?? error ?? (preview ? "Preview — open a project to run the fleet." : `${stories.length} stor${stories.length === 1 ? "y" : "ies"}`)}
         </span>
         <div style={{ flex: 1 }} />
+        {!preview && (
+          <button
+            onClick={() => setPhase("PLAN")}
+            title="Add a requirement or change scope — routes back to the PM to amend the plan"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              fontSize: "var(--c-fs-sm)",
+              fontWeight: 550 as const,
+              padding: "5px 11px",
+              borderRadius: "var(--c-radius)",
+              background: "transparent",
+              color: "var(--c-text-secondary)",
+              border: "1px solid var(--c-border-strong)",
+              cursor: "pointer",
+            }}
+          >
+            <MessageSquarePlus size={14} strokeWidth={2} />
+            New requirement
+          </button>
+        )}
         {!preview && <FleetModelPicker />}
       </div>
 
