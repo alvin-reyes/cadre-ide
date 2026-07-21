@@ -37,7 +37,9 @@ const PM_SYSTEM_PROMPT = `You are a sharp, pragmatic Product Manager (PM) helpin
 
 Converse to draw out: goals, target users, core requirements, scope, and constraints. Ask focused questions one or two at a time. Keep replies concise and concrete. Never invent facts — ask when unsure. Refer to yourself as "the PM", not by a personal name.
 
-Whenever the PRD should change, call the write_document tool with the FULL current PRD in Markdown, using these sections: ## Goals, ## Target Users, ## Requirements, ## Epics, ## Out of Scope. Keep it updated as the conversation progresses.`;
+Whenever the PRD should change, call the write_document tool with the FULL current PRD in Markdown, using these sections: ## Goals, ## Target Users, ## Requirements, ## Epics, ## Out of Scope. Keep it updated as the conversation progresses.
+
+You are also the ORCHESTRATOR of the planning team: the user reaches the Architect, Designer, and PO ONLY through you. When the requirements are captured in the PRD and the user is ready to move on, hand off with the handoff tool (role "architect" to design the build; "design" for UX; "po" to validate the plan). Do not hand off before the requirements are solid. Any NEW requirement or added scope comes back to you first — amend the PRD, then hand off again as needed.`;
 
 const ARCHITECT_SYSTEM_PROMPT = `You are a pragmatic System Architect. Given the PRD, design the technical architecture the team will build against.
 
@@ -140,6 +142,8 @@ export function PlanningStudio() {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [designView, setDesignView] = useState<"spec" | "preview">("preview");
   const [verifySuggested, setVerifySuggested] = useState(false);
+  // Which roles the PM has brought in this session (the user reaches them only via the PM).
+  const [handedOff, setHandedOff] = useState<Record<PersonaId, boolean>>({ pm: true, architect: false, design: false, po: false });
 
   const docFor = (id: PersonaId) =>
     id === "pm" ? prd : id === "architect" ? architecture : id === "design" ? uxSpec : poValidation;
@@ -222,7 +226,13 @@ export function PlanningStudio() {
   }
 
   function systemPromptFor(id: PersonaId): string {
-    if (id === "pm") return PM_SYSTEM_PROMPT;
+    if (id === "pm") {
+      // On re-entry with an existing PRD, the PM amends scope in place — new
+      // requirements always flow through the PM (§5.1), not a loose story.
+      return prd.trim()
+        ? `${PM_SYSTEM_PROMPT}\n\n## Current PRD (amend this as new requirements or added scope arrive; always emit the FULL updated PRD via write_document)\n${prd}`
+        : PM_SYSTEM_PROMPT;
+    }
     if (id === "po") {
       // The PO validates against everything produced so far.
       let ctx = PO_SYSTEM_PROMPT;
@@ -268,11 +278,16 @@ export function PlanningStudio() {
         messages: base,
         allowMockup: active === "design",
         allowVerification: active === "architect",
+        allowHandoff: active === "pm",
         onText: (delta) => {
           acc += delta;
           setAssistant(acc);
         },
       });
+      // The PM authorizes the next role by handing off — it unlocks (user proceeds when ready).
+      if (active === "pm" && result.handoff) {
+        setHandedOff((h) => ({ ...h, [result.handoff as PersonaId]: true }));
+      }
       setAssistant((result.reply || acc).trim() || "(updated the document)");
       if (result.document) setDoc(result.document);
       if (result.mockup) {
@@ -295,17 +310,21 @@ export function PlanningStudio() {
   }
 
   const showDesignPreview = persona === "design" && designView === "preview";
-  // PM-first: the other roles are locked until the PM has produced the PRD.
   const prdReady = prd.trim().length > 0;
+  // A role is reachable only if the PM has handed off to it (or its doc already exists, e.g. on reload).
+  const isOpen = (id: PersonaId) => id === "pm" || handedOff[id] || docFor(id).trim().length > 0;
+  const architectOpen = isOpen("architect");
 
-  // Sequential next-step guidance (PM → Architect → approve).
+  // Next-step guidance — PM-mediated (the PM brings in the Architect).
   const guidance: { done: string | null; msg: string; to: PersonaId | null; cta: string } = !prdReady
     ? persona === "pm"
       ? { done: null, msg: "Start here — describe your idea and the PM will close down the requirements.", to: null, cta: "" }
-      : { done: null, msg: "Start with the PM to draft the PRD.", to: "pm", cta: "Go to PM" }
+      : { done: null, msg: "Everything starts with the PM.", to: "pm", cta: "Go to PM" }
     : persona === "architect"
       ? { done: "PRD ready", msg: "Now talk to the Architect to design the build.", to: null, cta: "" }
-      : { done: "PRD ready", msg: "Next: the Architect designs the build.", to: "architect", cta: "Go to Architect" };
+      : architectOpen
+        ? { done: "PRD ready", msg: "The PM brought in the Architect.", to: "architect", cta: "Go to Architect" }
+        : { done: "PRD ready", msg: "Ask the PM to bring in the Architect when the requirements are set.", to: null, cta: "" };
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
@@ -317,8 +336,8 @@ export function PlanningStudio() {
               const P = PERSONAS[id];
               const active = id === persona;
               const ready = docFor(id).trim().length > 0;
-              // PM is always open; the rest unlock once the PRD exists.
-              const locked = id !== "pm" && !prdReady;
+              // PM is always open; the rest unlock only when the PM hands off to them.
+              const locked = !isOpen(id);
               return (
                 <button
                   key={id}

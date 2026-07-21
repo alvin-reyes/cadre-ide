@@ -60,6 +60,25 @@ export const SUGGEST_VERIFICATION_TOOL = {
   },
 };
 
+/** The PM orchestrates: it brings in the Architect / Designer / PO. Users reach them only through the PM. */
+export const HANDOFF_TOOL = {
+  name: "handoff" as const,
+  description:
+    "Bring in the next role once the requirements are captured. The user reaches the Architect, Designer, and PO ONLY through you (the PM). Call this to hand off — e.g. to the Architect when the PRD is solid and the user is ready to design the build.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      role: {
+        type: "string" as const,
+        enum: ["architect", "design", "po"],
+        description: "which role to bring in",
+      },
+      note: { type: "string" as const, description: "one short line on what they should focus on" },
+    },
+    required: ["role"],
+  },
+};
+
 /** Any persona may offer short quick-reply suggestions so the user can answer with one click. */
 export const SUGGEST_REPLIES_TOOL = {
   name: "suggest_replies" as const,
@@ -102,6 +121,8 @@ export interface PlanningTurnResult {
   mockup?: string;
   /** present if the Architect proposed the verification command */
   verification?: string;
+  /** set when the PM hands off to the next role ("architect" | "design" | "po") */
+  handoff?: string;
   /** short quick-reply suggestions the user can tap instead of typing */
   suggestions?: string[];
 }
@@ -115,6 +136,8 @@ export async function planningTurn(opts: {
   allowMockup?: boolean;
   /** allow the persona to propose the verification command (Architect) */
   allowVerification?: boolean;
+  /** allow the persona to hand off to the next role (PM only) */
+  allowHandoff?: boolean;
   /** streamed assistant text deltas (Claude-style progressive rendering) */
   onText?: (delta: string) => void;
 }): Promise<PlanningTurnResult> {
@@ -127,6 +150,7 @@ export async function planningTurn(opts: {
     WRITE_DOCUMENT_TOOL,
     ...(opts.allowMockup ? [WRITE_MOCKUP_TOOL] : []),
     ...(opts.allowVerification ? [SUGGEST_VERIFICATION_TOOL] : []),
+    ...(opts.allowHandoff ? [HANDOFF_TOOL] : []),
     SUGGEST_REPLIES_TOOL,
   ] as Anthropic.Tool[];
 
@@ -147,6 +171,7 @@ export async function planningTurn(opts: {
   let document: string | undefined;
   let mockup: string | undefined;
   let verification: string | undefined;
+  let handoff: string | undefined;
   let suggestions: string[] | undefined;
   for (const block of response.content) {
     if (block.type === "text") {
@@ -160,6 +185,9 @@ export async function planningTurn(opts: {
     } else if (block.type === "tool_use" && block.name === "suggest_verification") {
       const input = block.input as { command?: string };
       if (typeof input.command === "string" && input.command.trim()) verification = input.command.trim();
+    } else if (block.type === "tool_use" && block.name === "handoff") {
+      const input = block.input as { role?: string };
+      if (input.role === "architect" || input.role === "design" || input.role === "po") handoff = input.role;
     } else if (block.type === "tool_use" && block.name === "suggest_replies") {
       const input = block.input as { replies?: unknown };
       if (Array.isArray(input.replies)) {
@@ -168,7 +196,7 @@ export async function planningTurn(opts: {
     }
   }
 
-  return { reply: reply.trim(), document, mockup, verification, suggestions };
+  return { reply: reply.trim(), document, mockup, verification, handoff, suggestions };
 }
 
 /** Force a single tool call (used by the SM's create_story). Returns the tool input. */
