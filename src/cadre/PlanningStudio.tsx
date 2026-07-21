@@ -3,6 +3,7 @@ import { marked } from "marked";
 import { ArrowUp, ArrowRight, Lock, RefreshCw, AlertTriangle, FileText, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, Paperclip, X, Check, Copy, Eye, Code2 } from "lucide-react";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre, MODEL } from "./useCadre";
+import { Markdown } from "./components/Markdown";
 import { planningTurn, type ChatMessage, type Attachment } from "../lib/planning/planningChat";
 import { PM_SYSTEM_PROMPT, ARCHITECT_SYSTEM_PROMPT, DESIGN_SYSTEM_PROMPT, PO_SYSTEM_PROMPT } from "../lib/planning/personas";
 
@@ -595,11 +596,7 @@ export function PlanningStudio() {
             )
           ) : doc ? (
             <div style={{ flex: 1, overflow: "auto", padding: "var(--c-space-5)" }}>
-              <div
-                className="cadre-doc"
-                style={{ color: "var(--c-text-secondary)" }}
-                dangerouslySetInnerHTML={{ __html: marked.parse(doc) as string }}
-              />
+              <Markdown className="cadre-doc" content={doc} />
             </div>
           ) : thinking ? (
             <DocDrafting label={meta.label} file={meta.file} verb="drafting" />

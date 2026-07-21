@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
-import { marked } from "marked";
 import { Circle, Plus, Play, Cpu, MessageSquarePlus, AlertTriangle, RefreshCw, ShieldCheck } from "lucide-react";
 import { FleetBoard } from "./components/FleetBoard";
+import { Markdown } from "./components/Markdown";
 import { useBmadStore } from "../stores/bmadStore";
 import { useCadre } from "./useCadre";
 import { PROVIDERS, getProvider } from "../lib/engine/providers";
@@ -416,11 +416,7 @@ function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
         <LiveTerminal log={log} empty="No agent output yet — Dispatch to run the story." />
       ) : markdown ? (
         <div style={{ flex: 1, overflow: "auto", padding: "var(--c-space-5)" }}>
-          <div
-            className="cadre-doc"
-            style={{ color: "var(--c-text-secondary)" }}
-            dangerouslySetInnerHTML={{ __html: marked.parse(markdown) as string }}
-          />
+          <Markdown className="cadre-doc" content={markdown} />
         </div>
       ) : (
         <div

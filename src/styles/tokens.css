@@ -216,6 +216,22 @@
   font-size: var(--c-fs-chat);
   line-height: 1.7;
 }
+
+/* Rendered Mermaid diagrams (the documentation standard, §3.11). */
+.cadre-mermaid {
+  display: flex;
+  justify-content: center;
+  margin: 1.2em 0;
+  padding: var(--c-space-4);
+  background: #14100c;
+  border: 1px solid var(--c-border);
+  border-radius: var(--c-radius);
+  overflow: auto;
+}
+.cadre-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
 .cadre-doc > :first-child,
 .cadre-md > :first-child {
   margin-top: 0;
