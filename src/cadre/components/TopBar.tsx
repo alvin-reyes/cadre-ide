@@ -1,31 +1,13 @@
-import type { CSSProperties } from "react";
-import { Hexagon, Settings, Bell } from "lucide-react";
+import { Hexagon } from "lucide-react";
 import { PhaseStepper, type Phase } from "./PhaseStepper";
 
-const iconBtn: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: 28,
-  height: 28,
-  borderRadius: "var(--c-radius-sm)",
-  background: "transparent",
-  border: "1px solid transparent",
-  color: "var(--c-text-secondary)",
-  cursor: "pointer",
-};
-
-/** The Cockpit top bar: wordmark, phase stepper, and right-side controls. */
+/** The Cockpit top bar: wordmark + phase stepper. */
 export function TopBar({
   phase,
-  needsYou = 0,
   onNavigate,
-  onOpenNeeds,
 }: {
   phase: Phase;
-  needsYou?: number;
   onNavigate?: (phase: Phase) => void;
-  onOpenNeeds?: () => void;
 }) {
   return (
     <div
@@ -49,28 +31,6 @@ export function TopBar({
       <PhaseStepper current={phase} onNavigate={onNavigate} />
 
       <div style={{ flex: 1 }} />
-
-      {needsYou > 0 && (
-        <button
-          onClick={onOpenNeeds}
-          style={{
-            ...iconBtn,
-            width: "auto",
-            gap: 5,
-            padding: "0 10px",
-            background: "var(--c-danger-subtle)",
-            color: "var(--c-danger)",
-            fontSize: "var(--c-fs-sm)",
-            fontWeight: 550 as const,
-          }}
-        >
-          <Bell size={13} strokeWidth={2} />
-          Needs you ({needsYou})
-        </button>
-      )}
-      <button style={iconBtn} title="Settings">
-        <Settings size={15} strokeWidth={2} />
-      </button>
     </div>
   );
 }

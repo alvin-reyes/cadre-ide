@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { marked } from "marked";
-import { Terminal, FolderTree, FileCode2, Eye, Database, Circle, Plus, Play } from "lucide-react";
+import { Circle, Plus, Play } from "lucide-react";
 import { FleetBoard } from "./components/FleetBoard";
 import { useBmadStore } from "../stores/bmadStore";
 import { useCadre } from "./useCadre";
@@ -89,7 +89,6 @@ export function FleetView() {
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
           {selected ? <AgentPane card={selected} preview={preview} /> : <EmptyAgent />}
         </div>
-        <Dock />
       </div>
     </div>
   );
@@ -257,51 +256,6 @@ function EmptyAgent() {
       }}
     >
       Select a story to watch its agent.
-    </div>
-  );
-}
-
-function Dock() {
-  const items = [
-    { icon: Terminal, label: "Terminal" },
-    { icon: FolderTree, label: "Files" },
-    { icon: FileCode2, label: "Code" },
-    { icon: Eye, label: "Preview" },
-    { icon: Database, label: "Database" },
-  ];
-  return (
-    <div
-      style={{
-        width: 46,
-        borderLeft: "1px solid var(--c-border)",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 8,
-        padding: "var(--c-space-3) 0",
-        flexShrink: 0,
-      }}
-    >
-      {items.map(({ icon: Icon, label }) => (
-        <button
-          key={label}
-          title={label}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: 30,
-            height: 30,
-            borderRadius: "var(--c-radius-sm)",
-            background: "var(--c-surface-2)",
-            border: "1px solid var(--c-border)",
-            color: "var(--c-text-secondary)",
-            cursor: "pointer",
-          }}
-        >
-          <Icon size={15} strokeWidth={2} />
-        </button>
-      ))}
     </div>
   );
 }

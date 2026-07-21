@@ -2,7 +2,6 @@ import { useState } from "react";
 import { TopBar } from "./components/TopBar";
 import { PlanningStudio } from "./PlanningStudio";
 import { FleetView } from "./FleetView";
-import { EscalationInbox } from "./EscalationInbox";
 import { Welcome } from "./Welcome";
 import { useBmadStore } from "../stores/bmadStore";
 import { useCadre } from "./useCadre";
@@ -11,7 +10,6 @@ import { useCadre } from "./useCadre";
 export function CadreApp() {
   const phase = useCadre((s) => s.phase);
   const setPhase = useCadre((s) => s.setPhase);
-  const [inboxOpen, setInboxOpen] = useState(false);
   const [preview, setPreview] = useState(false);
   const projectRoot = useBmadStore((s) => s.projectRoot);
 
@@ -24,16 +22,10 @@ export function CadreApp() {
       className="cadre-ui"
       style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}
     >
-      <TopBar
-        phase={phase}
-        needsYou={3}
-        onNavigate={setPhase}
-        onOpenNeeds={() => setInboxOpen(true)}
-      />
+      <TopBar phase={phase} onNavigate={setPhase} />
       <div style={{ flex: 1, minHeight: 0 }}>
         {phase === "PLAN" ? <PlanningStudio /> : <FleetView />}
       </div>
-      {inboxOpen && <EscalationInbox onClose={() => setInboxOpen(false)} />}
     </div>
   );
 }
