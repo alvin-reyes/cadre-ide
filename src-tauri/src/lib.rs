@@ -1,6 +1,7 @@
 #[allow(dead_code)] // wired to Tauri commands with the reconciler (Plan 3)
 mod cadre_state;
 mod pty;
+mod secrets;
 mod verify;
 mod watcher;
 
@@ -345,6 +346,10 @@ pub fn run() {
             pty::kill_pty,
             pty::get_pty_cwd,
             verify::run_verification,
+            secrets::secret_set,
+            secrets::secret_get,
+            secrets::secret_has,
+            secrets::secret_delete,
             watcher::watch_directory,
             watcher::unwatch_directory,
             check_command_exists,
