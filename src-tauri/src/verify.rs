@@ -40,8 +40,17 @@ pub fn run_command(cwd: &str, cmd: &str, timeout_secs: u64) -> Result<Verificati
         .spawn()
         .map_err(|e| format!("failed to spawn `{}` in {}: {}", cmd, cwd, e))?;
 
-    // Drain the pipes on background threads so a chatty command can't deadlock by
-    // filling the pipe buffer while we poll for completion.
+    run_child(child, timeout_secs)
+}
+
+/// Drive a spawned child to completion, draining stdout/stderr on background
+/// threads (so a chatty command can't pipe-buffer-deadlock) with a wall-clock
+/// `timeout_secs`. On timeout the whole process group is killed (unix) so worker
+/// subprocesses die too. The child must be piped and (unix) a group leader.
+fn run_child(
+    mut child: std::process::Child,
+    timeout_secs: u64,
+) -> Result<VerificationResult, String> {
     let mut out_pipe = child.stdout.take().ok_or("no stdout pipe")?;
     let mut err_pipe = child.stderr.take().ok_or("no stderr pipe")?;
     let out_handle = thread::spawn(move || {
@@ -62,9 +71,6 @@ pub fn run_command(cwd: &str, cmd: &str, timeout_secs: u64) -> Result<Verificati
             break status;
         }
         if Instant::now() >= deadline {
-            // Kill the whole process group (child + its subprocesses), not just
-            // the shell — otherwise workers hold the pipe and we block until they
-            // finish. process_group(0) made the child the group leader (pgid=pid).
             #[cfg(unix)]
             unsafe {
                 libc::killpg(child.id() as i32, libc::SIGKILL);
@@ -104,17 +110,20 @@ pub fn run_verification(
 /// engine for worktree/branch operations (§6.2).
 #[tauri::command]
 pub fn run_git(cwd: String, args: Vec<String>) -> Result<VerificationResult, String> {
-    let out = Command::new("git")
+    let mut command = Command::new("git");
+    command
         .args(&args)
         .current_dir(&cwd)
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(unix)]
+    command.process_group(0);
+    let child = command
+        .spawn()
         .map_err(|e| format!("git {:?} failed in {}: {}", args, cwd, e))?;
-    Ok(VerificationResult {
-        exit_code: out.status.code(),
-        stdout: String::from_utf8_lossy(&out.stdout).to_string(),
-        stderr: String::from_utf8_lossy(&out.stderr).to_string(),
-        timed_out: false,
-    })
+    // Local git ops are fast; a 120s bound stops a hook or credential prompt
+    // from hanging the dispatch forever.
+    run_child(child, 120)
 }
 
 #[cfg(test)]
