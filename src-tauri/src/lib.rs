@@ -338,7 +338,11 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(pty::PtyManager::new())
         .manage(watcher::WatcherManager::new())
+        .manage(cadre_state::CadreEngine::new())
         .invoke_handler(tauri::generate_handler![
+            cadre_state::open_project,
+            cadre_state::story_set_status,
+            cadre_state::story_get_status,
             pty::create_pty,
             pty::write_pty,
             pty::resize_pty,

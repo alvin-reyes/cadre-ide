@@ -108,6 +108,51 @@ impl CadreState {
     }
 }
 
+/// Managed engine state: holds the `CadreState` for the currently-open project.
+/// `None` until a project is opened.
+pub struct CadreEngine {
+    state: Mutex<Option<CadreState>>,
+}
+
+impl CadreEngine {
+    pub fn new() -> Self {
+        Self {
+            state: Mutex::new(None),
+        }
+    }
+}
+
+// --- Tauri commands ---
+
+#[tauri::command]
+pub fn open_project(engine: tauri::State<'_, CadreEngine>, root: String) -> Result<(), String> {
+    *engine.state.lock().unwrap() = Some(CadreState::new(root));
+    Ok(())
+}
+
+#[tauri::command]
+pub fn story_set_status(
+    engine: tauri::State<'_, CadreEngine>,
+    epic: u32,
+    story: u32,
+    status: Status,
+) -> Result<(), String> {
+    let guard = engine.state.lock().unwrap();
+    let state = guard.as_ref().ok_or("no project open")?;
+    state.set_status(epic, story, status)
+}
+
+#[tauri::command]
+pub fn story_get_status(
+    engine: tauri::State<'_, CadreEngine>,
+    epic: u32,
+    story: u32,
+) -> Result<Option<StoryState>, String> {
+    let guard = engine.state.lock().unwrap();
+    let state = guard.as_ref().ok_or("no project open")?;
+    state.get_status(epic, story)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
