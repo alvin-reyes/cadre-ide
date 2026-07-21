@@ -47,10 +47,22 @@ that proves the thesis end-to-end on one story, then grow it in tight stages (§
 ## 2. Target user & guiding principles
 
 ### The user
-A **technical architect / product owner who is also a hands-on engineer** — CLI-first, operating *above*
-the code but dropping *into* it when needed. Full-stack across the lifecycle. v0/v1 are **single-player
-and local**. **Mobile full-control access and project sharing** (own devices + teammates) are a defined
-**later pillar** on an engine seam reserved in v0 — see §3.7.
+A spectrum of **people who own product outcomes**, not just people who write code:
+
+- **The architect-engineer** — CLI-first, operating *above* the code but dropping *into* it when needed.
+  Full-stack across the lifecycle. The power user.
+- **The product manager / product owner** — plans, prioritizes, and oversees delivery, and may *not* be
+  hands-on in the code at all. They live in the **Planning Studio** (talk out the PRD, UX, and plan) and
+  the **Fleet board** (watch outcomes land), and rarely need the terminal.
+
+**Why the PO is a first-class user, not a bolt-on:** Cadre's thesis — *the engine verifies; the worker
+never self-reports Done* — is precisely what a product owner needs. It lets them **trust that a story is
+actually finished (tests green) without reading the diff or being the engineer who checks**. *Verified,
+not vibed* is a PO value proposition as much as an engineering one. This also motivates the **human fleet**
+(§3.10): a PO can hand a story to a teammate *or* an agent and hold both to the same gate.
+
+v0/v1 are **single-player and local**. **Mobile full-control access and project sharing** (own devices +
+teammates) are a defined **later pillar** on an engine seam reserved in v0 — see §3.7.
 
 ### Second audience: the academy (learners)
 cadre is intended to be productized as part of the author's academy. Enforcement, however, **is not
