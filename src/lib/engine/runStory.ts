@@ -58,7 +58,16 @@ export async function runStory(
 
   const exit = await deps.waitForExit(dispatch.ptyId);
 
-  // The agent stopped (whatever it claims). The engine now verifies.
+  // If the agent crashed, was killed, or exited non-zero, it did not finish the
+  // work — verifying now would run against stale/HEAD code and give a misleading
+  // result. Go straight to Failed (InProgress → Failed is a legal edge) and skip
+  // verification. Only a clean exit 0 proceeds to the QA gate.
+  if (exit.exitCode !== 0) {
+    await deps.setStatus(input.epic, input.story, "Failed");
+    return { status: "Failed", dispatch, agentExitCode: exit.exitCode };
+  }
+
+  // The agent finished cleanly (whatever it claims). The engine now verifies.
   await deps.setStatus(input.epic, input.story, "InReview");
 
   const verify = await verifyStory(

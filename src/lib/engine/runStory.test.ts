@@ -66,4 +66,21 @@ describe("runStory", () => {
     await runStory(deps, input);
     expect(events.indexOf("verify")).toBeGreaterThan(events.indexOf("wait:7"));
   });
+
+  it("fails without verifying when the agent exits non-zero (crash)", async () => {
+    const { deps, statuses, events } = makeDeps({ agentExit: 1, verifyExit: 0 });
+    const r = await runStory(deps, input);
+    expect(r.status).toBe("Failed");
+    expect(r.agentExitCode).toBe(1);
+    expect(statuses).toEqual(["InProgress", "Failed"]); // no InReview
+    expect(events).not.toContain("verify"); // stale code is never verified
+  });
+
+  it("fails without verifying when the agent was killed (null exit)", async () => {
+    const { deps, statuses, events } = makeDeps({ agentExit: null, verifyExit: 0 });
+    const r = await runStory(deps, input);
+    expect(r.status).toBe("Failed");
+    expect(statuses).toEqual(["InProgress", "Failed"]);
+    expect(events).not.toContain("verify");
+  });
 });
