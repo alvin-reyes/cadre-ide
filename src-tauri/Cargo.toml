@@ -26,3 +26,6 @@ tauri-plugin-clipboard-manager = "2.3.2"
 # OS keychain for the SecretsStore (§3.6). apple-native = macOS Keychain.
 # Add windows-native / sync-secret-service when building for those targets.
 keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

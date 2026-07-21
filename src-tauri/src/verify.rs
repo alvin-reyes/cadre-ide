@@ -2,6 +2,8 @@ use std::io::Read;
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 
 /// Result of running a story's verification command.
 ///
@@ -22,12 +24,19 @@ pub struct VerificationResult {
 ///
 /// Pure of Tauri so it is unit-testable in isolation.
 pub fn run_command(cwd: &str, cmd: &str, timeout_secs: u64) -> Result<VerificationResult, String> {
-    let mut child = Command::new("sh")
+    let mut command = Command::new("sh");
+    command
         .arg("-c")
         .arg(cmd)
         .current_dir(cwd)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    // Put the child in its own process group so a timeout can kill the WHOLE
+    // tree — test runners (jest/vitest/forge) spawn worker subprocesses that
+    // otherwise keep the stdout pipe open and hang us for the full runtime.
+    #[cfg(unix)]
+    command.process_group(0);
+    let mut child = command
         .spawn()
         .map_err(|e| format!("failed to spawn `{}` in {}: {}", cmd, cwd, e))?;
 
@@ -53,6 +62,14 @@ pub fn run_command(cwd: &str, cmd: &str, timeout_secs: u64) -> Result<Verificati
             break status;
         }
         if Instant::now() >= deadline {
+            // Kill the whole process group (child + its subprocesses), not just
+            // the shell — otherwise workers hold the pipe and we block until they
+            // finish. process_group(0) made the child the group leader (pgid=pid).
+            #[cfg(unix)]
+            unsafe {
+                libc::killpg(child.id() as i32, libc::SIGKILL);
+            }
+            #[cfg(not(unix))]
             let _ = child.kill();
             let status = child.wait().map_err(|e| e.to_string())?;
             timed_out = true;
@@ -136,5 +153,22 @@ mod tests {
         let r = run_command(".", "sleep 5", 1).unwrap();
         assert!(r.timed_out);
         assert_ne!(r.exit_code, Some(0));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn timeout_kills_subprocesses_not_just_the_shell() {
+        // A pipeline whose downstream process holds the stdout pipe open. Without
+        // process-group kill, killing only `sh` leaves the pipeline alive and we
+        // block for the full 10s despite the 1s timeout.
+        let start = std::time::Instant::now();
+        let r = run_command(".", "sleep 10 | cat", 1).unwrap();
+        let elapsed = start.elapsed();
+        assert!(r.timed_out);
+        assert!(
+            elapsed < std::time::Duration::from_secs(4),
+            "timeout did not bound wall-clock: took {:?}",
+            elapsed
+        );
     }
 }
