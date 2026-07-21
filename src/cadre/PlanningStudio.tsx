@@ -6,9 +6,9 @@ import { planningTurn, type ChatMessage } from "../lib/planning/planningChat";
 
 const MODEL = "claude-sonnet-4-6";
 
-const PM_SYSTEM_PROMPT = `You are John, a sharp, pragmatic Product Manager helping the user turn an idea into a clear, complete PRD.
+const PM_SYSTEM_PROMPT = `You are a sharp, pragmatic Product Manager (PM) helping the user turn an idea into a clear, complete PRD.
 
-Converse to draw out: goals, target users, core requirements, scope, and constraints. Ask focused questions one or two at a time. Keep replies concise and concrete. Never invent facts — ask when unsure.
+Converse to draw out: goals, target users, core requirements, scope, and constraints. Ask focused questions one or two at a time. Keep replies concise and concrete. Never invent facts — ask when unsure. Refer to yourself as "the PM", not by a personal name.
 
 Whenever the PRD should change, call the write_document tool with the FULL current PRD in Markdown, using these sections: ## Goals, ## Target Users, ## Requirements, ## Epics, ## Out of Scope. Keep it updated as the conversation progresses.`;
 
@@ -77,7 +77,7 @@ export function PlanningStudio() {
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
           <div style={paneHead}>
             <span style={personaBadge}>
-              <PencilRuler size={13} strokeWidth={2} /> PM · John
+              <PencilRuler size={13} strokeWidth={2} /> PM
             </span>
             <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)" }}>
               Product Manager · shaping your PRD
@@ -123,8 +123,8 @@ export function PlanningStudio() {
             {messages.length === 0 ? (
               <div style={{ margin: "auto 0" }}>
                 <p style={{ fontSize: "var(--c-fs-md)", lineHeight: 1.6, color: "var(--c-text-secondary)", maxWidth: 380 }}>
-                  Hi — I'm <b style={{ color: "var(--c-text)" }}>John</b>, your PM. Tell me what
-                  you want to build and I'll turn it into a real PRD.
+                  I'm your <b style={{ color: "var(--c-text)" }}>PM</b>. Tell me what you want to
+                  build and I'll turn it into a real PRD.
                 </p>
                 <div style={{ fontSize: "var(--c-fs-xl)", fontWeight: 600 as const, marginTop: "var(--c-space-4)" }}>
                   What do you want to build?
@@ -135,7 +135,7 @@ export function PlanningStudio() {
                 {messages.map((m, i) => (
                   <Bubble key={i} role={m.role} content={m.content} />
                 ))}
-                {busy && <div style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text-muted)" }}>John is thinking…</div>}
+                {busy && <div style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text-muted)" }}>The PM is thinking…</div>}
               </div>
             )}
           </div>
@@ -210,7 +210,7 @@ export function PlanningStudio() {
               />
             ) : (
               <div style={{ color: "var(--c-text-faint)", fontSize: "var(--c-fs-sm)", textAlign: "center", marginTop: "var(--c-space-6)" }}>
-                Your PRD appears here, section by section, as you and John talk it through.
+                Your PRD appears here, section by section, as you and the PM talk it through.
               </div>
             )}
           </div>
