@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, type CSSProperties, type ClipboardEvent, type KeyboardEvent } from "react";
 import { marked } from "marked";
-import { Lock, ArrowUp, FileText, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, Paperclip, X, Check, Copy, Eye, Code2 } from "lucide-react";
+import { ArrowUp, ArrowRight, FileText, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, Paperclip, X, Check, Copy, Eye, Code2 } from "lucide-react";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre, MODEL } from "./useCadre";
 import { planningTurn, type ChatMessage, type Attachment } from "../lib/planning/planningChat";
@@ -295,6 +295,15 @@ export function PlanningStudio() {
   }
 
   const showDesignPreview = persona === "design" && designView === "preview";
+
+  // Next-step guidance for the bottom bar (until the plan is approvable).
+  const guidance: { done: string | null; msg: string; to: PersonaId | null; cta: string } = !prd
+    ? persona === "pm"
+      ? { done: null, msg: "Describe your idea — the PM will draft the PRD.", to: null, cta: "" }
+      : { done: null, msg: "Start with the PM to draft the PRD.", to: "pm", cta: "Go to PM" }
+    : persona === "architect"
+      ? { done: "PRD ready", msg: "Now talk to the Architect to design the build.", to: null, cta: "" }
+      : { done: "PRD ready", msg: "Next: the Architect designs the build.", to: "architect", cta: "Go to Architect" };
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
@@ -698,18 +707,59 @@ export function PlanningStudio() {
           style={{
             display: "flex",
             alignItems: "center",
-            justifyContent: "center",
             gap: "var(--c-space-2)",
-            padding: "9px",
-            background: "var(--c-danger-subtle)",
+            padding: "9px var(--c-space-4)",
+            background: "var(--c-surface-1)",
             borderTop: "1px solid var(--c-border)",
-            color: "var(--c-danger)",
             fontSize: "var(--c-fs-sm)",
             flexShrink: 0,
           }}
         >
-          <Lock size={12} strokeWidth={2} />
-          Fleet locked — draft a PRD (PM) and an architecture (Architect) to unlock dispatch. Design is optional.
+          <ArrowRight size={14} strokeWidth={2.5} style={{ color: "var(--c-accent)", flexShrink: 0 }} />
+          {guidance.done && (
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: "var(--c-fs-xs)",
+                fontWeight: 550 as const,
+                color: "var(--c-success)",
+                background: "var(--c-success-subtle)",
+                border: "1px solid var(--c-border)",
+                borderRadius: "var(--c-radius-full)",
+                padding: "2px 9px",
+                flexShrink: 0,
+              }}
+            >
+              <Check size={11} strokeWidth={3} /> {guidance.done}
+            </span>
+          )}
+          <span style={{ color: "var(--c-text-secondary)" }}>{guidance.msg}</span>
+          <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-faint)" }}>· Design &amp; PO optional</span>
+          <div style={{ flex: 1 }} />
+          {guidance.to && (
+            <button
+              onClick={() => setPersona(guidance.to as PersonaId)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                fontSize: "var(--c-fs-sm)",
+                fontWeight: 550 as const,
+                padding: "5px 12px",
+                borderRadius: "var(--c-radius)",
+                background: "var(--c-accent)",
+                color: "var(--c-on-accent)",
+                border: "none",
+                cursor: "pointer",
+                flexShrink: 0,
+              }}
+            >
+              {guidance.cta}
+              <ArrowRight size={13} strokeWidth={2.5} />
+            </button>
+          )}
         </div>
       )}
     </div>
