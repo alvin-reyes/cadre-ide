@@ -4,11 +4,19 @@ import type { Phase } from "./components/PhaseStepper";
 import { PlanningStudio } from "./PlanningStudio";
 import { FleetView } from "./FleetView";
 import { EscalationInbox } from "./EscalationInbox";
+import { Welcome } from "./Welcome";
+import { useBmadStore } from "../stores/bmadStore";
 
 /** The Cadre Cockpit shell. Phase-driven main area (§4.3). */
 export function CadreApp() {
   const [phase, setPhase] = useState<Phase>("PLAN");
   const [inboxOpen, setInboxOpen] = useState(false);
+  const [preview, setPreview] = useState(false);
+  const projectRoot = useBmadStore((s) => s.projectRoot);
+
+  if (!projectRoot && !preview) {
+    return <Welcome onPreview={() => setPreview(true)} />;
+  }
 
   return (
     <div
