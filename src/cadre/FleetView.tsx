@@ -200,7 +200,7 @@ function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
         <div
           style={{
             flex: 1,
-            background: "#0a0a0f",
+            background: "#14100c",
             padding: "var(--c-space-3) var(--c-space-4)",
             fontFamily: "var(--c-font-mono)",
             fontSize: "var(--c-fs-sm)",

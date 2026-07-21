@@ -41,7 +41,7 @@ export function TopBar({
     >
       <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
         <Hexagon size={16} strokeWidth={2} style={{ color: "var(--c-accent)" }} />
-        <span style={{ fontWeight: 650 as const, fontSize: "var(--c-fs-md)", letterSpacing: "-0.01em" }}>
+        <span className="cadre-wordmark" style={{ fontSize: "var(--c-fs-lg)" }}>
           cadre
         </span>
       </div>

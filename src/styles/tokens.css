@@ -6,40 +6,42 @@
  * Icons: use Lucide line icons (lucide-react). NO emoji anywhere in the UI.
  */
 :root {
-  /* Surfaces — near-black with subtle elevation steps */
-  --c-bg: #0b0b0f;
-  --c-surface-1: #101015; /* panels */
-  --c-surface-2: #16161d; /* cards */
-  --c-surface-3: #1c1c25; /* elevated / hover */
-  --c-overlay: #202029; /* popovers / menus */
+  /* Surfaces — warm charcoal (Anthropic warmth), subtle elevation steps */
+  --c-bg: #1c1815; /* warm near-black */
+  --c-surface-1: #221d19; /* panels */
+  --c-surface-2: #29231e; /* cards */
+  --c-surface-3: #332c25; /* elevated / hover */
+  --c-overlay: #3a322a; /* popovers / menus */
 
-  /* Content */
-  --c-text: #e9e9f0;
-  --c-text-secondary: #a0a0b0;
-  --c-text-muted: #6b6b7c;
-  --c-text-faint: #45454f;
+  /* Content — warm ivory */
+  --c-text: #efe9df;
+  --c-text-secondary: #b8ac9c;
+  --c-text-muted: #8a7e6e;
+  --c-text-faint: #5b5247;
 
-  /* Hairlines */
-  --c-border: rgba(255, 255, 255, 0.06);
-  --c-border-strong: rgba(255, 255, 255, 0.1);
+  /* Hairlines — warm, low-alpha */
+  --c-border: rgba(245, 235, 220, 0.08);
+  --c-border-strong: rgba(245, 235, 220, 0.14);
 
-  /* Accent — Calm Studio indigo/violet */
-  --c-accent: #6e79ff;
-  --c-accent-hover: #7f88ff;
-  --c-accent-subtle: rgba(110, 121, 255, 0.14);
-  --c-accent-ring: rgba(110, 121, 255, 0.35);
+  /* Accent — Anthropic clay / terracotta */
+  --c-accent: #d97757;
+  --c-accent-hover: #e08a6c;
+  --c-accent-subtle: rgba(217, 119, 87, 0.15);
+  --c-accent-ring: rgba(217, 119, 87, 0.4);
   --c-on-accent: #ffffff;
 
-  /* Status — semantic */
-  --c-success: #3fbf7f;
-  --c-success-subtle: rgba(63, 191, 127, 0.14);
-  --c-warning: #f0a12e;
-  --c-warning-subtle: rgba(240, 161, 46, 0.14);
-  --c-danger: #f2555a;
-  --c-danger-subtle: rgba(242, 85, 90, 0.14);
-  --c-info: #6e79ff;
+  /* Status — semantic, warmed to sit with the clay accent */
+  --c-success: #6fae86;
+  --c-success-subtle: rgba(111, 174, 134, 0.16);
+  --c-warning: #e0a33a;
+  --c-warning-subtle: rgba(224, 163, 58, 0.15);
+  --c-danger: #db6560;
+  --c-danger-subtle: rgba(219, 101, 96, 0.15);
+  --c-info: #d97757;
 
-  /* Typography — premium system stack + crafted mono */
+  /* Typography — serif display (editorial), premium sans body, crafted mono */
+  --c-font-display: "Tiempos Text", "Charter", "Iowan Old Style", "Palatino Linotype",
+    Palatino, Georgia, ui-serif, serif;
   --c-font-ui: -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif;
   --c-font-mono: "SF Mono", "JetBrains Mono", ui-monospace, "Cascadia Code",
     monospace;
@@ -140,6 +142,13 @@
   margin-bottom: 0;
 }
 
+/* Serif wordmark for the brand (editorial, Anthropic-flavored). */
+.cadre-wordmark {
+  font-family: var(--c-font-display);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
 .cadre-doc h1,
 .cadre-doc h2,
 .cadre-doc h3,
@@ -149,6 +158,13 @@
   letter-spacing: var(--c-tracking-tight);
   line-height: var(--c-lh-tight);
   margin: 1.4em 0 0.5em;
+}
+/* Serif display for the top headings gives the plan that "book" feel. */
+.cadre-doc h1,
+.cadre-doc h2 {
+  font-family: var(--c-font-display);
+  font-weight: 600;
+  letter-spacing: 0;
 }
 .cadre-doc h1 { font-size: var(--c-fs-xl); }
 .cadre-doc h2 {
@@ -213,7 +229,7 @@
   padding: 0.1em 0.35em;
 }
 .cadre-doc pre {
-  background: #0a0a0f;
+  background: #14100c;
   border: 1px solid var(--c-border);
   border-radius: var(--c-radius);
   padding: var(--c-space-3);

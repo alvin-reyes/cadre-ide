@@ -35,7 +35,7 @@ export function Welcome({ onPreview }: { onPreview: () => void }) {
       <div style={{ width: 440, textAlign: "center" }}>
         <div style={{ display: "inline-flex", alignItems: "center", gap: 9, marginBottom: "var(--c-space-3)" }}>
           <Hexagon size={26} strokeWidth={2} style={{ color: "var(--c-accent)" }} />
-          <span style={{ fontSize: "var(--c-fs-2xl)", fontWeight: 650 as const, letterSpacing: "-0.02em" }}>
+          <span className="cadre-wordmark" style={{ fontSize: "var(--c-fs-2xl)" }}>
             cadre
           </span>
         </div>
