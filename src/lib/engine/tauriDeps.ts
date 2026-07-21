@@ -2,6 +2,7 @@ import { invoke, Channel } from "@tauri-apps/api/core";
 import type { RunStoryDeps } from "./runStory";
 import type { Status } from "./status";
 import type { BmadFileReader } from "../bmad/adapter";
+import { ExitRegistry } from "./exitRegistry";
 
 /**
  * Production implementations of the engine's injected dependencies, backed by
@@ -32,8 +33,8 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve };
 }
 
-// pty id -> its exit deferred, so waitForExit(id) can await the PTY's exit event.
-const exits = new Map<number, Deferred<{ exitCode: number | null }>>();
+// Per-PTY exit tracking (fixes the fast-agent exit-code race, #3).
+const exits = new ExitRegistry();
 
 async function spawnAgent(opts: {
   command: string;
@@ -41,16 +42,12 @@ async function spawnAgent(opts: {
   cwd: string;
   env?: Record<string, string>;
 }): Promise<number> {
-  const exit = deferred<{ exitCode: number | null }>();
   const idReady = deferred<number>();
 
   const channel = new Channel<PtyEvent>();
   channel.onmessage = (event) => {
     if (event.type === "exit") {
-      idReady.promise.then((id) => {
-        exit.resolve({ exitCode: event.code });
-        exits.delete(id);
-      });
+      idReady.promise.then((id) => exits.resolve(id, event.code));
     }
   };
 
@@ -64,13 +61,13 @@ async function spawnAgent(opts: {
     onEvent: channel,
   });
 
-  exits.set(id, exit);
+  exits.register(id);
   idReady.resolve(id);
   return id;
 }
 
 function waitForExit(ptyId: number): Promise<{ exitCode: number | null }> {
-  return exits.get(ptyId)?.promise ?? Promise.resolve({ exitCode: null });
+  return exits.wait(ptyId);
 }
 
 async function runGit(args: string[], cwd: string): Promise<void> {
