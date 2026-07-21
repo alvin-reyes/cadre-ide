@@ -21,13 +21,23 @@ hands-on engineer a *disciplined* way to build software with a fleet of AI agent
 evolution of [ADE](https://github.com/alvin-reyes/better-agentic-ide)** — a build-on of the existing
 Tauri app, not a VS Code extension or fork.
 
-> **A disciplined software factory a full-stack architect can run from the terminal — where both the
-> *method* (BMAD) and the *engineering* (TDD, review, QA gates) are enforced, not hoped for.**
+> **Cadre — disciplined AI development. Verified, not vibed.** The one agentic IDE where the machine
+> *proves the work before it's done*: the engine runs the tests (and, per vertical, the audits) itself —
+> agents never self-report success.
 
-The differentiator is **AI writes code *properly*** — you cannot skip from a fuzzy idea to a pile of
-generated code; you pass through requirements → architecture → context-engineered stories →
-implementation → **machine-verified** QA. The single load-bearing, novel claim is: **cadre runs the
-tests itself and writes `Done`; agents never self-report success** (§6.1).
+**The wedge is verification.** Everything else ladders up to it: **BMAD** gives a real plan with real
+acceptance criteria *to verify against*; the **fleet** makes verified work *scale*; the **cockpit** lets
+you *supervise the proof, not the typing*. You cannot skip from a fuzzy idea to a pile of generated code —
+you pass requirements → architecture → context-engineered stories → implementation → **machine-verified**
+QA. The single load-bearing claim: **Cadre runs the tests itself and writes `Done`; agents never
+self-report success** (§6.1).
+
+**Anti-positioning:** not a vibe-coding tool, not autocomplete, not an "AI pair programmer." The
+disciplined opposite — *slower to start (you plan), faster to trust (it's proven).*
+
+**The engine is general** (domain-agnostic). Verticals — web3, AI/ML, fintech — are served by **additive
+role packs**, not a specialized core (§3.9). web3 is the lead **beachhead hypothesis** (the verification
+wedge is sharpest where unverified code means *lost funds*), gated on distribution — not committed.
 
 **Delivery philosophy:** cadre applies its own discipline to itself. We ship a **v0.0 walking skeleton**
 that proves the thesis end-to-end on one story, then grow it in tight stages (§9).
@@ -193,6 +203,25 @@ clones gets the same. **Git is the source of truth; no cadre server or external 
 
 *(This refines §3.5's "gitignored by default": the **durable project record is committed** — only
 ephemeral scratch is ignored.)*
+
+### 3.9 Vertical role packs (general engine + domain roles)
+The engine is **domain-agnostic**; a vertical is an **additive BMAD expansion pack**, never a forked
+core. A pack layers on three things:
+
+- **Roles/personas.** A web3 pack adds `auditor` and `pentester` (beyond the core analyst / pm /
+  architect / po / sm / dev / qa); an AI/ML pack adds eval/benchmark roles. These load through
+  `BmadAdapter` exactly like core personas — **they are just more persona files**, and
+  `composeSystemPrompt` already handles any role, so no engine change is needed.
+- **Extra gates in the story pipeline.** The sequence a story passes through is a **data-driven list of
+  gate-roles**, not hard-coded. Core = `dev → reviewer → qa`. web3 = `dev → reviewer → qa → auditor →
+  pentester`. Adding a vertical gate is configuration, not a rewrite.
+- **A verification profile.** The vertical's real tools wired into `run_verification` — web3 = Foundry
+  tests **+ Slither** (static analysis) **+ Echidna** (fuzzing); AI/ML = the eval suite. This is what
+  makes the "proof" tangible per domain, and it's precisely why web3 is the sharpest beachhead:
+  *unverified generated code = lost funds*, and Cadre proves it before `Done`.
+
+**Milestone:** v0.0 ships **core roles only**. Role packs are a post-v0.0 capability; the architecture
+already reserves the seam (arbitrary-persona loading is done; the pipeline just becomes a role sequence).
 
 ---
 
