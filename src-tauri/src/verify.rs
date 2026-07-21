@@ -83,6 +83,23 @@ pub fn run_verification(
     run_command(&cwd, &cmd, timeout_secs)
 }
 
+/// Run `git` with `args` in `cwd` (argv form — no shell escaping). Used by the
+/// engine for worktree/branch operations (§6.2).
+#[tauri::command]
+pub fn run_git(cwd: String, args: Vec<String>) -> Result<VerificationResult, String> {
+    let out = Command::new("git")
+        .args(&args)
+        .current_dir(&cwd)
+        .output()
+        .map_err(|e| format!("git {:?} failed in {}: {}", args, cwd, e))?;
+    Ok(VerificationResult {
+        exit_code: out.status.code(),
+        stdout: String::from_utf8_lossy(&out.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&out.stderr).to_string(),
+        timed_out: false,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -350,6 +350,7 @@ pub fn run() {
             pty::kill_pty,
             pty::get_pty_cwd,
             verify::run_verification,
+            verify::run_git,
             secrets::secret_set,
             secrets::secret_get,
             secrets::secret_has,
