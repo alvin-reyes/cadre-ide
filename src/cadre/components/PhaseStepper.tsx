@@ -5,7 +5,13 @@ export type Phase = "PLAN" | "SHARD" | "FLEET" | "DONE";
 const PHASES: Phase[] = ["PLAN", "SHARD", "FLEET", "DONE"];
 
 /** The always-visible discipline stepper (§4.3). */
-export function PhaseStepper({ current }: { current: Phase }) {
+export function PhaseStepper({
+  current,
+  onNavigate,
+}: {
+  current: Phase;
+  onNavigate?: (phase: Phase) => void;
+}) {
   const currentIdx = PHASES.indexOf(current);
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "var(--c-space-2)" }}>
@@ -14,8 +20,11 @@ export function PhaseStepper({ current }: { current: Phase }) {
         const active = i === currentIdx;
         return (
           <div key={phase} style={{ display: "flex", alignItems: "center", gap: "var(--c-space-2)" }}>
-            <span
+            <button
+              onClick={() => onNavigate?.(phase)}
               style={{
+                border: "none",
+                cursor: onNavigate ? "pointer" : "default",
                 fontSize: "var(--c-fs-xs)",
                 letterSpacing: "0.06em",
                 fontWeight: 600 as const,
@@ -39,7 +48,7 @@ export function PhaseStepper({ current }: { current: Phase }) {
             >
               {done && <Check size={11} strokeWidth={2.5} />}
               {phase}
-            </span>
+            </button>
             {i < PHASES.length - 1 && (
               <span style={{ color: "var(--c-text-faint)", fontSize: "var(--c-fs-xs)" }}>→</span>
             )}

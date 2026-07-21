@@ -16,7 +16,15 @@ const iconBtn: CSSProperties = {
 };
 
 /** The Cockpit top bar: wordmark, phase stepper, and right-side controls. */
-export function TopBar({ phase, needsYou = 0 }: { phase: Phase; needsYou?: number }) {
+export function TopBar({
+  phase,
+  needsYou = 0,
+  onNavigate,
+}: {
+  phase: Phase;
+  needsYou?: number;
+  onNavigate?: (phase: Phase) => void;
+}) {
   return (
     <div
       style={{
@@ -36,7 +44,7 @@ export function TopBar({ phase, needsYou = 0 }: { phase: Phase; needsYou?: numbe
         </span>
       </div>
 
-      <PhaseStepper current={phase} />
+      <PhaseStepper current={phase} onNavigate={onNavigate} />
 
       <div style={{ flex: 1 }} />
 
