@@ -289,6 +289,8 @@ export function PlanningStudio() {
       setAssistant(`Error: ${String(e)}`);
     } finally {
       setThinking(false);
+      // Return focus to the composer so the user can keep typing immediately.
+      requestAnimationFrame(() => inputRef.current?.focus());
     }
   }
 
@@ -473,7 +475,7 @@ export function PlanningStudio() {
                 onPaste={onPaste}
                 onKeyDown={onInputKeyDown}
                 placeholder={apiKey ? `Talk to the ${meta.label}…  (Enter to send · Shift+Enter for a new line · paste a doc to attach)` : "Add your API key above to start"}
-                disabled={!apiKey || thinking}
+                disabled={!apiKey}
                 style={{
                   flex: 1,
                   resize: "none",
