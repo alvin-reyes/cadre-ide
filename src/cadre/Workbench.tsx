@@ -1,143 +1,113 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { FolderTree, FileCode2, Maximize2, Minimize2 } from "lucide-react";
-import { Markdown } from "./components/Markdown";
+import { Save, FileCode2 } from "lucide-react";
+import MonacoWrapper from "../components/editor/MonacoWrapper";
 import { FileTree } from "./FileTree";
+import { useThemeStore } from "../stores/themeStore";
+import { toast } from "../stores/toastStore";
 
 /**
- * The Workbench: a real hands-on toolset for the CTO — a project folder TREE and a
- * code/document viewer, wired to the actual filesystem via the Tauri commands. The
- * daily-driver IDE surface alongside planning + the fleet. (The terminal is its own
- * large workspace — see TerminalWorkspace — since it needs the room.)
+ * The File View: the project structure (tree) beside a real code editor (Monaco),
+ * so the CTO can browse and EDIT files. One of the three main views (see CadreApp).
+ * Ctrl/Cmd+S saves via the write_text_file Tauri command.
  */
-
-export type WorkbenchTab = "files" | "code";
 
 function relTo(root: string, path: string): string {
   return path.startsWith(root) ? path.slice(root.length).replace(/^\//, "") || "." : path;
 }
 
-export function Workbench({
-  root,
-  tab,
-  onTab,
-  maximized,
-  onToggleMaximize,
-}: {
-  root: string;
-  tab: WorkbenchTab;
-  onTab: (t: WorkbenchTab) => void;
-  maximized?: boolean;
-  onToggleMaximize?: () => void;
-}) {
-  const [file, setFile] = useState<{ path: string; content: string } | null>(null);
+export function Workbench({ root }: { root: string }) {
+  const theme = useThemeStore((s) => s.theme);
+  const [openPath, setOpenPath] = useState<string | null>(null);
+  const [content, setContent] = useState("");
+  const [saved, setSaved] = useState(""); // last-persisted content
   const [error, setError] = useState<string | null>(null);
+  const dirty = openPath != null && content !== saved;
 
   async function openFile(path: string) {
     try {
-      const content = await invoke<string>("read_file", { path });
-      setFile({ path, content });
+      const text = await invoke<string>("read_file", { path });
+      setOpenPath(path);
+      setContent(text);
+      setSaved(text);
       setError(null);
-      onTab("code");
     } catch (err) {
       setError(String(err));
     }
   }
 
-  const tabs: { id: WorkbenchTab; icon: typeof FolderTree; label: string }[] = [
-    { id: "files", icon: FolderTree, label: "Files" },
-    { id: "code", icon: FileCode2, label: "Code" },
-  ];
+  async function save() {
+    if (!openPath || content === saved) return;
+    try {
+      await invoke("write_text_file", { path: openPath, content });
+      setSaved(content);
+      toast(`Saved ${relTo(root, openPath)}`, "success");
+    } catch (e) {
+      setError(String(e));
+      toast("Save failed", "error");
+    }
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--c-bg)" }}>
-      {/* Tab rail */}
-      <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "4px 6px", borderBottom: "1px solid var(--c-border)", background: "var(--c-surface-1)", flexShrink: 0 }}>
-        {tabs.map((t) => {
-          const active = tab === t.id;
-          return (
-            <button
-              key={t.id}
-              onClick={() => onTab(t.id)}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 5,
-                fontSize: "var(--c-fs-xs)",
-                fontWeight: 550 as const,
-                padding: "4px 10px",
-                borderRadius: "var(--c-radius-sm)",
-                background: active ? "var(--c-surface-3)" : "transparent",
-                color: active ? "var(--c-text)" : "var(--c-text-muted)",
-                border: "1px solid transparent",
-                cursor: "pointer",
-              }}
-            >
-              <t.icon size={13} strokeWidth={2} />
-              {t.label}
-            </button>
-          );
-        })}
+      {/* Editor header — path + dirty state + Save */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px var(--c-space-3)", borderBottom: "1px solid var(--c-border)", background: "var(--c-surface-1)", flexShrink: 0 }}>
+        <FileCode2 size={14} strokeWidth={2} style={{ color: "var(--c-text-muted)", flexShrink: 0 }} />
+        <span style={{ fontSize: "var(--c-fs-xs)", fontFamily: "var(--c-font-mono)", color: openPath ? "var(--c-text-secondary)" : "var(--c-text-faint)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {openPath ? relTo(root, openPath) : "No file open"}
+        </span>
+        {dirty && <span title="Unsaved changes" style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--c-accent)", flexShrink: 0 }} />}
         <div style={{ flex: 1 }} />
-        {onToggleMaximize && (
-          <button
-            onClick={onToggleMaximize}
-            title={maximized ? "Restore panel" : "Maximize panel"}
-            aria-label={maximized ? "Restore panel" : "Maximize panel"}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: 24,
-              height: 22,
-              borderRadius: "var(--c-radius-sm)",
-              background: "transparent",
-              border: "1px solid var(--c-border)",
-              color: "var(--c-text-secondary)",
-              cursor: "pointer",
-            }}
-          >
-            {maximized ? <Minimize2 size={13} strokeWidth={2} /> : <Maximize2 size={13} strokeWidth={2} />}
-          </button>
-        )}
+        <button
+          onClick={save}
+          disabled={!dirty}
+          title="Save (Ctrl/Cmd+S)"
+          aria-label="Save file"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            fontSize: "var(--c-fs-xs)",
+            fontWeight: 550 as const,
+            padding: "4px 10px",
+            borderRadius: "var(--c-radius-sm)",
+            background: dirty ? "var(--c-accent)" : "var(--c-surface-2)",
+            color: dirty ? "var(--c-on-accent)" : "var(--c-text-muted)",
+            border: "none",
+            cursor: dirty ? "pointer" : "default",
+          }}
+        >
+          <Save size={12} strokeWidth={2} />
+          Save
+        </button>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-        {tab === "files" && (
-          <div style={{ flex: 1, overflow: "auto", padding: "var(--c-space-2) 4px" }}>
-            <div style={{ padding: "2px 8px 8px", fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--c-text-muted)", fontWeight: 600 as const }}>
-              {relTo(root, root) === "." ? root.split("/").pop() : root}
+      <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+        {/* Explorer tree */}
+        <div style={{ width: 240, flexShrink: 0, minHeight: 0, overflow: "auto", borderRight: "1px solid var(--c-border)", padding: "var(--c-space-2) 4px", background: "var(--c-surface-1)" }}>
+          <div style={{ padding: "2px 8px 8px", fontSize: "var(--c-fs-xs)", letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--c-text-muted)", fontWeight: 600 as const, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {relTo(root, root) === "." ? root.split("/").pop() : root}
+          </div>
+          {error && <div style={{ padding: "4px 8px", fontSize: "var(--c-fs-xs)", color: "var(--c-danger)" }}>{error}</div>}
+          <FileTree root={root} onOpen={openFile} selected={openPath} />
+        </div>
+
+        {/* Editor */}
+        <div style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+          {openPath ? (
+            <MonacoWrapper
+              filePath={openPath}
+              content={content}
+              onChange={setContent}
+              onSave={save}
+              theme={theme === "light" ? "vs" : "vs-dark"}
+            />
+          ) : (
+            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--c-text-faint)", fontSize: "var(--c-fs-sm)", textAlign: "center", padding: "var(--c-space-5)" }}>
+              Select a file in the tree to view and edit it.
             </div>
-            {error && <div style={{ padding: "4px 8px", fontSize: "var(--c-fs-xs)", color: "var(--c-danger)" }}>{error}</div>}
-            <FileTree root={root} onOpen={openFile} selected={file?.path ?? null} />
-          </div>
-        )}
-
-        {tab === "code" && (
-          <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-            {file ? (
-              <>
-                <div style={{ padding: "5px var(--c-space-3)", borderBottom: "1px solid var(--c-border)", fontSize: "var(--c-fs-xs)", fontFamily: "var(--c-font-mono)", color: "var(--c-text-secondary)", flexShrink: 0 }}>
-                  {relTo(root, file.path)}
-                </div>
-                <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "var(--c-space-3)" }}>
-                  {file.path.endsWith(".md") ? (
-                    <Markdown className="cadre-doc" content={file.content} />
-                  ) : (
-                    <pre style={{ margin: 0, fontFamily: "var(--c-font-mono)", fontSize: "var(--c-fs-base)", lineHeight: 1.6, color: "var(--c-text-secondary)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                      {file.content}
-                    </pre>
-                  )}
-                </div>
-              </>
-            ) : (
-              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--c-text-faint)", fontSize: "var(--c-fs-sm)" }}>
-                Click a file in the Files tree.
-              </div>
-            )}
-          </div>
-        )}
-
+          )}
+        </div>
       </div>
     </div>
   );

@@ -35,9 +35,10 @@ interface MonacoWrapperProps {
   content: string;
   onChange: (value: string) => void;
   onSave: () => void;
+  theme?: string;
 }
 
-export default function MonacoWrapper({ filePath, content, onChange, onSave }: MonacoWrapperProps) {
+export default function MonacoWrapper({ filePath, content, onChange, onSave, theme = "vs-dark" }: MonacoWrapperProps) {
   const editorRef = useRef<monacoEditor.IStandaloneCodeEditor | null>(null);
   const language = detectLanguage(filePath);
 
@@ -66,7 +67,7 @@ export default function MonacoWrapper({ filePath, content, onChange, onSave }: M
       height="100%"
       language={language}
       value={content}
-      theme="vs-dark"
+      theme={theme}
       onChange={(value) => onChange(value ?? "")}
       onMount={handleMount}
       options={{

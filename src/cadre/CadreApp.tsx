@@ -1,14 +1,11 @@
 import { useState, useEffect } from "react";
-import { FolderTree, FileCode2, SquareTerminal } from "lucide-react";
+import { LayoutGrid, FolderTree, SquareTerminal } from "lucide-react";
 import { TopBar } from "./components/TopBar";
 import { PhaseStepper } from "./components/PhaseStepper";
 import { PlanningStudio } from "./PlanningStudio";
 import { FleetView } from "./FleetView";
-import { Workbench, type WorkbenchTab } from "./Workbench";
-import { TerminalDrawer } from "./TerminalDrawer";
-
-/** Dock-rail entries: the side-panel Workbench tabs plus the large Terminal pane. */
-type RailId = WorkbenchTab | "terminal";
+import { Workbench } from "./Workbench";
+import { TerminalTabs } from "./TerminalTabs";
 import { Team } from "./Team";
 import { Settings } from "./Settings";
 import { Toaster } from "./Toaster";
@@ -17,7 +14,10 @@ import { useBmadStore } from "../stores/bmadStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre } from "./useCadre";
 
-/** The Cadre Cockpit shell. Phase-driven main area (§4.3). */
+/** The three top-level views, switched via the dock rail. Orchestrator is default. */
+type MainView = "orchestrator" | "files" | "terminal";
+
+/** The Cadre Cockpit shell — three main views (Orchestrator · File · Terminal). */
 export function CadreApp() {
   const phase = useCadre((s) => s.phase);
   const setPhase = useCadre((s) => s.setPhase);
@@ -26,51 +26,25 @@ export function CadreApp() {
   const showSettings = useSettingsStore((s) => s.showSettings);
   const setShowSettings = useSettingsStore((s) => s.setShowSettings);
   const [preview, setPreview] = useState(false);
-  const [wbTab, setWbTab] = useState<WorkbenchTab | null>(null);
-  const [wbMax, setWbMax] = useState(false);
-  const [termOpen, setTermOpen] = useState(false);
-  const [termMax, setTermMax] = useState(false);
-  // Once opened, the Terminal stays MOUNTED (just hidden when closed) so its PTY
-  // sessions and running processes survive closing/reopening or switching views.
+  const [view, setView] = useState<MainView>("orchestrator");
+  // Files/Terminal mount on first visit and stay mounted (hidden) so editor buffers
+  // and terminal PTY sessions survive switching away.
+  const [filesMounted, setFilesMounted] = useState(false);
   const [termMounted, setTermMounted] = useState(false);
   const [teamOpen, setTeamOpen] = useState(false);
-  const workbenchOpen = wbTab !== null;
-  // Maximize only takes effect while the panel is actually shown (so closing a
-  // maximized panel doesn't leave the main view hidden).
-  const showMax = termOpen && termMax;
-  const wbShowMax = workbenchOpen && wbMax;
   const projectRoot = useBmadStore((s) => s.projectRoot);
 
-  // The dock rail routes Files/Code to the side Workbench and Terminal to the
-  // large main-area pane (an alternative to the Plan/Fleet view).
-  const railActive: RailId | null = termOpen ? "terminal" : wbTab;
-  function onRailSelect(id: RailId) {
-    if (id === "terminal") setTermOpen((v) => !v);
-    else setWbTab((cur) => (cur === id ? null : id));
-  }
-  // The terminal is a docked bottom panel now, so it stays open across phase nav.
-  function navigate(p: typeof phase) {
-    setPhase(p);
-  }
-
-  // Files/Code start hidden — the dock rail (always visible) opens them on demand.
-  // First time the Terminal opens, mount it for good (kept alive while hidden).
+  // Lazy-mount a view the first time it's opened.
   useEffect(() => {
-    if (termOpen) setTermMounted(true);
-  }, [termOpen]);
+    if (view === "files") setFilesMounted(true);
+    if (view === "terminal") setTermMounted(true);
+  }, [view]);
 
-  // Only one panel can own the full area — maximizing the terminal drops the
-  // Workbench out of maximize so it doesn't pop back maximized later.
+  // A different project resets to the Orchestrator and drops the other views.
   useEffect(() => {
-    if (showMax) setWbMax(false);
-  }, [showMax]);
-
-  // A different project means a different cwd — drop the old terminal sessions.
-  useEffect(() => {
+    setView("orchestrator");
+    setFilesMounted(false);
     setTermMounted(false);
-    setTermOpen(false);
-    setTermMax(false);
-    setWbMax(false);
   }, [projectRoot]);
 
   // Phase gating: SHARD/FLEET open once the plan is approved; DONE only when there
@@ -80,29 +54,25 @@ export function CadreApp() {
   const allDone = stories.length > 0 && stories.every((st) => st.status === "Done");
   const unlocked = { PLAN: true, SHARD: planApproved, FLEET: planApproved, DONE: allDone } as const;
 
-  // Load the API key from the OS keychain on launch.
   useEffect(() => {
     hydrateSecrets();
   }, [hydrateSecrets]);
 
-  // When a project opens, reload its plan + approval from disk (reload-from-git).
   useEffect(() => {
     if (projectRoot) hydrateFromProject();
   }, [projectRoot, hydrateFromProject]);
 
-  // Terminal shortcuts: Ctrl/Cmd+` toggles the panel; Ctrl/Cmd+T opens it and adds
-  // a session (dispatched to the mounted TerminalTabs).
+  // Terminal shortcuts: Ctrl/Cmd+` toggles the Terminal view; Ctrl/Cmd+T opens it
+  // and adds a session (dispatched to the mounted TerminalTabs).
   useEffect(() => {
     if (!projectRoot) return;
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "`") {
         e.preventDefault();
-        setTermOpen((v) => !v);
+        setView((v) => (v === "terminal" ? "orchestrator" : "terminal"));
       } else if ((e.ctrlKey || e.metaKey) && (e.key === "t" || e.key === "T")) {
         e.preventDefault();
-        setTermOpen(true);
-        // If the terminal is already mounted, ask it for a new tab; on the very
-        // first open it comes up with one session already.
+        setView("terminal");
         if (termMounted) window.dispatchEvent(new CustomEvent("cadre:new-terminal"));
       }
     };
@@ -110,97 +80,62 @@ export function CadreApp() {
     return () => window.removeEventListener("keydown", onKey);
   }, [projectRoot, termMounted]);
 
-  // Esc closes the Workbench panel. (Not the terminal — Esc belongs to the shell;
-  // toggle the terminal with Ctrl+` or the dock rail / Close button.)
-  useEffect(() => {
-    if (!workbenchOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setWbTab(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [workbenchOpen]);
-
   if (!projectRoot && !preview) {
     return <Welcome onPreview={() => setPreview(true)} />;
   }
 
+  const hidden = (on: boolean) => ({ position: "absolute" as const, inset: 0, display: on ? "block" : "none" });
+
   return (
-    <div
-      className="cadre-ui"
-      style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}
-    >
-      <TopBar
-        onToggleWorkbench={projectRoot ? () => setWbTab((t) => (t ? null : "files")) : undefined}
-        workbenchOpen={workbenchOpen}
-        onOpenTeam={() => setTeamOpen(true)}
-        onOpenSettings={() => setShowSettings(true)}
-      />
-      {/* Discipline tracker — centered on its own bar so it's clearly visible. */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          padding: "7px var(--c-space-4)",
-          background: "var(--c-bg)",
-          borderBottom: "1px solid var(--c-border)",
-          flexShrink: 0,
-        }}
-      >
-        <PhaseStepper current={phase} onNavigate={navigate} unlocked={unlocked} />
-      </div>
+    <div className="cadre-ui" style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <TopBar onOpenTeam={() => setTeamOpen(true)} onOpenSettings={() => setShowSettings(true)} />
+
+      {/* The Orchestrator carries the discipline stepper; the other views don't. */}
+      {view === "orchestrator" && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: "7px var(--c-space-4)",
+            background: "var(--c-bg)",
+            borderBottom: "1px solid var(--c-border)",
+            flexShrink: 0,
+          }}
+        >
+          <PhaseStepper current={phase} onNavigate={setPhase} unlocked={unlocked} />
+        </div>
+      )}
+
       <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
-        {/* Left area: the Plan/Fleet view (+ Files/Code side panel) with the
-            Terminal docked as a collapsible bottom panel, VS Code–style. */}
-        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-          {/* Main row — hidden while the terminal is maximized. */}
-          <div style={{ flex: showMax ? "0 0 0" : 1, minHeight: 0, display: showMax ? "none" : "flex" }}>
-            {/* Plan/Fleet — hidden while the Workbench is maximized. */}
-            <div style={{ flex: 1, minWidth: 0, display: wbShowMax ? "none" : "block" }}>
-              {phase === "PLAN" ? (
-                <PlanningStudio />
-              ) : (
-                // key by mode so SHARD and FLEET are separate instances — no stale
-                // drill-in state carries across; FLEET always lands on Activity.
-                <FleetView key={phase === "SHARD" ? "shard" : "fleet"} mode={phase === "SHARD" ? "shard" : "fleet"} />
-              )}
-            </div>
-            {wbTab && projectRoot && (
-              <div
-                style={
-                  wbShowMax
-                    ? { flex: 1, minWidth: 0, borderLeft: "1px solid var(--c-border)", minHeight: 0 }
-                    : { width: 420, flexShrink: 0, borderLeft: "1px solid var(--c-border)", minHeight: 0 }
-                }
-              >
-                <Workbench
-                  root={projectRoot}
-                  tab={wbTab}
-                  onTab={setWbTab}
-                  maximized={wbShowMax}
-                  onToggleMaximize={() => setWbMax((v) => !v)}
-                />
-              </div>
+        <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
+          {/* Orchestrator — always mounted (holds chat/plan state), just hidden. */}
+          <div style={hidden(view === "orchestrator")}>
+            {phase === "PLAN" ? (
+              <PlanningStudio />
+            ) : (
+              <FleetView key={phase === "SHARD" ? "shard" : "fleet"} mode={phase === "SHARD" ? "shard" : "fleet"} />
             )}
           </div>
-          {/* Terminal drawer — mounted once opened, then only toggled visible, so
-              its PTY sessions persist across collapse/show and view switches. */}
+
+          {/* File view — tree + editable code. */}
+          {filesMounted && projectRoot && (
+            <div style={hidden(view === "files")}>
+              <Workbench root={projectRoot} />
+            </div>
+          )}
+
+          {/* Terminal view — multi-session, PTYs persist while hidden. */}
           {termMounted && projectRoot && (
-            <div style={{ display: termOpen ? "flex" : "none", flexDirection: "column", flex: showMax ? 1 : "0 0 auto", minHeight: 0 }}>
-              <TerminalDrawer
-                root={projectRoot}
-                onClose={() => setTermOpen(false)}
-                maximized={showMax}
-                onToggleMaximize={() => setTermMax((v) => !v)}
-              />
+            <div style={hidden(view === "terminal")}>
+              <TerminalTabs cwd={projectRoot} />
             </div>
           )}
         </div>
-        {projectRoot && (
-          <DockRail active={railActive} onSelect={onRailSelect} />
-        )}
+
+        {projectRoot && <DockRail active={view} onSelect={setView} />}
       </div>
+
       {teamOpen && <Team onClose={() => setTeamOpen(false)} />}
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
       <Toaster />
@@ -208,18 +143,12 @@ export function CadreApp() {
   );
 }
 
-/** Always-visible activity bar so the toolset is discoverable at a glance. */
-function DockRail({
-  active,
-  onSelect,
-}: {
-  active: RailId | null;
-  onSelect: (t: RailId) => void;
-}) {
-  const items: { id: RailId; icon: typeof FolderTree; label: string }[] = [
+/** Right-edge activity bar — switches the three main views. */
+function DockRail({ active, onSelect }: { active: MainView; onSelect: (v: MainView) => void }) {
+  const items: { id: MainView; icon: typeof FolderTree; label: string }[] = [
+    { id: "orchestrator", icon: LayoutGrid, label: "Orchestrator" },
     { id: "files", icon: FolderTree, label: "Files" },
-    { id: "code", icon: FileCode2, label: "Code" },
-    { id: "terminal", icon: SquareTerminal, label: "Terminal — ⌃` (bottom panel)" },
+    { id: "terminal", icon: SquareTerminal, label: "Terminal — ⌃`" },
   ];
   return (
     <div
