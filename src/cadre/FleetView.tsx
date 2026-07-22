@@ -4,7 +4,7 @@ import { FleetBoard } from "./components/FleetBoard";
 import { Markdown } from "./components/Markdown";
 import { exportHtmlToPdf } from "./exportPdf";
 import { useBmadStore } from "../stores/bmadStore";
-import { useCadre } from "./useCadre";
+import { useCadre, isInterrupted } from "./useCadre";
 import { aggregateReviews, type LensReview } from "../lib/engine/reviewFleet";
 import { PROVIDERS, getProvider } from "../lib/engine/providers";
 import { secretHas, secretSet } from "../lib/secrets";
@@ -281,9 +281,16 @@ function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
   const getStoryMarkdown = useCadre((s) => s.getStoryMarkdown);
   const busy = useCadre((s) => s.busy);
   const needsReplan = useCadre((s) => s.needsReplan);
+  const active = useCadre((s) => s.active);
+  // An InProgress/InReview story that isn't running this session is orphaned — its
+  // agent died with a prior app process. Offer Resume (dispatch is idempotent).
+  const interrupted = isInterrupted(card.status, active, card.epic, card.story);
   // Dispatch is paused while the plan is changed-but-not-re-approved (§5.1).
   const canDispatch = !preview && !busy && !needsReplan && (card.status === "Draft" || card.status === "Failed");
-  const info = stateInfo(card.status);
+  const canResume = !preview && !busy && !needsReplan && interrupted;
+  const info = interrupted
+    ? { label: "Interrupted — the run stopped when the app closed. Resume to re-dispatch.", color: "var(--c-warning)", live: false }
+    : stateInfo(card.status);
 
   const reviewStory = useCadre((s) => s.reviewStory);
   const codeReview = useCadre((s) => s.codeReviews[card.id]);
@@ -366,6 +373,28 @@ function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
           >
             <Play size={12} strokeWidth={2.5} />
             Dispatch
+          </button>
+        )}
+        {canResume && (
+          <button
+            onClick={() => dispatchStory(card.epic, card.story)}
+            title="Resume — clears the interrupted run's worktree and re-dispatches clean from HEAD"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              fontSize: "var(--c-fs-xs)",
+              fontWeight: 550 as const,
+              padding: "4px 10px",
+              borderRadius: "var(--c-radius-sm)",
+              background: "var(--c-warning-subtle)",
+              color: "var(--c-warning)",
+              border: "1px solid var(--c-warning)",
+              cursor: "pointer",
+            }}
+          >
+            <RefreshCw size={12} strokeWidth={2.5} />
+            Resume
           </button>
         )}
         {(canReview || reviewing) && (

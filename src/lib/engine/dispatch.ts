@@ -94,6 +94,23 @@ export async function dispatchStory(
   const branch = storyBranch(input.epic, input.story);
   const worktree = storyWorktreePath(input.root, input.epic, input.story);
 
+  // Make dispatch idempotent. A prior run that was killed mid-story (e.g. the app
+  // was closed) leaves this worktree + branch behind, which would make
+  // `worktree add -b` fail with "already exists". Clear any stale copy first —
+  // tolerant, since there's nothing to remove on a first dispatch. The
+  // interrupted run's partial, unverified work is intentionally discarded; the
+  // story re-runs clean from HEAD.
+  const tryGit = async (args: string[]) => {
+    try {
+      await deps.runGit(args, input.root);
+    } catch {
+      /* nothing to clean up */
+    }
+  };
+  await tryGit(["worktree", "remove", "--force", worktree]);
+  await tryGit(["worktree", "prune"]);
+  await tryGit(["branch", "-D", branch]);
+
   // Isolate the story in its own worktree on a per-story branch.
   await deps.runGit(["worktree", "add", "-b", branch, worktree, "HEAD"], input.root);
 

@@ -199,7 +199,8 @@ describe("e2e: the disciplined loop", () => {
   it("worktree isolation: the story is dispatched on its own branch/worktree", async () => {
     const { world, deps } = makeWorld({});
     await runApprovedStory(deps, baseInput({ epic: 2, story: 3 }));
-    expect(world.gitCalls[0]).toEqual([
+    // Dispatch is idempotent: it clears any stale worktree/branch, then adds fresh.
+    expect(world.gitCalls).toContainEqual([
       "worktree",
       "add",
       "-b",
@@ -207,6 +208,8 @@ describe("e2e: the disciplined loop", () => {
       "/proj/.cadre/worktrees/2.3",
       "HEAD",
     ]);
+    expect(world.gitCalls).toContainEqual(["worktree", "remove", "--force", "/proj/.cadre/worktrees/2.3"]);
+    expect(world.gitCalls).toContainEqual(["branch", "-D", "story/2.3"]);
     expect(world.spawned).toBe(1);
   });
 });

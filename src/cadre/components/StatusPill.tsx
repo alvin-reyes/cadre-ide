@@ -10,8 +10,12 @@ const STYLES: Record<Status, { bg: string; fg: string; label: string }> = {
   Blocked: { bg: "var(--c-danger-subtle)", fg: "var(--c-danger)", label: "Blocked" },
 };
 
-export function StatusPill({ status }: { status: Status }) {
-  const s = STYLES[status];
+export function StatusPill({ status, interrupted }: { status: Status; interrupted?: boolean }) {
+  // An orphaned in-flight story reads as "Interrupted", not the busy status it
+  // was frozen at, so the board doesn't imply a run that isn't happening.
+  const s = interrupted
+    ? { bg: "var(--c-warning-subtle)", fg: "var(--c-warning)", label: "Interrupted" }
+    : STYLES[status];
   return (
     <span
       style={{

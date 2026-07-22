@@ -1,7 +1,7 @@
 import { ShieldCheck, ShieldAlert, Gavel } from "lucide-react";
 import type { StoryCard } from "../../lib/engine/board";
 import { StatusPill } from "./StatusPill";
-import { useCadre } from "../useCadre";
+import { useCadre, isInterrupted } from "../useCadre";
 import { aggregateReviews } from "../../lib/engine/reviewFleet";
 
 /** Compact adversarial-review verdict for a story card (review fleet, at a glance). */
@@ -36,6 +36,7 @@ export function FleetBoard({
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
+  const active = useCadre((s) => s.active);
   return (
     <div
       style={{
@@ -98,7 +99,7 @@ export function FleetBoard({
               {card.title || "(untitled)"}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "space-between" }}>
-              <StatusPill status={card.status} />
+              <StatusPill status={card.status} interrupted={isInterrupted(card.status, active, card.epic, card.story)} />
               <ReviewBadge storyId={card.id} />
             </div>
           </button>

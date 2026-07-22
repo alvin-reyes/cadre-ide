@@ -77,11 +77,12 @@ describe("dispatchStory", () => {
       prompt: "PROMPT",
     });
 
+    // Idempotent: clears any stale worktree/branch from a killed run, then adds fresh.
     expect(calls.git).toEqual([
-      {
-        args: ["worktree", "add", "-b", "story/1.2", "/proj/.cadre/worktrees/1.2", "HEAD"],
-        cwd: "/proj",
-      },
+      { args: ["worktree", "remove", "--force", "/proj/.cadre/worktrees/1.2"], cwd: "/proj" },
+      { args: ["worktree", "prune"], cwd: "/proj" },
+      { args: ["branch", "-D", "story/1.2"], cwd: "/proj" },
+      { args: ["worktree", "add", "-b", "story/1.2", "/proj/.cadre/worktrees/1.2", "HEAD"], cwd: "/proj" },
     ]);
     expect(calls.spawn).toHaveLength(1);
     expect(calls.spawn[0].command).toBe("claude");
@@ -93,6 +94,28 @@ describe("dispatchStory", () => {
       branch: "story/1.2",
       worktree: "/proj/.cadre/worktrees/1.2",
     });
+  });
+
+  it("is idempotent: tolerates cleanup failures and still dispatches (first run / recovery)", async () => {
+    // On a first dispatch there's nothing to remove, so the cleanup git calls
+    // throw ("not a working tree" / "branch not found"). Dispatch must swallow
+    // those and still create the worktree + spawn the agent.
+    const seen: string[][] = [];
+    const deps: DispatchDeps = {
+      runGit: async (args) => {
+        seen.push(args);
+        if (args[0] === "branch" || (args[0] === "worktree" && args[1] !== "add")) {
+          throw new Error("nothing to clean up");
+        }
+      },
+      spawnAgent: async () => 7,
+    };
+    const result = await dispatchStory(deps, { root: "/proj", epic: 1, story: 2, prompt: "P" });
+
+    expect(seen).toContainEqual(["worktree", "remove", "--force", "/proj/.cadre/worktrees/1.2"]);
+    expect(seen).toContainEqual(["branch", "-D", "story/1.2"]);
+    expect(seen).toContainEqual(["worktree", "add", "-b", "story/1.2", "/proj/.cadre/worktrees/1.2", "HEAD"]);
+    expect(result.ptyId).toBe(7);
   });
 
   it("passes --model and env when routing to a specific model", async () => {

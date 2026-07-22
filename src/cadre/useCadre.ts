@@ -44,6 +44,16 @@ export function fleetModelOverride(): string {
   return useSettingsStore.getState().fleetModel || "";
 }
 
+/**
+ * A story is "interrupted" when the board shows it mid-flight (InProgress or
+ * InReview) but Cadre isn't actually running it this session — the agent was a
+ * child of a prior app process and died with it. Re-dispatching is safe: dispatch
+ * is idempotent (it prunes the stale worktree/branch and re-runs clean from HEAD).
+ */
+export function isInterrupted(status: string, active: Record<string, boolean>, epic: number, story: number): boolean {
+  return (status === "InProgress" || status === "InReview") && !active[`${epic}.${story}`];
+}
+
 const SM_SYSTEM_PROMPT = `You are the Scrum Master (SM). Turn the approved plan into the NEXT single implementation story via the create_story tool.
 
 Prefer a small, vertically-sliced, independently testable story. Populate every field completely — the Dev agent works only from this story and reads nothing else, so put the relevant architecture, file paths, and standards into devNotes. Acceptance criteria must be concrete and testable; tasks must be TDD-first (write the failing test, then the code).`;
@@ -90,6 +100,13 @@ interface CadreState {
   logs: Record<string, string>;
   /** adversarial code-review results keyed by "epic.story" (the review fleet) */
   codeReviews: Record<string, { status: "reviewing" | "done"; reviews?: LensReview[] }>;
+  /**
+   * Stories with a live dispatch/verify running THIS session, keyed "epic.story".
+   * Used to tell a genuinely-running story from an orphaned one: an InProgress /
+   * InReview story that is NOT active was interrupted (its agent died with a prior
+   * session — the process is a child of the app). See `isInterrupted`.
+   */
+  active: Record<string, boolean>;
   /** which model provider the Dev fleet runs on (id from engine PROVIDERS) */
   fleetProvider: string;
   /** a human-readable status while an async action runs (null = idle) */
@@ -161,6 +178,7 @@ export const useCadre = create<CadreState>((set, get) => ({
   needsReplan: false,
   logs: {},
   codeReviews: {},
+  active: {},
   fleetProvider: "claude",
   busy: null,
   error: null,
@@ -246,8 +264,14 @@ export const useCadre = create<CadreState>((set, get) => ({
 
   dispatchStory: async (epic, story) => {
     const key = `${epic}.${story}`;
-    // Fresh log for this run; the sink appends streamed output (capped).
-    set((s) => ({ busy: `Dispatching story ${epic}.${story}…`, error: null, logs: { ...s.logs, [key]: "" } }));
+    // Fresh log for this run; the sink appends streamed output (capped). Mark the
+    // story active so the UI shows it as genuinely running (vs. an orphaned one).
+    set((s) => ({
+      busy: `Dispatching story ${epic}.${story}…`,
+      error: null,
+      logs: { ...s.logs, [key]: "" },
+      active: { ...s.active, [key]: true },
+    }));
     const onOutput = (chunk: string) => {
       set((s) => {
         const next = (s.logs[key] ?? "") + chunk;
@@ -309,6 +333,14 @@ export const useCadre = create<CadreState>((set, get) => ({
     } catch (e) {
       set({ error: String(e), busy: null });
       toast(`Dispatch failed for ${epic}.${story}`, "error");
+    } finally {
+      // No longer running this session — an InProgress/InReview status left on the
+      // board now reads as interrupted (see isInterrupted).
+      set((s) => {
+        const active = { ...s.active };
+        delete active[key];
+        return { active };
+      });
     }
   },
 
