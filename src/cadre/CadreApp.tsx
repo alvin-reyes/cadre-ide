@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { FolderTree, FileCode2, SquareTerminal } from "lucide-react";
 import { TopBar } from "./components/TopBar";
+import { PhaseStepper } from "./components/PhaseStepper";
 import { PlanningStudio } from "./PlanningStudio";
 import { FleetView } from "./FleetView";
 import { Workbench, type WorkbenchTab } from "./Workbench";
@@ -115,14 +116,25 @@ export function CadreApp() {
       style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}
     >
       <TopBar
-        phase={phase}
-        onNavigate={navigate}
-        unlocked={unlocked}
         onToggleWorkbench={projectRoot ? () => setWbTab((t) => (t ? null : "files")) : undefined}
         workbenchOpen={workbenchOpen}
         onOpenTeam={() => setTeamOpen(true)}
         onOpenSettings={() => setShowSettings(true)}
       />
+      {/* Discipline tracker — centered on its own bar so it's clearly visible. */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          padding: "7px var(--c-space-4)",
+          background: "var(--c-bg)",
+          borderBottom: "1px solid var(--c-border)",
+          flexShrink: 0,
+        }}
+      >
+        <PhaseStepper current={phase} onNavigate={navigate} unlocked={unlocked} />
+      </div>
       <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
         <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
           {/* Phase view — hidden (not unmounted) while the terminal is showing. */}

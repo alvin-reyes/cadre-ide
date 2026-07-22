@@ -1,5 +1,4 @@
 import { Hexagon, ArrowUp, ArrowDown, PanelRight, Users, Sun, Moon, SunMoon, Settings as SettingsIcon } from "lucide-react";
-import { PhaseStepper, type Phase } from "./PhaseStepper";
 import { useUsageStore } from "../../stores/usageStore";
 import { useThemeStore } from "../../stores/themeStore";
 
@@ -7,19 +6,14 @@ function fmtK(n: number): string {
   return n < 1000 ? String(n) : `${(n / 1000).toFixed(1)}k`;
 }
 
-/** The Cockpit top bar: wordmark + phase stepper + session token/cost meter. */
+/** The Cockpit top bar: wordmark + tools + session token/cost meter. The phase
+ *  stepper lives in its own centered PhaseBar just below (see CadreApp). */
 export function TopBar({
-  phase,
-  onNavigate,
-  unlocked,
   onToggleWorkbench,
   workbenchOpen,
   onOpenTeam,
   onOpenSettings,
 }: {
-  phase: Phase;
-  onNavigate?: (phase: Phase) => void;
-  unlocked?: Partial<Record<Phase, boolean>>;
   onToggleWorkbench?: () => void;
   workbenchOpen?: boolean;
   onOpenTeam?: () => void;
@@ -57,8 +51,6 @@ export function TopBar({
           cadre
         </span>
       </div>
-
-      <PhaseStepper current={phase} onNavigate={onNavigate} unlocked={unlocked} />
 
       <div style={{ flex: 1 }} />
 
