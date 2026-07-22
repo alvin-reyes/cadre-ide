@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, type CSSProperties, type ClipboardEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { marked } from "marked";
-import { ArrowUp, ArrowRight, Lock, RefreshCw, AlertTriangle, FileText, FileDown, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, ShieldAlert, Gavel, Paperclip, X, Check, Copy, Eye, Code2, Wrench, Loader2 } from "lucide-react";
+import { ArrowUp, ArrowRight, Lock, RefreshCw, AlertTriangle, FileText, FileDown, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, ShieldAlert, Gavel, Paperclip, X, Check, Copy, Eye, Code2, Wrench, Loader2, Workflow } from "lucide-react";
 import { exportHtmlToPdf } from "./exportPdf";
+import { DiagramEditor } from "./DiagramEditor";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre, MODEL } from "./useCadre";
 import { Markdown } from "./components/Markdown";
@@ -239,6 +240,20 @@ export function PlanningStudio() {
   const doc = docFor(persona);
   const messages = threads[persona];
   const meta = PERSONAS[persona];
+
+  // Mermaid diagram composer — attach the markup to the chat (the agent reads it) or
+  // append it into the current document.
+  const [diagramOpen, setDiagramOpen] = useState(false);
+  const diagramDocLabel = persona === "pm" ? "PRD" : persona === "architect" ? "architecture" : "UX spec";
+  function addDiagramToChat(src: string) {
+    addAttachments([{ name: "app-flow.mmd", content: "```mermaid\n" + src + "\n```" }]);
+  }
+  function insertDiagramToDoc(src: string) {
+    const block = "```mermaid\n" + src + "\n```\n";
+    const apply = persona === "pm" ? setPrd : persona === "architect" ? setArchitecture : setUxSpec;
+    apply(doc.trim() ? doc.replace(/\s*$/, "") + "\n\n" + block : block);
+    setDiagramOpen(false);
+  }
   const canApprove = prd.trim().length > 0 && architecture.trim().length > 0;
   const canSend = (draft.trim().length > 0 || attachments.length > 0) && !!apiKey && !thinking;
 
@@ -428,6 +443,14 @@ export function PlanningStudio() {
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      {diagramOpen && (
+        <DiagramEditor
+          docLabel={diagramDocLabel}
+          onClose={() => setDiagramOpen(false)}
+          onAddToChat={addDiagramToChat}
+          onInsertToDoc={insertDiagramToDoc}
+        />
+      )}
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
         {/* Conversation */}
         <div style={{ width: `${split}%`, flexShrink: 0, display: "flex", flexDirection: "column", minWidth: 0 }}>
@@ -686,6 +709,27 @@ export function PlanningStudio() {
                 }}
               >
                 <Paperclip size={16} strokeWidth={2} />
+              </button>
+              <button
+                onClick={() => setDiagramOpen(true)}
+                disabled={!apiKey || thinking}
+                title="Sketch an app flow as a Mermaid diagram for the agent to analyze"
+                aria-label="Diagram"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 30,
+                  height: 30,
+                  borderRadius: "var(--c-radius-sm)",
+                  background: "transparent",
+                  border: "none",
+                  color: "var(--c-text-muted)",
+                  cursor: apiKey && !thinking ? "pointer" : "default",
+                  flexShrink: 0,
+                }}
+              >
+                <Workflow size={16} strokeWidth={2} />
               </button>
               <textarea
                 ref={inputRef}
