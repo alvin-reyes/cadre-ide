@@ -1,4 +1,4 @@
-import { Hexagon, ArrowUp, ArrowDown } from "lucide-react";
+import { Hexagon, ArrowUp, ArrowDown, SquareTerminal } from "lucide-react";
 import { PhaseStepper, type Phase } from "./PhaseStepper";
 import { useUsageStore } from "../../stores/usageStore";
 
@@ -11,10 +11,14 @@ export function TopBar({
   phase,
   onNavigate,
   unlocked,
+  onToggleTerminal,
+  terminalOpen,
 }: {
   phase: Phase;
   onNavigate?: (phase: Phase) => void;
   unlocked?: Partial<Record<Phase, boolean>>;
+  onToggleTerminal?: () => void;
+  terminalOpen?: boolean;
 }) {
   const input = useUsageStore((s) => s.input);
   const output = useUsageStore((s) => s.output);
@@ -43,6 +47,27 @@ export function TopBar({
       <PhaseStepper current={phase} onNavigate={onNavigate} unlocked={unlocked} />
 
       <div style={{ flex: 1 }} />
+
+      {onToggleTerminal && (
+        <button
+          onClick={onToggleTerminal}
+          title="Toggle terminal"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 28,
+            height: 24,
+            borderRadius: "var(--c-radius-sm)",
+            background: terminalOpen ? "var(--c-surface-3)" : "transparent",
+            border: "1px solid var(--c-border)",
+            color: terminalOpen ? "var(--c-accent)" : "var(--c-text-secondary)",
+            cursor: "pointer",
+          }}
+        >
+          <SquareTerminal size={15} strokeWidth={2} />
+        </button>
+      )}
 
       <div
         title={`${calls} model call${calls === 1 ? "" : "s"} this session · ${input.toLocaleString()} in / ${output.toLocaleString()} out tokens · estimated cost`}
