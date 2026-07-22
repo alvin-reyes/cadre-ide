@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { TerminalWorkspace } from "./TerminalWorkspace";
 
 /**
@@ -33,30 +33,52 @@ export function TerminalDrawer({
   onToggleMaximize?: () => void;
 }) {
   const [height, setHeight] = useState(initialHeight);
-  const drag = useRef<{ startY: number; startH: number } | null>(null);
+
+  const clamp = (h: number) => Math.max(MIN_H, Math.min(window.innerHeight * 0.8, h));
+  const persist = (h: number) => {
+    try {
+      localStorage.setItem(KEY, String(h));
+    } catch {
+      /* ignore */
+    }
+  };
 
   function onDown(e: React.MouseEvent) {
     e.preventDefault();
-    drag.current = { startY: e.clientY, startH: height };
+    const startY = e.clientY;
+    const startH = height;
+    let latest = startH; // track the final value so we persist it, not a stale closure
     const onMove = (ev: MouseEvent) => {
-      if (!drag.current) return;
       // Dragging up (smaller clientY) grows the panel.
-      const next = drag.current.startH - (ev.clientY - drag.current.startY);
-      const max = window.innerHeight * 0.8;
-      setHeight(Math.max(MIN_H, Math.min(max, next)));
+      latest = clamp(startH - (ev.clientY - startY));
+      setHeight(latest);
     };
     const onUp = () => {
-      drag.current = null;
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
-      try {
-        localStorage.setItem(KEY, String(height));
-      } catch {
-        /* ignore */
-      }
+      persist(latest);
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
+  }
+
+  function onKey(e: React.KeyboardEvent) {
+    const step = e.shiftKey ? 48 : 16;
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHeight((h) => {
+        const n = clamp(h + step);
+        persist(n);
+        return n;
+      });
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHeight((h) => {
+        const n = clamp(h - step);
+        persist(n);
+        return n;
+      });
+    }
   }
 
   // Maximized: fill the whole area (the host hides the Plan/Fleet view); no fixed
@@ -70,9 +92,16 @@ export function TerminalDrawer({
       {!maximized && (
         <div
           onMouseDown={onDown}
-          title="Drag to resize"
+          onKeyDown={onKey}
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize terminal panel (arrow keys)"
+          aria-valuenow={Math.round(height)}
+          aria-valuemin={MIN_H}
+          tabIndex={0}
+          title="Drag to resize (or focus + arrow keys)"
           className="cadre-divider"
-          style={{ height: 6, cursor: "row-resize", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--c-surface-1)" }}
+          style={{ height: 8, cursor: "row-resize", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--c-surface-1)" }}
         >
           <div className="cadre-divider-line" style={{ width: 34, height: 2, borderRadius: 2, background: "var(--c-border-strong)" }} />
         </div>

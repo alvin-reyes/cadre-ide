@@ -66,35 +66,46 @@ export function TerminalTabs({ cwd }: { cwd: string }) {
           return (
             <div
               key={id}
-              onClick={() => setActive(id)}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
-                gap: 6,
-                fontSize: "var(--c-fs-xs)",
-                fontWeight: 550 as const,
-                padding: "3px 6px 3px 10px",
                 borderRadius: "var(--c-radius-sm)",
                 background: on ? "var(--c-surface-3)" : "transparent",
-                color: on ? "var(--c-text)" : "var(--c-text-muted)",
-                cursor: "pointer",
                 flexShrink: 0,
               }}
             >
-              Terminal {i + 1}
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  closeTab(id);
+                onClick={() => setActive(id)}
+                aria-pressed={on}
+                aria-label={`Terminal ${i + 1}`}
+                className="cadre-hover"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  height: 26,
+                  fontSize: "var(--c-fs-xs)",
+                  fontWeight: 550 as const,
+                  padding: "0 4px 0 10px",
+                  borderRadius: "var(--c-radius-sm) 0 0 var(--c-radius-sm)",
+                  background: "transparent",
+                  border: "none",
+                  color: on ? "var(--c-text)" : "var(--c-text-muted)",
+                  cursor: "pointer",
                 }}
+              >
+                Terminal {i + 1}
+              </button>
+              <button
+                onClick={() => closeTab(id)}
+                aria-label={`Close terminal ${i + 1}`}
                 title="Close terminal"
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  width: 15,
-                  height: 15,
-                  borderRadius: "var(--c-radius-sm)",
+                  width: 22,
+                  height: 26,
+                  borderRadius: "0 var(--c-radius-sm) var(--c-radius-sm) 0",
                   background: "transparent",
                   border: "none",
                   color: on ? "var(--c-text-secondary)" : "var(--c-text-faint)",
@@ -110,12 +121,14 @@ export function TerminalTabs({ cwd }: { cwd: string }) {
         <button
           onClick={addTab}
           title="New terminal (Ctrl+T)"
+          aria-label="New terminal"
+          className="cadre-hover"
           style={{
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
-            width: 22,
-            height: 22,
+            width: 26,
+            height: 26,
             borderRadius: "var(--c-radius-sm)",
             background: "transparent",
             border: "1px solid var(--c-border)",

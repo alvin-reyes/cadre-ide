@@ -32,7 +32,7 @@ export function TerminalWorkspace({
       >
         <SquareTerminal size={15} strokeWidth={2} style={{ color: "var(--c-accent)" }} />
         <span style={{ fontSize: "var(--c-fs-sm)", fontWeight: 600 as const, color: "var(--c-text)" }}>Terminal</span>
-        <span style={{ fontSize: "var(--c-fs-xs)", fontFamily: "var(--c-font-mono)", color: "var(--c-text-faint)" }}>
+        <span style={{ fontSize: "var(--c-fs-xs)", fontFamily: "var(--c-font-mono)", color: "var(--c-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, maxWidth: 320 }}>
           {root}
         </span>
         <div style={{ flex: 1 }} />
@@ -40,6 +40,7 @@ export function TerminalWorkspace({
           <button
             onClick={onToggleMaximize}
             title={maximized ? "Restore panel" : "Maximize panel"}
+            aria-label={maximized ? "Restore terminal panel" : "Maximize terminal panel"}
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -59,6 +60,7 @@ export function TerminalWorkspace({
         <button
           onClick={onClose}
           title="Close terminal (Ctrl+`)"
+          aria-label="Close terminal"
           style={{
             display: "inline-flex",
             alignItems: "center",

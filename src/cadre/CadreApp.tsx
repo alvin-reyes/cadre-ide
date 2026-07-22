@@ -230,12 +230,15 @@ function DockRail({
             key={id}
             onClick={() => onSelect(id)}
             title={label}
+            aria-label={label}
+            aria-pressed={on}
+            className="cadre-hover"
             style={{
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
-              width: 32,
-              height: 32,
+              width: 34,
+              height: 34,
               borderRadius: "var(--c-radius-sm)",
               background: on ? "var(--c-accent-subtle)" : "transparent",
               border: `1px solid ${on ? "var(--c-accent-ring)" : "var(--c-border)"}`,

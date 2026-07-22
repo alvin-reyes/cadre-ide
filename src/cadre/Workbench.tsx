@@ -83,6 +83,7 @@ export function Workbench({
           <button
             onClick={onToggleMaximize}
             title={maximized ? "Restore panel" : "Maximize panel"}
+            aria-label={maximized ? "Restore panel" : "Maximize panel"}
             style={{
               display: "inline-flex",
               alignItems: "center",

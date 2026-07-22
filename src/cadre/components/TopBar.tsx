@@ -81,6 +81,7 @@ export function TopBar({
       <button
         onClick={cycleTheme}
         title={themeTitle}
+        aria-label={themeTitle}
         style={{
           display: "inline-flex",
           alignItems: "center",
@@ -101,6 +102,7 @@ export function TopBar({
         <button
           onClick={onOpenSettings}
           title="Settings — API keys & models"
+          aria-label="Settings — API keys and models"
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -122,6 +124,7 @@ export function TopBar({
         <button
           onClick={onToggleWorkbench}
           title="Toggle Workbench (Files · Code · Terminal)"
+          aria-label="Toggle Workbench"
           style={{
             display: "inline-flex",
             alignItems: "center",

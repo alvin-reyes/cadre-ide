@@ -86,13 +86,17 @@ function TreeNode({
     <>
       <button
         onClick={toggle}
+        aria-label={entry.name}
+        aria-selected={isSel}
+        className="cadre-hover"
         style={{
           display: "flex",
           alignItems: "center",
           gap: 5,
           width: "100%",
+          minHeight: 26,
           textAlign: "left",
-          padding: "3px 6px",
+          padding: "4px 6px",
           paddingLeft: 6 + depth * 13,
           background: isSel ? "var(--c-surface-2)" : "transparent",
           border: "none",

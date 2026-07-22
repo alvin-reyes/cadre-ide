@@ -218,6 +218,12 @@
   }
 }
 
+/* Hover feedback for list rows / tabs that use inline transparent backgrounds.
+   !important is needed to win over the inline `background: transparent`. */
+.cadre-hover:not([aria-selected="true"]):not([aria-pressed="true"]):not(:disabled):hover {
+  background: var(--c-surface-2) !important;
+}
+
 /* Draggable pane divider — highlights on hover/drag. */
 .cadre-divider:hover .cadre-divider-line,
 .cadre-divider:active .cadre-divider-line {
