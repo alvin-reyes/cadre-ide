@@ -100,6 +100,7 @@ export function PlanningStudio() {
   const verification = useCadre((s) => s.verification);
   const busy = useCadre((s) => s.busy);
   const error = useCadre((s) => s.error);
+  const clearError = useCadre((s) => s.clearError);
 
   const [persona, setPersona] = useState<PersonaId>("pm");
   const [threads, setThreads] = useState<Record<PersonaId, ChatMessage[]>>({ pm: [], architect: [], design: [] });
@@ -813,6 +814,9 @@ export function PlanningStudio() {
       {error && (
         <div
           style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--c-space-2)",
             padding: "6px var(--c-space-4)",
             background: "var(--c-danger-subtle)",
             borderTop: "1px solid var(--c-border)",
@@ -820,7 +824,15 @@ export function PlanningStudio() {
             fontSize: "var(--c-fs-sm)",
           }}
         >
-          {error}
+          <AlertTriangle size={13} strokeWidth={2} style={{ flexShrink: 0 }} />
+          <span style={{ flex: 1 }}>{error}</span>
+          <button
+            onClick={clearError}
+            title="Dismiss"
+            style={{ background: "transparent", border: "none", color: "var(--c-danger)", cursor: "pointer", display: "inline-flex", padding: 0 }}
+          >
+            <X size={13} strokeWidth={2} />
+          </button>
         </div>
       )}
       {needsReplan ? (

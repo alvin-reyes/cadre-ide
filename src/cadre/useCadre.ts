@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Phase } from "./components/PhaseStepper";
 import { useBmadStore } from "../stores/bmadStore";
 import { useSettingsStore } from "../stores/settingsStore";
+import { toast } from "../stores/toastStore";
 import { callTool, planningTurn } from "../lib/planning/planningChat";
 import { ARCHITECT_SYSTEM_PROMPT, DESIGN_SYSTEM_PROMPT } from "../lib/planning/personas";
 import { generateStory } from "../lib/planning/generateStory";
@@ -192,8 +193,10 @@ export const useCadre = create<CadreState>((set, get) => ({
       // Freeze the verification command in engine-owned state (agents can't forge it).
       await invoke("approve_plan", { verification: cmds });
       set({ verification: cmds, phase: "FLEET", busy: null, needsReplan: false });
+      toast("Plan signed off — fleet unlocked", "success");
     } catch (e) {
       set({ error: String(e), busy: null });
+      toast("Sign-off failed", "error");
     }
   },
 
@@ -220,8 +223,10 @@ export const useCadre = create<CadreState>((set, get) => ({
       );
       // The story file lands in docs/stories/; the watcher reconciles it onto the board.
       set({ busy: null });
+      toast(`Story ${epic}.${story} sharded onto the board`, "success");
     } catch (e) {
       set({ error: String(e), busy: null });
+      toast("Sharding failed", "error");
     }
   },
 
@@ -270,7 +275,7 @@ export const useCadre = create<CadreState>((set, get) => ({
         useBmadStore.getState().setStatus(e, s, status);
       const deps = { ...tauriOrchestratorDeps(onOutput), setStatus };
 
-      await runApprovedStory(deps, {
+      const res = await runApprovedStory(deps, {
         root,
         epic,
         story,
@@ -281,8 +286,13 @@ export const useCadre = create<CadreState>((set, get) => ({
         env,
       });
       set({ busy: null });
+      toast(
+        `Story ${epic}.${story}: ${res.status}`,
+        res.status === "Done" ? "success" : "error"
+      );
     } catch (e) {
       set({ error: String(e), busy: null });
+      toast(`Dispatch failed for ${epic}.${story}`, "error");
     }
   },
 
@@ -319,8 +329,13 @@ export const useCadre = create<CadreState>((set, get) => ({
       const agg = aggregateReviews(reviews);
       onOutput(`[cadre] review fleet ${agg.verdict === "block" ? "BLOCKED" : "accepted"} (${agg.findingCount} findings)\n`);
       set((s) => ({ codeReviews: { ...s.codeReviews, [key]: { status: "done", reviews } } }));
+      toast(
+        `Review ${key}: ${agg.verdict === "block" ? `blocked (${agg.findingCount})` : "accepted"}`,
+        agg.verdict === "block" ? "error" : "success"
+      );
     } catch (e) {
       set((s) => ({ codeReviews: { ...s.codeReviews, [key]: { status: "done", reviews: [] } }, error: String(e) }));
+      toast(`Review failed for ${key}`, "error");
     }
   },
 
@@ -354,8 +369,10 @@ export const useCadre = create<CadreState>((set, get) => ({
         res.content ||
         (await invoke<string>("read_file", { path: `${root}/${BROWNFIELD_DOC_PATH}` }).catch(() => ""));
       set({ projectContext: content, busy: null });
+      toast("Project analyzed — the PM now has context", "success");
     } catch (e) {
       set({ error: String(e), busy: null });
+      toast("Project analysis failed", "error");
     }
   },
 
@@ -428,8 +445,10 @@ export const useCadre = create<CadreState>((set, get) => ({
 
       // The plan is refreshed but must be RE-APPROVED by a human before dispatch.
       set({ busy: null });
+      toast("Plan updated downstream — re-approve to dispatch", "info");
     } catch (e) {
       set({ error: String(e), busy: null });
+      toast("Cascade failed", "error");
     }
   },
 

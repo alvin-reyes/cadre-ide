@@ -4,6 +4,7 @@ import { TopBar } from "./components/TopBar";
 import { PlanningStudio } from "./PlanningStudio";
 import { FleetView } from "./FleetView";
 import { TerminalPanel } from "./TerminalPanel";
+import { Toaster } from "./Toaster";
 import { Welcome } from "./Welcome";
 import { useBmadStore } from "../stores/bmadStore";
 import { useSettingsStore } from "../stores/settingsStore";
@@ -35,6 +36,16 @@ export function CadreApp() {
   useEffect(() => {
     if (projectRoot) hydrateFromProject();
   }, [projectRoot, hydrateFromProject]);
+
+  // Esc closes the terminal drawer.
+  useEffect(() => {
+    if (!terminalOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setTerminalOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [terminalOpen]);
 
   if (!projectRoot && !preview) {
     return <Welcome onPreview={() => setPreview(true)} />;
@@ -84,6 +95,7 @@ export function CadreApp() {
           </div>
         </div>
       )}
+      <Toaster />
     </div>
   );
 }

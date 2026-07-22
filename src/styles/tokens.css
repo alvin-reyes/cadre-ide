@@ -106,6 +106,40 @@
   stroke-width: 1.75;
 }
 
+/* Consistent interaction feel on every control (works with inline styles). */
+.cadre-ui button {
+  transition: filter var(--c-dur-fast) var(--c-ease-out),
+    transform var(--c-dur-fast) var(--c-ease-out),
+    background var(--c-dur) var(--c-ease-out),
+    border-color var(--c-dur) var(--c-ease-out),
+    color var(--c-dur) var(--c-ease-out);
+}
+.cadre-ui button:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+.cadre-ui button:not(:disabled):active {
+  transform: translateY(0.5px);
+}
+.cadre-ui button:disabled {
+  cursor: default;
+}
+/* Accessible focus rings for keyboard users. */
+.cadre-ui button:focus-visible,
+.cadre-ui a:focus-visible,
+.cadre-ui select:focus-visible,
+.cadre-ui input:focus-visible,
+.cadre-ui textarea:focus-visible {
+  outline: 2px solid var(--c-accent-ring);
+  outline-offset: 1px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cadre-ui button:not(:disabled):hover,
+  .cadre-ui button:not(:disabled):active {
+    filter: none;
+    transform: none;
+  }
+}
+
 /* Draggable pane divider — highlights on hover/drag. */
 .cadre-divider:hover .cadre-divider-line,
 .cadre-divider:active .cadre-divider-line {
@@ -169,6 +203,20 @@
   background: var(--c-accent);
   border-radius: 1px;
   animation: cadre-caret-blink 1s steps(1) infinite;
+}
+
+@keyframes cadre-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.cadre-toast {
+  animation: cadre-toast-in var(--c-dur) var(--c-ease-out);
 }
 
 .cadre-chip {
