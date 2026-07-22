@@ -1,5 +1,30 @@
+import { ShieldCheck, ShieldAlert, Gavel } from "lucide-react";
 import type { StoryCard } from "../../lib/engine/board";
 import { StatusPill } from "./StatusPill";
+import { useCadre } from "../useCadre";
+import { aggregateReviews } from "../../lib/engine/reviewFleet";
+
+/** Compact adversarial-review verdict for a story card (review fleet, at a glance). */
+function ReviewBadge({ storyId }: { storyId: string }) {
+  const review = useCadre((s) => s.codeReviews[storyId]);
+  if (!review) return null;
+  if (review.status === "reviewing") {
+    return (
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: "var(--c-fs-xs)", color: "var(--c-accent)" }}>
+        <Gavel size={11} strokeWidth={2} /> reviewing
+      </span>
+    );
+  }
+  if (!review.reviews || review.reviews.length === 0) return null;
+  const agg = aggregateReviews(review.reviews);
+  return agg.verdict === "block" ? (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: "var(--c-fs-xs)", color: "var(--c-warning)", fontWeight: 600 as const }}>
+      <ShieldAlert size={11} strokeWidth={2.5} /> {agg.findingCount}
+    </span>
+  ) : (
+    <ShieldCheck size={12} strokeWidth={2.5} style={{ color: "var(--c-success)" }} />
+  );
+}
 
 /** The Fleet board: story cards from the reconciled `bmadStore`, outcomes-first. */
 export function FleetBoard({
@@ -72,7 +97,10 @@ export function FleetBoard({
               </span>{" "}
               {card.title || "(untitled)"}
             </div>
-            <StatusPill status={card.status} />
+            <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "space-between" }}>
+              <StatusPill status={card.status} />
+              <ReviewBadge storyId={card.id} />
+            </div>
           </button>
         );
       })}
