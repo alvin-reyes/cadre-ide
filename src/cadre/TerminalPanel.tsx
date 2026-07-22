@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { invoke, Channel } from "@tauri-apps/api/core";
+import { useSettingsStore } from "../stores/settingsStore";
 import "@xterm/xterm/css/xterm.css";
 
 /**
@@ -22,10 +23,16 @@ export function TerminalPanel({ cwd }: { cwd: string }) {
     const host = ref.current;
     if (!host) return;
 
+    // Read terminal prefs once at mount (non-reactive, so changing them doesn't
+    // recreate the PTY). New settings apply to the next terminal you open.
+    const s = useSettingsStore.getState();
     const term = new XTerm({
-      fontFamily: '"SF Mono", "JetBrains Mono", ui-monospace, monospace',
-      fontSize: 13,
-      cursorBlink: true,
+      fontFamily: s.fontFamily,
+      fontSize: s.fontSize,
+      lineHeight: s.lineHeight,
+      cursorStyle: s.cursorStyle,
+      cursorBlink: s.cursorBlink,
+      scrollback: s.scrollback,
       theme: {
         background: "#14100c",
         foreground: "#efe9df",

@@ -66,6 +66,19 @@ export function CadreApp() {
     if (projectRoot) hydrateFromProject();
   }, [projectRoot, hydrateFromProject]);
 
+  // Ctrl/Cmd + ` toggles the large Terminal pane (IDE convention).
+  useEffect(() => {
+    if (!projectRoot) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "`") {
+        e.preventDefault();
+        setTermOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [projectRoot]);
+
   // Esc closes the large Terminal pane first, else the Workbench panel.
   useEffect(() => {
     if (!workbenchOpen && !termOpen) return;
@@ -133,7 +146,7 @@ function DockRail({
   const items: { id: RailId; icon: typeof FolderTree; label: string }[] = [
     { id: "files", icon: FolderTree, label: "Files" },
     { id: "code", icon: FileCode2, label: "Code" },
-    { id: "terminal", icon: SquareTerminal, label: "Terminal (large pane)" },
+    { id: "terminal", icon: SquareTerminal, label: "Terminal — ⌃` (large pane)" },
   ];
   return (
     <div
