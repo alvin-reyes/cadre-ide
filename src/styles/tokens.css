@@ -197,6 +197,21 @@
   }
 }
 
+/* Spinner for in-progress buttons (pair with a Lucide Loader2 icon). */
+@keyframes cadre-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.cadre-spin {
+  animation: cadre-spin 0.7s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cadre-spin {
+    animation-duration: 1.6s;
+  }
+}
+
 /* Draggable pane divider — highlights on hover/drag. */
 .cadre-divider:hover .cadre-divider-line,
 .cadre-divider:active .cadre-divider-line {

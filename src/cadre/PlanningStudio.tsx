@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, type CSSProperties, type ClipboardEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { marked } from "marked";
-import { ArrowUp, ArrowRight, Lock, RefreshCw, AlertTriangle, FileText, FileDown, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, ShieldAlert, Gavel, Paperclip, X, Check, Copy, Eye, Code2, Wrench } from "lucide-react";
+import { ArrowUp, ArrowRight, Lock, RefreshCw, AlertTriangle, FileText, FileDown, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, ShieldAlert, Gavel, Paperclip, X, Check, Copy, Eye, Code2, Wrench, Loader2 } from "lucide-react";
 import { exportHtmlToPdf } from "./exportPdf";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre, MODEL } from "./useCadre";
@@ -517,7 +517,13 @@ export function PlanningStudio() {
                   flexShrink: 0,
                 }}
               >
-                {busy ?? "Analyze project"}
+                {busy ? (
+                  <>
+                    <Loader2 size={13} strokeWidth={2.5} className="cadre-spin" /> Analyzing…
+                  </>
+                ) : (
+                  "Analyze project"
+                )}
               </button>
             </div>
           )}
@@ -935,8 +941,8 @@ export function PlanningStudio() {
               flexShrink: 0,
             }}
           >
-            <RefreshCw size={13} strokeWidth={2} />
-            {busy ?? "Apply changes"}
+            {busy ? <Loader2 size={13} strokeWidth={2.5} className="cadre-spin" /> : <RefreshCw size={13} strokeWidth={2} />}
+            {busy ? "Applying…" : "Apply changes"}
           </button>
           <button
             onClick={() => approvePlan(verification.length ? verification : [verifyCmd])}
@@ -1045,7 +1051,13 @@ export function PlanningStudio() {
                 flexShrink: 0,
               }}
             >
-              {busy ?? "Sign off & dispatch"}
+              {busy ? (
+                <>
+                  <Loader2 size={13} strokeWidth={2.5} className="cadre-spin" /> Signing off…
+                </>
+              ) : (
+                "Sign off & dispatch"
+              )}
             </button>
           </div>
         </>

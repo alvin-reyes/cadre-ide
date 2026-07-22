@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Circle, Plus, Play, Cpu, MessageSquarePlus, AlertTriangle, RefreshCw, ShieldCheck, ShieldAlert, Gavel, FileDown, ArrowRight, ArrowLeft } from "lucide-react";
+import { Circle, Plus, Play, Cpu, MessageSquarePlus, AlertTriangle, RefreshCw, ShieldCheck, ShieldAlert, Gavel, FileDown, ArrowRight, ArrowLeft, Loader2 } from "lucide-react";
 import { FleetBoard } from "./components/FleetBoard";
 import { StatusPill } from "./components/StatusPill";
 import { Markdown } from "./components/Markdown";
@@ -184,8 +184,8 @@ export function FleetView({ mode = "fleet" }: { mode?: "shard" | "fleet" }) {
               cursor: busy ? "default" : "pointer",
             }}
           >
-            <RefreshCw size={13} strokeWidth={2} />
-            {busy ?? "Apply changes"}
+            {busy ? <Loader2 size={13} strokeWidth={2.5} className="cadre-spin" /> : <RefreshCw size={13} strokeWidth={2} />}
+            {busy ? "Applying…" : "Apply changes"}
           </button>
           <button
             onClick={() => verification.length && approvePlan(verification)}
