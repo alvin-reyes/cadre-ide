@@ -7,7 +7,9 @@ import { callTool, planningTurn } from "../lib/planning/planningChat";
 import { ARCHITECT_SYSTEM_PROMPT, DESIGN_SYSTEM_PROMPT } from "../lib/planning/personas";
 import { generateStory } from "../lib/planning/generateStory";
 import { runApprovedStory } from "../lib/engine/orchestrator";
-import { tauriOrchestratorDeps } from "../lib/engine/tauriDeps";
+import { reviewStory as reviewStoryFleet, aggregateReviews, type LensReview } from "../lib/engine/reviewFleet";
+import { CODE_REVIEW_LENSES } from "../lib/planning/review";
+import { tauriOrchestratorDeps, tauriReviewFleetDeps } from "../lib/engine/tauriDeps";
 import { composeDispatchPrompt } from "../lib/engine/dispatch";
 import { nextStoryNumber } from "../lib/engine/shard";
 import { getProvider, resolveAgentEnv } from "../lib/engine/providers";
@@ -66,6 +68,8 @@ interface CadreState {
   needsReplan: boolean;
   /** live agent + verification output, keyed by "epic.story" (streamed on dispatch) */
   logs: Record<string, string>;
+  /** adversarial code-review results keyed by "epic.story" (the review fleet) */
+  codeReviews: Record<string, { status: "reviewing" | "done"; reviews?: LensReview[] }>;
   /** which model provider the Dev fleet runs on (id from engine PROVIDERS) */
   fleetProvider: string;
   /** a human-readable status while an async action runs (null = idle) */
@@ -87,6 +91,8 @@ interface CadreState {
   shardNextStory: (epic?: number) => Promise<void>;
   /** Dispatch a Dev agent for a story; Cadre verifies and writes the status. */
   dispatchStory: (epic: number, story: number) => Promise<void>;
+  /** Run the adversarial code-review fleet (diverse-lens agent loops) on a story. */
+  reviewStory: (epic: number, story: number) => Promise<void>;
   /** Read a story's markdown (docs/stories/{epic}.{story}.*.md), or "" if none. */
   getStoryMarkdown: (epic: number, story: number) => Promise<string>;
   /** Reload the plan (prd/architecture), frozen verification, and phase from disk (§3.8). */
@@ -130,6 +136,7 @@ export const useCadre = create<CadreState>((set, get) => ({
   verification: [],
   needsReplan: false,
   logs: {},
+  codeReviews: {},
   fleetProvider: "claude",
   busy: null,
   error: null,
@@ -267,6 +274,44 @@ export const useCadre = create<CadreState>((set, get) => ({
       set({ busy: null });
     } catch (e) {
       set({ error: String(e), busy: null });
+    }
+  },
+
+  reviewStory: async (epic, story) => {
+    const key = `${epic}.${story}`;
+    set((s) => ({ codeReviews: { ...s.codeReviews, [key]: { status: "reviewing" } }, error: null }));
+    const onOutput = (chunk: string) => {
+      set((s) => {
+        const next = (s.logs[key] ?? "") + chunk;
+        const capped = next.length > 200_000 ? next.slice(next.length - 200_000) : next;
+        return { logs: { ...s.logs, [key]: capped } };
+      });
+    };
+    try {
+      const root = requireRoot();
+      // Same provider routing as dispatch — reviewers are agents on the fleet.
+      const provider = getProvider(get().fleetProvider);
+      let token = await secretGet(provider.secretKey);
+      if (!token && provider.id === "claude") {
+        token = useSettingsStore.getState().anthropicApiKey || null;
+      }
+      if (!token) throw new Error(`No API key for ${provider.name} — add it in the fleet model picker.`);
+      const { env, model } = resolveAgentEnv(provider, token, provider.defaultModel);
+      onOutput(`[cadre] dispatching ${CODE_REVIEW_LENSES.length} adversarial reviewers on ${provider.name}\n`);
+
+      const reviews = await reviewStoryFleet(tauriReviewFleetDeps(onOutput), {
+        root,
+        epic,
+        story,
+        lenses: CODE_REVIEW_LENSES,
+        model,
+        env,
+      });
+      const agg = aggregateReviews(reviews);
+      onOutput(`[cadre] review fleet ${agg.verdict === "block" ? "BLOCKED" : "accepted"} (${agg.findingCount} findings)\n`);
+      set((s) => ({ codeReviews: { ...s.codeReviews, [key]: { status: "done", reviews } } }));
+    } catch (e) {
+      set((s) => ({ codeReviews: { ...s.codeReviews, [key]: { status: "done", reviews: [] } }, error: String(e) }));
     }
   },
 

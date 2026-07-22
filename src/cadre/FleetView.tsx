@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from "react";
-import { Circle, Plus, Play, Cpu, MessageSquarePlus, AlertTriangle, RefreshCw, ShieldCheck } from "lucide-react";
+import { Circle, Plus, Play, Cpu, MessageSquarePlus, AlertTriangle, RefreshCw, ShieldCheck, ShieldAlert, Gavel } from "lucide-react";
 import { FleetBoard } from "./components/FleetBoard";
 import { Markdown } from "./components/Markdown";
 import { useBmadStore } from "../stores/bmadStore";
 import { useCadre } from "./useCadre";
+import { aggregateReviews, type LensReview } from "../lib/engine/reviewFleet";
 import { PROVIDERS, getProvider } from "../lib/engine/providers";
 import { secretHas, secretSet } from "../lib/secrets";
 import type { StoryCard } from "../lib/engine/board";
@@ -283,6 +284,12 @@ function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
   const canDispatch = !preview && !busy && !needsReplan && (card.status === "Draft" || card.status === "Failed");
   const info = stateInfo(card.status);
 
+  const reviewStory = useCadre((s) => s.reviewStory);
+  const codeReview = useCadre((s) => s.codeReviews[card.id]);
+  const reviewing = codeReview?.status === "reviewing";
+  // The review fleet runs after the agent has produced code (a worktree exists).
+  const canReview = !preview && !busy && !reviewing && (card.status === "InReview" || card.status === "Done" || card.status === "Failed");
+
   const log = useCadre((s) => s.logs[card.id] ?? "");
   const hasLog = log.length > 0;
 
@@ -353,6 +360,29 @@ function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
           >
             <Play size={12} strokeWidth={2.5} />
             Dispatch
+          </button>
+        )}
+        {(canReview || reviewing) && (
+          <button
+            onClick={() => !reviewing && reviewStory(card.epic, card.story)}
+            disabled={reviewing}
+            title="Run the adversarial code-review fleet (diverse-lens agent loops)"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              fontSize: "var(--c-fs-xs)",
+              fontWeight: 550 as const,
+              padding: "4px 10px",
+              borderRadius: "var(--c-radius-sm)",
+              background: "transparent",
+              color: reviewing ? "var(--c-text-muted)" : "var(--c-text-secondary)",
+              border: "1px solid var(--c-border-strong)",
+              cursor: reviewing ? "default" : "pointer",
+            }}
+          >
+            <Gavel size={12} strokeWidth={2} />
+            {reviewing ? "Reviewing…" : "Review"}
           </button>
         )}
         <span
@@ -432,7 +462,90 @@ function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
           Loading story…
         </div>
       )}
+
+      {codeReview?.status === "done" && codeReview.reviews && codeReview.reviews.length > 0 && (
+        <CodeReviewPanel reviews={codeReview.reviews} />
+      )}
     </>
+  );
+}
+
+function reviewSevColor(sev: string): string {
+  return sev === "blocker" ? "var(--c-danger)" : sev === "major" ? "var(--c-warning)" : "var(--c-text-muted)";
+}
+
+/** The code-review fleet's verdict + findings for a story (adversary agents, visible). */
+function CodeReviewPanel({ reviews }: { reviews: LensReview[] }) {
+  const agg = aggregateReviews(reviews);
+  const blocked = agg.verdict === "block";
+  return (
+    <div
+      style={{
+        flexShrink: 0,
+        borderTop: "1px solid var(--c-border)",
+        background: "var(--c-surface-1)",
+        maxHeight: 260,
+        overflow: "auto",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          flexWrap: "wrap",
+          padding: "8px var(--c-space-4)",
+          position: "sticky",
+          top: 0,
+          background: "var(--c-surface-1)",
+          borderBottom: "1px solid var(--c-border)",
+        }}
+      >
+        {blocked ? (
+          <ShieldAlert size={15} strokeWidth={2} style={{ color: "var(--c-warning)", flexShrink: 0 }} />
+        ) : (
+          <ShieldCheck size={15} strokeWidth={2} style={{ color: "var(--c-success)", flexShrink: 0 }} />
+        )}
+        <span style={{ fontSize: "var(--c-fs-sm)", fontWeight: 600 as const, color: blocked ? "var(--c-warning)" : "var(--c-success)" }}>
+          {blocked ? `Blocked · ${agg.findingCount} finding${agg.findingCount === 1 ? "" : "s"}` : "Accepted by the review fleet"}
+        </span>
+        <div style={{ flex: 1 }} />
+        {reviews.map((r) => (
+          <span
+            key={r.lens}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              fontSize: "var(--c-fs-xs)",
+              color: r.verdict === "block" ? "var(--c-warning)" : "var(--c-success)",
+            }}
+          >
+            <Circle size={6} fill="currentColor" strokeWidth={0} />
+            {r.lens}
+          </span>
+        ))}
+      </div>
+      <div style={{ padding: "var(--c-space-3) var(--c-space-4)", display: "flex", flexDirection: "column", gap: 11 }}>
+        {reviews.flatMap((r) =>
+          r.findings.map((f, i) => (
+            <div key={`${r.lens}-${i}`} style={{ display: "flex", gap: 8 }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: reviewSevColor(f.severity), marginTop: 6, flexShrink: 0 }} />
+              <div>
+                <div style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text)" }}>
+                  <span style={{ textTransform: "uppercase", fontSize: 9, letterSpacing: "0.06em", color: reviewSevColor(f.severity), marginRight: 6, fontWeight: 600 as const }}>
+                    {f.severity}
+                  </span>
+                  <span style={{ color: "var(--c-text-faint)", marginRight: 6 }}>{r.lens}</span>
+                  {f.title}
+                </div>
+                <div style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text-muted)", lineHeight: 1.5 }}>{f.detail}</div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
   );
 }
 

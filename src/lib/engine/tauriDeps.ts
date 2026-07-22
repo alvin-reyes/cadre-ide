@@ -1,6 +1,7 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
 import type { RunStoryDeps } from "./runStory";
 import type { OrchestratorDeps } from "./orchestrator";
+import type { ReviewFleetDeps } from "./reviewFleet";
 import type { PlanApproval } from "./planApproval";
 import type { Status } from "./status";
 import type { BmadFileReader } from "../bmad/adapter";
@@ -147,6 +148,15 @@ export function tauriRunStoryDeps(onOutput?: OutputSink): RunStoryDeps {
 /** Orchestrator deps (run-story deps + the PLAN approval reader). */
 export function tauriOrchestratorDeps(onOutput?: OutputSink): OrchestratorDeps {
   return { ...tauriRunStoryDeps(onOutput), getPlanApproval };
+}
+
+/** Review-fleet deps: dispatch reviewer agent loops + read their findings markers. */
+export function tauriReviewFleetDeps(onOutput?: OutputSink): ReviewFleetDeps {
+  return {
+    spawnAgent: makeSpawnAgent(onOutput),
+    waitForExit,
+    readFile: (path: string) => invoke<string>("read_file", { path }),
+  };
 }
 
 /** A BmadFileReader that reads `${projectRoot}/.bmad-core/<relPath>` via Tauri. */
