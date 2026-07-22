@@ -36,7 +36,7 @@ pub fn run_command(cwd: &str, cmd: &str, timeout_secs: u64) -> Result<Verificati
     // otherwise keep the stdout pipe open and hang us for the full runtime.
     #[cfg(unix)]
     command.process_group(0);
-    let mut child = command
+    let child = command
         .spawn()
         .map_err(|e| format!("failed to spawn `{}` in {}: {}", cmd, cwd, e))?;
 

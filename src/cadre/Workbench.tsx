@@ -16,14 +16,21 @@ interface DirEntry {
   is_dir: boolean;
 }
 
-type Tab = "files" | "code" | "terminal";
+export type WorkbenchTab = "files" | "code" | "terminal";
 
 function relTo(root: string, path: string): string {
   return path.startsWith(root) ? path.slice(root.length).replace(/^\//, "") || "." : path;
 }
 
-export function Workbench({ root }: { root: string }) {
-  const [tab, setTab] = useState<Tab>("files");
+export function Workbench({
+  root,
+  tab,
+  onTab,
+}: {
+  root: string;
+  tab: WorkbenchTab;
+  onTab: (t: WorkbenchTab) => void;
+}) {
   const [dir, setDir] = useState(root);
   const [entries, setEntries] = useState<DirEntry[]>([]);
   const [file, setFile] = useState<{ path: string; content: string } | null>(null);
@@ -48,14 +55,14 @@ export function Workbench({ root }: { root: string }) {
     try {
       const content = await invoke<string>("read_file", { path: e.path });
       setFile({ path: e.path, content });
-      setTab("code");
+      onTab("code");
     } catch (err) {
       setError(String(err));
     }
   }
 
   const atRoot = dir === root;
-  const tabs: { id: Tab; icon: typeof FolderTree; label: string }[] = [
+  const tabs: { id: WorkbenchTab; icon: typeof FolderTree; label: string }[] = [
     { id: "files", icon: FolderTree, label: "Files" },
     { id: "code", icon: FileCode2, label: "Code" },
     { id: "terminal", icon: SquareTerminal, label: "Terminal" },
@@ -70,7 +77,7 @@ export function Workbench({ root }: { root: string }) {
           return (
             <button
               key={t.id}
-              onClick={() => setTab(t.id)}
+              onClick={() => onTab(t.id)}
               style={{
                 display: "inline-flex",
                 alignItems: "center",

@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
+import { FolderTree, FileCode2, SquareTerminal } from "lucide-react";
 import { TopBar } from "./components/TopBar";
 import { PlanningStudio } from "./PlanningStudio";
 import { FleetView } from "./FleetView";
-import { Workbench } from "./Workbench";
+import { Workbench, type WorkbenchTab } from "./Workbench";
 import { Toaster } from "./Toaster";
 import { Welcome } from "./Welcome";
 import { useBmadStore } from "../stores/bmadStore";
@@ -16,8 +17,14 @@ export function CadreApp() {
   const hydrateFromProject = useCadre((s) => s.hydrateFromProject);
   const hydrateSecrets = useSettingsStore((s) => s.hydrateSecrets);
   const [preview, setPreview] = useState(false);
-  const [workbenchOpen, setWorkbenchOpen] = useState(false);
+  const [wbTab, setWbTab] = useState<WorkbenchTab | null>(null);
+  const workbenchOpen = wbTab !== null;
   const projectRoot = useBmadStore((s) => s.projectRoot);
+
+  // Open the Workbench (Files) automatically when a project opens, so the toolset is visible.
+  useEffect(() => {
+    if (projectRoot) setWbTab("files");
+  }, [projectRoot]);
 
   // Phase gating: SHARD/FLEET open only once the plan is approved; DONE only when
   // there are stories and they're all Done. Planning "finalizes" at approval.
@@ -40,7 +47,7 @@ export function CadreApp() {
   useEffect(() => {
     if (!workbenchOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setWorkbenchOpen(false);
+      if (e.key === "Escape") setWbTab(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -59,20 +66,78 @@ export function CadreApp() {
         phase={phase}
         onNavigate={setPhase}
         unlocked={unlocked}
-        onToggleWorkbench={projectRoot ? () => setWorkbenchOpen((v) => !v) : undefined}
+        onToggleWorkbench={projectRoot ? () => setWbTab((t) => (t ? null : "files")) : undefined}
         workbenchOpen={workbenchOpen}
       />
       <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           {phase === "PLAN" ? <PlanningStudio /> : <FleetView />}
         </div>
-        {workbenchOpen && projectRoot && (
+        {wbTab && projectRoot && (
           <div style={{ width: 420, flexShrink: 0, borderLeft: "1px solid var(--c-border)", minHeight: 0 }}>
-            <Workbench root={projectRoot} />
+            <Workbench root={projectRoot} tab={wbTab} onTab={setWbTab} />
           </div>
+        )}
+        {projectRoot && (
+          <DockRail active={wbTab} onSelect={(t) => setWbTab((cur) => (cur === t ? null : t))} />
         )}
       </div>
       <Toaster />
+    </div>
+  );
+}
+
+/** Always-visible activity bar so the toolset is discoverable at a glance. */
+function DockRail({
+  active,
+  onSelect,
+}: {
+  active: WorkbenchTab | null;
+  onSelect: (t: WorkbenchTab) => void;
+}) {
+  const items: { id: WorkbenchTab; icon: typeof FolderTree; label: string }[] = [
+    { id: "files", icon: FolderTree, label: "Files" },
+    { id: "code", icon: FileCode2, label: "Code" },
+    { id: "terminal", icon: SquareTerminal, label: "Terminal" },
+  ];
+  return (
+    <div
+      style={{
+        width: 46,
+        flexShrink: 0,
+        borderLeft: "1px solid var(--c-border)",
+        background: "var(--c-surface-1)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 6,
+        padding: "var(--c-space-3) 0",
+      }}
+    >
+      {items.map(({ id, icon: Icon, label }) => {
+        const on = active === id;
+        return (
+          <button
+            key={id}
+            onClick={() => onSelect(id)}
+            title={label}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 32,
+              height: 32,
+              borderRadius: "var(--c-radius-sm)",
+              background: on ? "var(--c-accent-subtle)" : "transparent",
+              border: `1px solid ${on ? "var(--c-accent-ring)" : "var(--c-border)"}`,
+              color: on ? "var(--c-accent)" : "var(--c-text-secondary)",
+              cursor: "pointer",
+            }}
+          >
+            <Icon size={16} strokeWidth={2} />
+          </button>
+        );
+      })}
     </div>
   );
 }
