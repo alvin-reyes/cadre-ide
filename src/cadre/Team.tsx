@@ -12,6 +12,8 @@ import {
   FlaskConical,
   Rocket,
 } from "lucide-react";
+import { useCadre } from "./useCadre";
+import { useBmadStore } from "../stores/bmadStore";
 
 /**
  * The Team view — the CTO's org chart of the agent fleet: who's on the team, what
@@ -60,7 +62,19 @@ function TierBadge({ tier }: { tier: Tier }) {
   );
 }
 
-function MemberRow({ m }: { m: Member }) {
+type Live = { label: string; kind: "active" | "done" | "idle" };
+
+function StatusPill({ live }: { live: Live }) {
+  const color = live.kind === "done" ? "var(--c-success)" : live.kind === "active" ? "var(--c-accent)" : "var(--c-text-muted)";
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: "var(--c-fs-xs)", color, flexShrink: 0 }}>
+      <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} />
+      {live.label}
+    </span>
+  );
+}
+
+function MemberRow({ m, live }: { m: Member; live?: Live }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "var(--c-surface-2)", border: "1px solid var(--c-border)", borderRadius: "var(--c-radius)", opacity: m.planned ? 0.6 : 1 }}>
       <div style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--c-surface-3)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--c-text-secondary)", flexShrink: 0 }}>
@@ -73,6 +87,7 @@ function MemberRow({ m }: { m: Member }) {
         </div>
         <div style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)" }}>{m.role}</div>
       </div>
+      {live && <StatusPill live={live} />}
       <TierBadge tier={m.tier} />
     </div>
   );
@@ -88,6 +103,27 @@ const sectionLabel: CSSProperties = {
 };
 
 export function Team({ onClose }: { onClose: () => void }) {
+  const prd = useCadre((s) => s.prd);
+  const architecture = useCadre((s) => s.architecture);
+  const uxSpec = useCadre((s) => s.uxSpec);
+  const stories = useBmadStore((s) => s.stories);
+
+  const planningLive = (name: string): Live | undefined => {
+    const ready = (has: boolean): Live => (has ? { label: "ready", kind: "done" } : { label: "idle", kind: "idle" });
+    if (name === "PM") return prd.trim() ? { label: "PRD ready", kind: "done" } : { label: "idle", kind: "idle" };
+    if (name === "Architect") return ready(!!architecture.trim());
+    if (name === "Designer") return ready(!!uxSpec.trim());
+    return undefined;
+  };
+
+  const counts = { building: 0, blocked: 0, done: 0, draft: 0 };
+  for (const s of stories) {
+    if (s.status === "InProgress" || s.status === "InReview") counts.building++;
+    else if (s.status === "Blocked" || s.status === "Failed") counts.blocked++;
+    else if (s.status === "Done") counts.done++;
+    else counts.draft++;
+  }
+
   return (
     <div
       onClick={onClose}
@@ -125,7 +161,7 @@ export function Team({ onClose }: { onClose: () => void }) {
           <div>
             <div style={sectionLabel}>Planning — they create</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {PLANNING.map((m) => <MemberRow key={m.name} m={m} />)}
+              {PLANNING.map((m) => <MemberRow key={m.name} m={m} live={planningLive(m.name)} />)}
             </div>
           </div>
 
@@ -138,6 +174,18 @@ export function Team({ onClose }: { onClose: () => void }) {
 
           <div>
             <div style={sectionLabel}>Fleet — they build & ship (per story)</div>
+            <div style={{ display: "flex", gap: 12, padding: "0 2px 6px", fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)" }}>
+              {stories.length === 0 ? (
+                <span>No stories yet.</span>
+              ) : (
+                <>
+                  <span>{stories.length} stories</span>
+                  {counts.building > 0 && <span style={{ color: "var(--c-accent)" }}>{counts.building} building</span>}
+                  {counts.blocked > 0 && <span style={{ color: "var(--c-warning)" }}>{counts.blocked} blocked</span>}
+                  {counts.done > 0 && <span style={{ color: "var(--c-success)" }}>{counts.done} done</span>}
+                </>
+              )}
+            </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {FLEET.map((m) => <MemberRow key={m.name} m={m} />)}
             </div>
