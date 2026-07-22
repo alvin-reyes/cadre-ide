@@ -123,7 +123,13 @@ export function PlanningStudio() {
   // Which roles the PM has brought in this session (the user reaches them only via the PM).
   const [handedOff, setHandedOff] = useState<Record<PersonaId, boolean>>({ pm: true, architect: false, design: false, po: false });
   // Adversarial review state per artifact (a reviewer agent is part of the fleet).
-  type ReviewState = { status: "idle" | "reviewing" | "done"; result?: ReviewResult };
+  // Each finding must be resolved by the user (confirmed or commented) to clear the review.
+  type Resolution = { action: "confirmed" | "commented"; comment?: string };
+  type ReviewState = {
+    status: "idle" | "reviewing" | "done";
+    result?: ReviewResult;
+    resolutions?: Record<number, Resolution>;
+  };
   const [reviews, setReviews] = useState<Record<PersonaId, ReviewState>>({
     pm: { status: "idle" },
     architect: { status: "idle" },
@@ -131,6 +137,28 @@ export function PlanningStudio() {
     po: { status: "idle" },
   });
   const review = reviews[persona];
+
+  function resolveFinding(index: number, action: "confirmed" | "commented", comment?: string) {
+    setReviews((r) => {
+      const cur = r[persona];
+      return {
+        ...r,
+        [persona]: { ...cur, resolutions: { ...(cur.resolutions ?? {}), [index]: { action, comment } } },
+      };
+    });
+  }
+
+  // A review clears when it's done and every finding has been confirmed or commented.
+  const reviewResolved =
+    review.status === "done" &&
+    !!review.result &&
+    (review.result.findings.length === 0 ||
+      review.result.findings.every((_, i) => review.resolutions?.[i]));
+
+  function handoffTo(role: PersonaId) {
+    setHandedOff((h) => ({ ...h, [role]: true }));
+    setPersona(role);
+  }
 
   async function runReview() {
     if (!apiKey || !doc.trim() || review.status === "reviewing") return;
@@ -341,6 +369,9 @@ export function PlanningStudio() {
       : architectOpen
         ? { done: "PRD ready", msg: "The PM brought in the Architect.", to: "architect", cta: "Go to Architect" }
         : { done: "PRD ready", msg: "Ask the PM to bring in the Architect when the requirements are set.", to: null, cta: "" };
+
+  // The PM hands off to the Architect only after the PRD is reviewed AND its findings resolved.
+  const pmNeedsHandoff = persona === "pm" && prdReady && !architectOpen;
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
@@ -692,7 +723,7 @@ export function PlanningStudio() {
               <EmptyPane text="The Designer mocks up the actual screens here — describe the UI to begin." />
             )
           ) : doc ? (
-            <div style={{ flex: 1, overflow: "auto", padding: "var(--c-space-5)" }}>
+            <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "var(--c-space-5)" }}>
               <Markdown className="cadre-doc" content={doc} />
             </div>
           ) : thinking ? (
@@ -712,7 +743,7 @@ export function PlanningStudio() {
           )}
 
           {!showDesignPreview && review.status !== "idle" && (
-            <ReviewPanel state={review} label={meta.label} />
+            <ReviewPanel state={review} label={meta.label} onResolve={resolveFinding} />
           )}
         </div>
       </div>
@@ -863,6 +894,75 @@ export function PlanningStudio() {
             {busy ?? "Approve plan → dispatch"}
           </button>
         </div>
+      ) : pmNeedsHandoff ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--c-space-2)",
+            padding: "9px var(--c-space-4)",
+            background: reviewResolved ? "var(--c-success-subtle)" : "var(--c-surface-1)",
+            borderTop: "1px solid var(--c-border)",
+            fontSize: "var(--c-fs-sm)",
+            flexShrink: 0,
+          }}
+        >
+          <Gavel size={14} strokeWidth={2} style={{ color: "var(--c-accent)", flexShrink: 0 }} />
+          <span style={{ color: "var(--c-text-secondary)" }}>
+            {review.status !== "done"
+              ? "Have the PRD adversarially reviewed before handing off."
+              : !reviewResolved
+                ? "Resolve every review finding above (confirm or comment) to hand off."
+                : "Reviewed & resolved — hand off to the Architect."}
+          </span>
+          <div style={{ flex: 1 }} />
+          {review.status !== "done" ? (
+            <button
+              onClick={runReview}
+              disabled={review.status === "reviewing"}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                fontSize: "var(--c-fs-sm)",
+                fontWeight: 550 as const,
+                padding: "5px 12px",
+                borderRadius: "var(--c-radius)",
+                background: "var(--c-surface-2)",
+                color: "var(--c-text)",
+                border: "1px solid var(--c-border-strong)",
+                cursor: review.status === "reviewing" ? "default" : "pointer",
+                flexShrink: 0,
+              }}
+            >
+              <Gavel size={13} strokeWidth={2} />
+              {review.status === "reviewing" ? "Reviewing…" : "Review the PRD"}
+            </button>
+          ) : (
+            <button
+              onClick={() => handoffTo("architect")}
+              disabled={!reviewResolved}
+              title={reviewResolved ? "Bring in the Architect" : "Resolve the findings first"}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                fontSize: "var(--c-fs-sm)",
+                fontWeight: 550 as const,
+                padding: "5px 12px",
+                borderRadius: "var(--c-radius)",
+                background: reviewResolved ? "var(--c-accent)" : "var(--c-surface-3)",
+                color: reviewResolved ? "var(--c-on-accent)" : "var(--c-text-muted)",
+                border: "none",
+                cursor: reviewResolved ? "pointer" : "default",
+                flexShrink: 0,
+              }}
+            >
+              Hand off to Architect
+              <ArrowRight size={13} strokeWidth={2.5} />
+            </button>
+          )}
+        </div>
       ) : (
         <div
           style={{
@@ -974,14 +1074,21 @@ function sevColor(sev: Severity): string {
   return sev === "blocker" ? "var(--c-danger)" : sev === "major" ? "var(--c-warning)" : "var(--c-text-muted)";
 }
 
-/** The adversarial reviewer's verdict + findings for the current artifact (review fleet, visible). */
+/** The adversarial reviewer's verdict + findings; the user confirms or comments each to resolve it. */
 function ReviewPanel({
   state,
   label,
+  onResolve,
 }: {
-  state: { status: "idle" | "reviewing" | "done"; result?: ReviewResult };
+  state: {
+    status: "idle" | "reviewing" | "done";
+    result?: ReviewResult;
+    resolutions?: Record<number, { action: "confirmed" | "commented"; comment?: string }>;
+  };
   label: string;
+  onResolve: (index: number, action: "confirmed" | "commented", comment?: string) => void;
 }) {
+  const [drafts, setDrafts] = useState<Record<number, string>>({});
   if (state.status === "reviewing") {
     return (
       <div
@@ -1007,13 +1114,15 @@ function ReviewPanel({
   const r = state.result;
   if (!r) return null;
   const blocked = r.verdict === "block";
+  const resolutions = state.resolutions ?? {};
+  const unresolved = r.findings.filter((_, i) => !resolutions[i]).length;
   return (
     <div
       style={{
         flexShrink: 0,
         borderTop: "1px solid var(--c-border)",
         background: "var(--c-surface-1)",
-        maxHeight: 260,
+        maxHeight: 280,
         overflow: "auto",
       }}
     >
@@ -1038,32 +1147,85 @@ function ReviewPanel({
           {blocked ? `Blocked · ${r.findings.length} finding${r.findings.length === 1 ? "" : "s"}` : "Accepted"}
         </span>
         <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-faint)" }}>adversarial {label} review</span>
-        {r.summary && (
-          <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            — {r.summary}
+        <div style={{ flex: 1 }} />
+        {r.findings.length > 0 && (
+          <span style={{ fontSize: "var(--c-fs-xs)", fontWeight: 550 as const, color: unresolved === 0 ? "var(--c-success)" : "var(--c-warning)" }}>
+            {unresolved === 0 ? "all resolved" : `${unresolved} to resolve`}
           </span>
         )}
       </div>
       {r.findings.length > 0 && (
-        <div style={{ padding: "var(--c-space-3) var(--c-space-5)", display: "flex", flexDirection: "column", gap: 11 }}>
-          {r.findings.map((f, i) => (
-            <div key={i} style={{ display: "flex", gap: 8 }}>
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: sevColor(f.severity), marginTop: 6, flexShrink: 0 }} />
-              <div>
-                <div style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text)" }}>
-                  <span style={{ textTransform: "uppercase", fontSize: 9, letterSpacing: "0.06em", color: sevColor(f.severity), marginRight: 6, fontWeight: 600 as const }}>
-                    {f.severity}
-                  </span>
-                  {f.title}
+        <div style={{ padding: "var(--c-space-3) var(--c-space-5)", display: "flex", flexDirection: "column", gap: 14 }}>
+          {r.findings.map((f, i) => {
+            const res = resolutions[i];
+            return (
+              <div key={i} style={{ display: "flex", gap: 8, opacity: res ? 0.72 : 1 }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: sevColor(f.severity), marginTop: 6, flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text)" }}>
+                    <span style={{ textTransform: "uppercase", fontSize: 9, letterSpacing: "0.06em", color: sevColor(f.severity), marginRight: 6, fontWeight: 600 as const }}>
+                      {f.severity}
+                    </span>
+                    {f.title}
+                  </div>
+                  <div style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text-muted)", lineHeight: 1.5 }}>{f.detail}</div>
+                  {res ? (
+                    <div style={{ marginTop: 5, display: "inline-flex", alignItems: "center", gap: 5, fontSize: "var(--c-fs-xs)", color: res.action === "confirmed" ? "var(--c-success)" : "var(--c-text-secondary)" }}>
+                      <Check size={11} strokeWidth={2.5} />
+                      {res.action === "confirmed" ? "Confirmed — will address" : `Commented: ${res.comment}`}
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
+                      <button onClick={() => onResolve(i, "confirmed")} style={resolveBtn(true)}>
+                        <Check size={11} strokeWidth={2.5} /> Confirm
+                      </button>
+                      <input
+                        value={drafts[i] ?? ""}
+                        onChange={(e) => setDrafts((d) => ({ ...d, [i]: e.target.value }))}
+                        onKeyDown={(e) => {
+                          const c = (drafts[i] ?? "").trim();
+                          if (e.key === "Enter" && c) onResolve(i, "commented", c);
+                        }}
+                        placeholder="or comment to resolve…"
+                        style={{
+                          flex: 1,
+                          minWidth: 80,
+                          background: "var(--c-surface-2)",
+                          border: "1px solid var(--c-border)",
+                          borderRadius: "var(--c-radius-sm)",
+                          outline: "none",
+                          color: "var(--c-text)",
+                          fontSize: "var(--c-fs-xs)",
+                          padding: "3px 8px",
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
-                <div style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text-muted)", lineHeight: 1.5 }}>{f.detail}</div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
   );
+}
+
+function resolveBtn(primary: boolean): CSSProperties {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 4,
+    fontSize: "var(--c-fs-xs)",
+    fontWeight: 550 as const,
+    padding: "3px 9px",
+    borderRadius: "var(--c-radius-sm)",
+    background: primary ? "var(--c-surface-3)" : "transparent",
+    color: "var(--c-text-secondary)",
+    border: "1px solid var(--c-border)",
+    cursor: "pointer",
+    flexShrink: 0,
+  };
 }
 
 function EmptyPane({ text }: { text: string }) {
