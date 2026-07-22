@@ -40,6 +40,15 @@ export function TerminalPanel({ cwd }: { cwd: string }) {
         selectionBackground: "rgba(217,119,87,0.3)",
       },
     });
+    // Let app shortcuts (new tab / toggle panel) win over the shell for these
+    // chords — returning false makes xterm ignore the key and lets it bubble.
+    term.attachCustomKeyEventHandler((e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "t" || e.key === "T" || e.key === "`")) {
+        return false;
+      }
+      return true;
+    });
+
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host);

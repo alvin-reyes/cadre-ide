@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { TerminalPanel } from "./TerminalPanel";
 
@@ -19,6 +19,18 @@ export function TerminalTabs({ cwd }: { cwd: string }) {
     setIds((a) => [...a, id]);
     setActive(id);
   }
+
+  // Ctrl+T (dispatched from CadreApp) opens a new session. The setters are stable,
+  // so registering once is enough.
+  useEffect(() => {
+    const onNew = () => {
+      const id = ++seq;
+      setIds((a) => [...a, id]);
+      setActive(id);
+    };
+    window.addEventListener("cadre:new-terminal", onNew);
+    return () => window.removeEventListener("cadre:new-terminal", onNew);
+  }, []);
 
   function closeTab(id: number) {
     setIds((a) => {
@@ -97,7 +109,7 @@ export function TerminalTabs({ cwd }: { cwd: string }) {
         })}
         <button
           onClick={addTab}
-          title="New terminal"
+          title="New terminal (Ctrl+T)"
           style={{
             display: "inline-flex",
             alignItems: "center",

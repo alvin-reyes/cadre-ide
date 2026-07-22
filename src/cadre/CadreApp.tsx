@@ -28,11 +28,15 @@ export function CadreApp() {
   const [preview, setPreview] = useState(false);
   const [wbTab, setWbTab] = useState<WorkbenchTab | null>(null);
   const [termOpen, setTermOpen] = useState(false);
+  const [termMax, setTermMax] = useState(false);
   // Once opened, the Terminal stays MOUNTED (just hidden when closed) so its PTY
   // sessions and running processes survive closing/reopening or switching views.
   const [termMounted, setTermMounted] = useState(false);
   const [teamOpen, setTeamOpen] = useState(false);
   const workbenchOpen = wbTab !== null;
+  // Maximize only takes effect while the terminal is actually shown (so closing a
+  // maximized terminal doesn't leave the main view hidden).
+  const showMax = termOpen && termMax;
   const projectRoot = useBmadStore((s) => s.projectRoot);
 
   // The dock rail routes Files/Code to the side Workbench and Terminal to the
@@ -61,6 +65,7 @@ export function CadreApp() {
   useEffect(() => {
     setTermMounted(false);
     setTermOpen(false);
+    setTermMax(false);
   }, [projectRoot]);
 
   // Phase gating: SHARD/FLEET open only once the plan is approved; DONE only when
@@ -80,18 +85,25 @@ export function CadreApp() {
     if (projectRoot) hydrateFromProject();
   }, [projectRoot, hydrateFromProject]);
 
-  // Ctrl/Cmd + ` toggles the large Terminal pane (IDE convention).
+  // Terminal shortcuts: Ctrl/Cmd+` toggles the panel; Ctrl/Cmd+T opens it and adds
+  // a session (dispatched to the mounted TerminalTabs).
   useEffect(() => {
     if (!projectRoot) return;
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "`") {
         e.preventDefault();
         setTermOpen((v) => !v);
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === "t" || e.key === "T")) {
+        e.preventDefault();
+        setTermOpen(true);
+        // If the terminal is already mounted, ask it for a new tab; on the very
+        // first open it comes up with one session already.
+        if (termMounted) window.dispatchEvent(new CustomEvent("cadre:new-terminal"));
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [projectRoot]);
+  }, [projectRoot, termMounted]);
 
   // Esc closes the Workbench panel. (Not the terminal — Esc belongs to the shell;
   // toggle the terminal with Ctrl+` or the dock rail / Close button.)
@@ -137,7 +149,8 @@ export function CadreApp() {
         {/* Left area: the Plan/Fleet view (+ Files/Code side panel) with the
             Terminal docked as a collapsible bottom panel, VS Code–style. */}
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-          <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+          {/* Main row — hidden while the terminal is maximized. */}
+          <div style={{ flex: showMax ? "0 0 0" : 1, minHeight: 0, display: showMax ? "none" : "flex" }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               {phase === "PLAN" ? <PlanningStudio /> : <FleetView />}
             </div>
@@ -150,8 +163,13 @@ export function CadreApp() {
           {/* Terminal drawer — mounted once opened, then only toggled visible, so
               its PTY sessions persist across collapse/show and view switches. */}
           {termMounted && projectRoot && (
-            <div style={{ display: termOpen ? "flex" : "none", flexDirection: "column", flexShrink: 0 }}>
-              <TerminalDrawer root={projectRoot} onClose={() => setTermOpen(false)} />
+            <div style={{ display: termOpen ? "flex" : "none", flexDirection: "column", flex: showMax ? 1 : "0 0 auto", minHeight: 0 }}>
+              <TerminalDrawer
+                root={projectRoot}
+                onClose={() => setTermOpen(false)}
+                maximized={showMax}
+                onToggleMaximize={() => setTermMax((v) => !v)}
+              />
             </div>
           )}
         </div>

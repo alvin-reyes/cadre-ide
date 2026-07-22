@@ -1,12 +1,22 @@
-import { SquareTerminal, X } from "lucide-react";
+import { SquareTerminal, X, Maximize2, Minimize2 } from "lucide-react";
 import { TerminalTabs } from "./TerminalTabs";
 
 /**
- * The Terminal as a large, full-area workspace — an alternative to the Plan/Fleet
- * main pane rather than a cramped side panel. Full width and height for real
- * hands-on work (running agents, git, builds), with the multi-session tab strip.
+ * The Terminal chrome: a header (project cwd, maximize, close) over the multi-
+ * session tab strip. Used inside the bottom TerminalDrawer; the maximize toggle is
+ * optional and only shown when the host wires it.
  */
-export function TerminalWorkspace({ root, onClose }: { root: string; onClose: () => void }) {
+export function TerminalWorkspace({
+  root,
+  onClose,
+  maximized,
+  onToggleMaximize,
+}: {
+  root: string;
+  onClose: () => void;
+  maximized?: boolean;
+  onToggleMaximize?: () => void;
+}) {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, background: "var(--c-bg)" }}>
       <div
@@ -26,9 +36,29 @@ export function TerminalWorkspace({ root, onClose }: { root: string; onClose: ()
           {root}
         </span>
         <div style={{ flex: 1 }} />
+        {onToggleMaximize && (
+          <button
+            onClick={onToggleMaximize}
+            title={maximized ? "Restore panel" : "Maximize panel"}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 24,
+              height: 22,
+              borderRadius: "var(--c-radius-sm)",
+              background: "transparent",
+              border: "1px solid var(--c-border)",
+              color: "var(--c-text-secondary)",
+              cursor: "pointer",
+            }}
+          >
+            {maximized ? <Minimize2 size={13} strokeWidth={2} /> : <Maximize2 size={13} strokeWidth={2} />}
+          </button>
+        )}
         <button
           onClick={onClose}
-          title="Close terminal (Esc)"
+          title="Close terminal (Ctrl+`)"
           style={{
             display: "inline-flex",
             alignItems: "center",
