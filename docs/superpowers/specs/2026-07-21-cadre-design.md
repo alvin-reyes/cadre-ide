@@ -47,11 +47,14 @@ that proves the thesis end-to-end on one story, then grow it in tight stages (§
 ## 2. Target user & guiding principles
 
 ### The user (v0 beachhead: the technical builder-orchestrator)
-**Primary user, v0: an architect / engineer / eng-lead** — CLI-comfortable, operating *above* the code but
-dropping *into* it when needed, and orchestrating a **fleet of agents** rather than typing every line.
-Full-stack across the lifecycle. **The author is this user** — Cadre is dogfooded, not designed for a
-persona we'd have to guess at. This focus is deliberate: build the engine + the power-user experience
-first, prove it, then widen.
+**Primary user, v0: the technical lead / CTO** — an architect / engineer / eng-lead who is CLI-comfortable,
+operates *above* the code but drops *into* it when needed, and **orchestrates a fleet of agents** rather than
+typing every line. Full-stack across the lifecycle. In Cadre this person is framed as the **CTO**: the whole
+fleet (PM · Architect · Designer + dev/reviewer/QA agents) effectively reports up to them, and **they hold
+the sign-off** — they are *not* a product owner accepting deliverables, they are the technical authority
+directing and vouching for the build (the "PO sign-off" is a **CTO sign-off**, machine-validated but the
+human's call). **The author is this user** — Cadre is dogfooded, not designed for a persona we'd guess at.
+Focus is deliberate: build the engine + the power-user experience first, prove it, then widen.
 
 **Why *verified, not vibed* is sharp for engineers — trust at fleet scale.** The point is *not* that an
 engineer can't verify (they can). It's that at **concurrency, no one can babysit N parallel agents and

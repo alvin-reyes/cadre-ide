@@ -841,7 +841,7 @@ export function PlanningStudio() {
           >
             <ShieldCheck size={15} strokeWidth={2} style={{ color: "var(--c-success)", flexShrink: 0 }} />
             <span style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text-secondary)", flexShrink: 0 }}>
-              You're the PO — verify against:
+              CTO sign-off — verify against:
             </span>
             <input
               value={verifyCmd}
@@ -871,7 +871,7 @@ export function PlanningStudio() {
             <button
               onClick={runPoValidation}
               disabled={poCheck.status === "reviewing" || !!busy}
-              title="Adversarial PO validation of the whole plan (coverage, testable ACs, gaps)"
+              title="Adversarial validation of the whole plan (coverage, testable ACs, gaps) to back your sign-off"
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -888,7 +888,7 @@ export function PlanningStudio() {
               }}
             >
               <ClipboardCheck size={13} strokeWidth={2} />
-              {poCheck.status === "reviewing" ? "Validating…" : "PO validation"}
+              {poCheck.status === "reviewing" ? "Validating…" : "Validate plan"}
             </button>
             <button
               onClick={() => approvePlan([verifyCmd])}
@@ -1255,7 +1255,7 @@ function PoValidationPanel({ state }: { state: { status: "idle" | "reviewing" | 
           <Dots />
         </span>
         <span style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text-muted)" }}>
-          PO validation running across the whole plan…
+          Validating the whole plan for your sign-off…
         </span>
       </div>
     );
@@ -1268,7 +1268,7 @@ function PoValidationPanel({ state }: { state: { status: "idle" | "reviewing" | 
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px var(--c-space-4)", position: "sticky", top: 0, background: "var(--c-surface-1)", borderBottom: "1px solid var(--c-border)" }}>
         <ClipboardCheck size={14} strokeWidth={2} style={{ color: blocked ? "var(--c-warning)" : "var(--c-success)", flexShrink: 0 }} />
         <span style={{ fontSize: "var(--c-fs-sm)", fontWeight: 600 as const, color: blocked ? "var(--c-warning)" : "var(--c-success)" }}>
-          {blocked ? `PO validation · ${r.findings.length} gap${r.findings.length === 1 ? "" : "s"}` : "PO validation · clean"}
+          {blocked ? `Plan validation · ${r.findings.length} gap${r.findings.length === 1 ? "" : "s"}` : "Plan validation · clean"}
         </span>
         {r.summary && (
           <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -1276,7 +1276,7 @@ function PoValidationPanel({ state }: { state: { status: "idle" | "reviewing" | 
           </span>
         )}
         <div style={{ flex: 1 }} />
-        <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-faint)" }}>you decide — sign off below</span>
+        <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-faint)" }}>you decide — CTO signs off below</span>
       </div>
       {r.findings.length > 0 && (
         <div style={{ padding: "var(--c-space-3) var(--c-space-4)", display: "flex", flexDirection: "column", gap: 11 }}>
