@@ -9,6 +9,7 @@ import {
   type StoryCard,
 } from "../lib/engine/board";
 import type { Status } from "../lib/engine/status";
+import { scaffoldFiles } from "../lib/projectScaffold";
 
 /**
  * bmadStore: the live Fleet board. Opens a project, hydrates the board from the
@@ -96,6 +97,10 @@ export const useBmadStore = create<BmadState>((set, get) => {
       await invoke("write_text_file", { path: `${path}/cadre.json`, content: manifest });
       await invoke("write_text_file", { path: `${path}/README.md`, content: `# ${name}\n\nA Cadre project. Disciplined AI development — verified, not vibed.\n` });
       await invoke("write_text_file", { path: `${path}/docs/.gitkeep`, content: "" });
+      // Default scaffold: CLAUDE.md, llms.txt, and the BMAD agent prompts.
+      for (const f of scaffoldFiles(name)) {
+        await invoke("write_text_file", { path: `${path}/${f.path}`, content: f.content });
+      }
       // git repo with an initial commit (dispatch needs a HEAD to branch from).
       const idc = ["-c", "user.name=Cadre", "-c", "user.email=cadre@local"];
       await invoke("run_git", { cwd: path, args: ["init"] }).catch(() => {});
