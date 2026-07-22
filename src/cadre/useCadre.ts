@@ -548,8 +548,13 @@ export const useCadre = create<CadreState>((set, get) => ({
       projectContext: projectContext || s.projectContext,
       isBrownfield,
       verification: approval?.verification ?? s.verification,
-      // If the plan was already approved in a prior session, jump to the fleet.
-      phase: approved ? "FLEET" : s.phase,
+      // Approved on reload: go to FLEET if stories already exist (mid-execution),
+      // else SHARD (break the plan down) — matching approvePlan's landing.
+      phase: approved
+        ? useBmadStore.getState().stories.length > 0
+          ? "FLEET"
+          : "SHARD"
+        : s.phase,
     }));
   },
 }));

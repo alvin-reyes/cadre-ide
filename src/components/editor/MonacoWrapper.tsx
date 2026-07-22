@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect } from "react";
+import { useRef, useCallback } from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
 import type { editor as monacoEditor } from "monaco-editor";
 
@@ -40,6 +40,10 @@ interface MonacoWrapperProps {
 
 export default function MonacoWrapper({ filePath, content, onChange, onSave, theme = "vs-dark" }: MonacoWrapperProps) {
   const editorRef = useRef<monacoEditor.IStandaloneCodeEditor | null>(null);
+  // onMount runs once, so its Ctrl+S action must call through a ref that always
+  // points at the latest onSave — otherwise it saves a stale closure's content.
+  const onSaveRef = useRef(onSave);
+  onSaveRef.current = onSave;
   const language = detectLanguage(filePath);
 
   const handleMount: OnMount = useCallback((editor, monaco) => {
@@ -48,23 +52,17 @@ export default function MonacoWrapper({ filePath, content, onChange, onSave, the
       id: "save-file",
       label: "Save File",
       keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
-      run: () => onSave(),
+      run: () => onSaveRef.current(),
     });
     editor.focus();
-  }, [onSave]);
+  }, []);
 
-  useEffect(() => {
-    const editor = editorRef.current;
-    if (editor && editor.getValue() !== content) {
-      const pos = editor.getPosition();
-      editor.setValue(content);
-      if (pos) editor.setPosition(pos);
-    }
-  }, [content]);
-
+  // `path` gives each file its own model (clean undo history, no cursor bleed);
+  // `value` stays controlled. No manual setValue — that fought the controlled prop.
   return (
     <Editor
       height="100%"
+      path={filePath}
       language={language}
       value={content}
       theme={theme}

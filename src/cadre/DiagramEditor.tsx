@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Workflow, MessageSquarePlus, FilePlus2 } from "lucide-react";
 import { Modal } from "./components/Modal";
 import { Markdown } from "./components/Markdown";
@@ -31,6 +31,13 @@ export function DiagramEditor({
 }) {
   const [src, setSrc] = useState(TEMPLATE);
   const trimmed = src.trim();
+  // Debounce the preview so mermaid doesn't re-render (and spawn measurement nodes)
+  // on every keystroke.
+  const [preview, setPreview] = useState(TEMPLATE);
+  useEffect(() => {
+    const t = setTimeout(() => setPreview(src), 300);
+    return () => clearTimeout(t);
+  }, [src]);
 
   return (
     <Modal
@@ -67,8 +74,8 @@ export function DiagramEditor({
           }}
         />
         <div style={{ flex: 1, minWidth: 0, overflow: "auto", padding: "var(--c-space-3)" }}>
-          {trimmed ? (
-            <Markdown content={"```mermaid\n" + src + "\n```"} />
+          {preview.trim() ? (
+            <Markdown content={"```mermaid\n" + preview + "\n```"} />
           ) : (
             <div style={{ color: "var(--c-text-faint)", fontSize: "var(--c-fs-sm)" }}>Type Mermaid on the left to preview it here.</div>
           )}

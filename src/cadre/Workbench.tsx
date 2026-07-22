@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Save, FileCode2, RefreshCw } from "lucide-react";
 import MonacoWrapper from "../components/editor/MonacoWrapper";
@@ -16,25 +16,21 @@ function relTo(root: string, path: string): string {
   return path.startsWith(root) ? path.slice(root.length).replace(/^\//, "") || "." : path;
 }
 
-export function Workbench({ root, active }: { root: string; active?: boolean }) {
+export function Workbench({ root }: { root: string }) {
   const theme = useThemeStore((s) => s.theme);
   const [openPath, setOpenPath] = useState<string | null>(null);
   const [content, setContent] = useState("");
   const [saved, setSaved] = useState(""); // last-persisted content
   const [error, setError] = useState<string | null>(null);
   // Bumping reloadKey remounts the tree → re-lists from disk (no live watcher).
+  // Manual only, so switching to the File view doesn't collapse expanded folders.
   const [reloadKey, setReloadKey] = useState(0);
   const dirty = openPath != null && content !== saved;
 
-  // Refresh the tree whenever the File view becomes active, so files written since
-  // (e.g. docs/prd.md on sign-off) show up without a manual reload.
-  const wasActive = useRef(false);
-  useEffect(() => {
-    if (active && !wasActive.current) setReloadKey((k) => k + 1);
-    wasActive.current = !!active;
-  }, [active]);
-
   async function openFile(path: string) {
+    if (path === openPath) return;
+    // Don't silently discard unsaved edits when switching files.
+    if (dirty && !window.confirm("Discard unsaved changes to the current file?")) return;
     try {
       const text = await invoke<string>("read_file", { path });
       setOpenPath(path);
