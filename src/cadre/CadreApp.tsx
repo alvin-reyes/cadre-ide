@@ -4,6 +4,10 @@ import { TopBar } from "./components/TopBar";
 import { PlanningStudio } from "./PlanningStudio";
 import { FleetView } from "./FleetView";
 import { Workbench, type WorkbenchTab } from "./Workbench";
+import { TerminalWorkspace } from "./TerminalWorkspace";
+
+/** Dock-rail entries: the side-panel Workbench tabs plus the large Terminal pane. */
+type RailId = WorkbenchTab | "terminal";
 import { Team } from "./Team";
 import { Settings } from "./Settings";
 import { Toaster } from "./Toaster";
@@ -22,9 +26,23 @@ export function CadreApp() {
   const setShowSettings = useSettingsStore((s) => s.setShowSettings);
   const [preview, setPreview] = useState(false);
   const [wbTab, setWbTab] = useState<WorkbenchTab | null>(null);
+  const [termOpen, setTermOpen] = useState(false);
   const [teamOpen, setTeamOpen] = useState(false);
   const workbenchOpen = wbTab !== null;
   const projectRoot = useBmadStore((s) => s.projectRoot);
+
+  // The dock rail routes Files/Code to the side Workbench and Terminal to the
+  // large main-area pane (an alternative to the Plan/Fleet view).
+  const railActive: RailId | null = termOpen ? "terminal" : wbTab;
+  function onRailSelect(id: RailId) {
+    if (id === "terminal") setTermOpen((v) => !v);
+    else setWbTab((cur) => (cur === id ? null : id));
+  }
+  // Navigating phases returns you to the phase view (out of the terminal pane).
+  function navigate(p: typeof phase) {
+    setTermOpen(false);
+    setPhase(p);
+  }
 
   // Open the Workbench (Files) automatically when a project opens, so the toolset is visible.
   useEffect(() => {
@@ -48,15 +66,17 @@ export function CadreApp() {
     if (projectRoot) hydrateFromProject();
   }, [projectRoot, hydrateFromProject]);
 
-  // Esc closes the Workbench panel.
+  // Esc closes the large Terminal pane first, else the Workbench panel.
   useEffect(() => {
-    if (!workbenchOpen) return;
+    if (!workbenchOpen && !termOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setWbTab(null);
+      if (e.key !== "Escape") return;
+      if (termOpen) setTermOpen(false);
+      else setWbTab(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [workbenchOpen]);
+  }, [workbenchOpen, termOpen]);
 
   if (!projectRoot && !preview) {
     return <Welcome onPreview={() => setPreview(true)} />;
@@ -69,7 +89,7 @@ export function CadreApp() {
     >
       <TopBar
         phase={phase}
-        onNavigate={setPhase}
+        onNavigate={navigate}
         unlocked={unlocked}
         onToggleWorkbench={projectRoot ? () => setWbTab((t) => (t ? null : "files")) : undefined}
         workbenchOpen={workbenchOpen}
@@ -78,7 +98,13 @@ export function CadreApp() {
       />
       <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          {phase === "PLAN" ? <PlanningStudio /> : <FleetView />}
+          {termOpen && projectRoot ? (
+            <TerminalWorkspace root={projectRoot} onClose={() => setTermOpen(false)} />
+          ) : phase === "PLAN" ? (
+            <PlanningStudio />
+          ) : (
+            <FleetView />
+          )}
         </div>
         {wbTab && projectRoot && (
           <div style={{ width: 420, flexShrink: 0, borderLeft: "1px solid var(--c-border)", minHeight: 0 }}>
@@ -86,7 +112,7 @@ export function CadreApp() {
           </div>
         )}
         {projectRoot && (
-          <DockRail active={wbTab} onSelect={(t) => setWbTab((cur) => (cur === t ? null : t))} />
+          <DockRail active={railActive} onSelect={onRailSelect} />
         )}
       </div>
       {teamOpen && <Team onClose={() => setTeamOpen(false)} />}
@@ -101,13 +127,13 @@ function DockRail({
   active,
   onSelect,
 }: {
-  active: WorkbenchTab | null;
-  onSelect: (t: WorkbenchTab) => void;
+  active: RailId | null;
+  onSelect: (t: RailId) => void;
 }) {
-  const items: { id: WorkbenchTab; icon: typeof FolderTree; label: string }[] = [
+  const items: { id: RailId; icon: typeof FolderTree; label: string }[] = [
     { id: "files", icon: FolderTree, label: "Files" },
     { id: "code", icon: FileCode2, label: "Code" },
-    { id: "terminal", icon: SquareTerminal, label: "Terminal" },
+    { id: "terminal", icon: SquareTerminal, label: "Terminal (large pane)" },
   ];
   return (
     <div

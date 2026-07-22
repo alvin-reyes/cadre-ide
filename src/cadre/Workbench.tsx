@@ -1,17 +1,17 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { FolderTree, FileCode2, SquareTerminal } from "lucide-react";
-import { TerminalTabs } from "./TerminalTabs";
+import { FolderTree, FileCode2 } from "lucide-react";
 import { Markdown } from "./components/Markdown";
 import { FileTree } from "./FileTree";
 
 /**
- * The Workbench: a real hands-on toolset for the CTO — a project folder TREE, a
- * code/document viewer, and a terminal — wired to the actual filesystem via the
- * Tauri commands. The daily-driver IDE surface alongside planning + the fleet.
+ * The Workbench: a real hands-on toolset for the CTO — a project folder TREE and a
+ * code/document viewer, wired to the actual filesystem via the Tauri commands. The
+ * daily-driver IDE surface alongside planning + the fleet. (The terminal is its own
+ * large workspace — see TerminalWorkspace — since it needs the room.)
  */
 
-export type WorkbenchTab = "files" | "code" | "terminal";
+export type WorkbenchTab = "files" | "code";
 
 function relTo(root: string, path: string): string {
   return path.startsWith(root) ? path.slice(root.length).replace(/^\//, "") || "." : path;
@@ -43,7 +43,6 @@ export function Workbench({
   const tabs: { id: WorkbenchTab; icon: typeof FolderTree; label: string }[] = [
     { id: "files", icon: FolderTree, label: "Files" },
     { id: "code", icon: FileCode2, label: "Code" },
-    { id: "terminal", icon: SquareTerminal, label: "Terminal" },
   ];
 
   return (
@@ -113,11 +112,6 @@ export function Workbench({
           </div>
         )}
 
-        {tab === "terminal" && (
-          <div style={{ flex: 1, minHeight: 0 }}>
-            <TerminalTabs cwd={root} />
-          </div>
-        )}
       </div>
     </div>
   );
