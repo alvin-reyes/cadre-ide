@@ -1,20 +1,15 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { FolderTree, FileCode2, SquareTerminal, Folder, FileText, ChevronLeft } from "lucide-react";
+import { FolderTree, FileCode2, SquareTerminal } from "lucide-react";
 import { TerminalPanel } from "./TerminalPanel";
 import { Markdown } from "./components/Markdown";
+import { FileTree } from "./FileTree";
 
 /**
- * The Workbench: a real hands-on toolset for the CTO — a file browser, a code/
- * document viewer, and a terminal — wired to the actual filesystem via the Tauri
- * commands. This is the daily-driver IDE surface alongside planning + the fleet.
+ * The Workbench: a real hands-on toolset for the CTO — a project folder TREE, a
+ * code/document viewer, and a terminal — wired to the actual filesystem via the
+ * Tauri commands. The daily-driver IDE surface alongside planning + the fleet.
  */
-
-interface DirEntry {
-  name: string;
-  path: string;
-  is_dir: boolean;
-}
 
 export type WorkbenchTab = "files" | "code" | "terminal";
 
@@ -31,37 +26,20 @@ export function Workbench({
   tab: WorkbenchTab;
   onTab: (t: WorkbenchTab) => void;
 }) {
-  const [dir, setDir] = useState(root);
-  const [entries, setEntries] = useState<DirEntry[]>([]);
   const [file, setFile] = useState<{ path: string; content: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    invoke<DirEntry[]>("list_directory", { path: dir })
-      .then((e) => {
-        setEntries(
-          [...e].sort((a, b) => (a.is_dir === b.is_dir ? a.name.localeCompare(b.name) : a.is_dir ? -1 : 1))
-        );
-        setError(null);
-      })
-      .catch((err) => setError(String(err)));
-  }, [dir]);
-
-  async function open(e: DirEntry) {
-    if (e.is_dir) {
-      setDir(e.path);
-      return;
-    }
+  async function openFile(path: string) {
     try {
-      const content = await invoke<string>("read_file", { path: e.path });
-      setFile({ path: e.path, content });
+      const content = await invoke<string>("read_file", { path });
+      setFile({ path, content });
+      setError(null);
       onTab("code");
     } catch (err) {
       setError(String(err));
     }
   }
 
-  const atRoot = dir === root;
   const tabs: { id: WorkbenchTab; icon: typeof FolderTree; label: string }[] = [
     { id: "files", icon: FolderTree, label: "Files" },
     { id: "code", icon: FileCode2, label: "Code" },
@@ -101,50 +79,12 @@ export function Workbench({
 
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
         {tab === "files" && (
-          <div style={{ flex: 1, overflow: "auto", padding: "var(--c-space-2)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 6px 8px", fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)", fontFamily: "var(--c-font-mono)" }}>
-              {!atRoot && (
-                <button
-                  onClick={() => setDir(dir.slice(0, dir.lastIndexOf("/")) || root)}
-                  title="Up"
-                  style={{ display: "inline-flex", background: "transparent", border: "none", color: "var(--c-text-secondary)", cursor: "pointer", padding: 0 }}
-                >
-                  <ChevronLeft size={13} strokeWidth={2} />
-                </button>
-              )}
-              /{relTo(root, dir) === "." ? "" : relTo(root, dir)}
+          <div style={{ flex: 1, overflow: "auto", padding: "var(--c-space-2) 4px" }}>
+            <div style={{ padding: "2px 8px 8px", fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--c-text-muted)", fontWeight: 600 as const }}>
+              {relTo(root, root) === "." ? root.split("/").pop() : root}
             </div>
-            {error && <div style={{ padding: "6px", fontSize: "var(--c-fs-xs)", color: "var(--c-danger)" }}>{error}</div>}
-            {entries.map((e) => (
-              <button
-                key={e.path}
-                onClick={() => open(e)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 7,
-                  width: "100%",
-                  textAlign: "left",
-                  padding: "4px 6px",
-                  borderRadius: "var(--c-radius-sm)",
-                  background: file?.path === e.path ? "var(--c-surface-2)" : "transparent",
-                  border: "none",
-                  color: "var(--c-text-secondary)",
-                  fontSize: "var(--c-fs-sm)",
-                  cursor: "pointer",
-                }}
-              >
-                {e.is_dir ? (
-                  <Folder size={14} strokeWidth={2} style={{ color: "var(--c-accent)", flexShrink: 0 }} />
-                ) : (
-                  <FileText size={14} strokeWidth={2} style={{ color: "var(--c-text-muted)", flexShrink: 0 }} />
-                )}
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.name}</span>
-              </button>
-            ))}
-            {entries.length === 0 && !error && (
-              <div style={{ padding: "8px 6px", fontSize: "var(--c-fs-xs)", color: "var(--c-text-faint)" }}>Empty.</div>
-            )}
+            {error && <div style={{ padding: "4px 8px", fontSize: "var(--c-fs-xs)", color: "var(--c-danger)" }}>{error}</div>}
+            <FileTree root={root} onOpen={openFile} selected={file?.path ?? null} />
           </div>
         )}
 
@@ -167,7 +107,7 @@ export function Workbench({
               </>
             ) : (
               <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--c-text-faint)", fontSize: "var(--c-fs-sm)" }}>
-                Open a file from the Files tab.
+                Click a file in the Files tree.
               </div>
             )}
           </div>
@@ -175,7 +115,7 @@ export function Workbench({
 
         {tab === "terminal" && (
           <div style={{ flex: 1, minHeight: 0 }}>
-            <TerminalPanel cwd={dir} />
+            <TerminalPanel cwd={root} />
           </div>
         )}
       </div>
