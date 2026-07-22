@@ -36,6 +36,28 @@ export const REPORT_FINDINGS_TOOL = {
   },
 };
 
+/**
+ * Code review runs MULTIPLE independent reviewers with diverse lenses (§3.11) —
+ * a small fleet of adversary agents per story, raising the catch rate.
+ */
+export const CODE_REVIEW_LENSES: { lens: string; prompt: string }[] = [
+  {
+    lens: "correctness",
+    prompt:
+      "You are an ADVERSARIAL code reviewer focused on CORRECTNESS. Read the diff and try to BREAK it: logic errors, off-by-ones, unhandled edge cases, missing error handling, race conditions, broken invariants. Default to BLOCK on any real bug. Call report_findings.",
+  },
+  {
+    lens: "security",
+    prompt:
+      "You are an ADVERSARIAL code reviewer focused on SECURITY. Hunt for: injection, hardcoded secrets, missing authz/authn, unsafe deserialization, path traversal, SSRF, unvalidated input, and leaked data. Default to BLOCK on any real risk. Call report_findings.",
+  },
+  {
+    lens: "story-fit",
+    prompt:
+      "You are an ADVERSARIAL code reviewer checking the diff AGAINST THE STORY. Does it actually satisfy every acceptance criterion? Are there missing tests, gold-plating, or scope drift? Was the failing test truly written first? Default to BLOCK if the story isn't genuinely met. Call report_findings.",
+  },
+];
+
 export type Severity = "blocker" | "major" | "minor";
 export interface Finding {
   severity: Severity;
