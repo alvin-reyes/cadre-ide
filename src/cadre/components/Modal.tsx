@@ -32,8 +32,15 @@ export function Modal({
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        e.preventDefault();
         e.stopPropagation();
         onClose();
+        return;
+      }
+      // Swallow the app's global shortcuts while a dialog is open, so Ctrl+`/Ctrl+T
+      // don't toggle the terminal behind the modal.
+      if ((e.ctrlKey || e.metaKey) && (e.key === "`" || e.key === "t" || e.key === "T")) {
+        e.stopPropagation();
         return;
       }
       if (e.key === "Tab" && panelRef.current) {
@@ -55,7 +62,10 @@ export function Modal({
     document.addEventListener("keydown", onKey, true);
     return () => {
       document.removeEventListener("keydown", onKey, true);
-      restoreFocus.current?.focus?.();
+      // Return focus to the trigger — but only if it's still in the document
+      // (it may have unmounted while the dialog was open), else don't strand focus.
+      const el = restoreFocus.current;
+      if (el && el.isConnected) el.focus();
     };
   }, [onClose]);
 

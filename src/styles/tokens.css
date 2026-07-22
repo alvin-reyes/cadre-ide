@@ -191,9 +191,15 @@
 .cadre-ui a:focus-visible,
 .cadre-ui select:focus-visible,
 .cadre-ui input:focus-visible,
-.cadre-ui textarea:focus-visible {
+.cadre-ui textarea:focus-visible,
+.cadre-ui [role="separator"]:focus-visible {
   outline: 2px solid var(--c-accent-ring);
   outline-offset: 1px;
+}
+/* The focused resize handle shows its grip in the accent so it's discoverable. */
+.cadre-divider:focus-visible .cadre-divider-line {
+  background: var(--c-accent) !important;
+  width: 44px;
 }
 @media (prefers-reduced-motion: reduce) {
   .cadre-ui button:not(:disabled):hover,

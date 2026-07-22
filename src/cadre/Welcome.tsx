@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Hexagon, FolderOpen, ArrowRight, Sparkles, KeyRound, Eye, EyeOff, Check } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useBmadStore } from "../stores/bmadStore";
@@ -20,9 +20,11 @@ export function Welcome({ onPreview }: { onPreview: () => void }) {
   const [keyDraft, setKeyDraft] = useState("");
   const [revealKey, setRevealKey] = useState(false);
   const [keySaved, setKeySaved] = useState(false);
-  // Reflect a key hydrated from the keychain after mount.
+  const keyTouched = useRef(false);
+  // Reflect a key hydrated from the keychain after mount — but never clobber an
+  // in-progress edit if hydration lands while the user is typing.
   useEffect(() => {
-    setKeyDraft(anthropicKey);
+    if (!keyTouched.current) setKeyDraft(anthropicKey);
   }, [anthropicKey]);
   function saveKey() {
     setAnthropicKey(keyDraft.trim());
@@ -229,6 +231,7 @@ export function Welcome({ onPreview }: { onPreview: () => void }) {
                 type={revealKey ? "text" : "password"}
                 value={keyDraft}
                 onChange={(e) => {
+                  keyTouched.current = true;
                   setKeyDraft(e.target.value);
                   setKeySaved(false);
                 }}

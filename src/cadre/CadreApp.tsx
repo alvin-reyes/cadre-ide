@@ -59,6 +59,12 @@ export function CadreApp() {
     if (termOpen) setTermMounted(true);
   }, [termOpen]);
 
+  // Only one panel can own the full area — maximizing the terminal drops the
+  // Workbench out of maximize so it doesn't pop back maximized later.
+  useEffect(() => {
+    if (showMax) setWbMax(false);
+  }, [showMax]);
+
   // A different project means a different cwd — drop the old terminal sessions.
   useEffect(() => {
     setTermMounted(false);
@@ -152,7 +158,13 @@ export function CadreApp() {
           <div style={{ flex: showMax ? "0 0 0" : 1, minHeight: 0, display: showMax ? "none" : "flex" }}>
             {/* Plan/Fleet — hidden while the Workbench is maximized. */}
             <div style={{ flex: 1, minWidth: 0, display: wbShowMax ? "none" : "block" }}>
-              {phase === "PLAN" ? <PlanningStudio /> : <FleetView mode={phase === "SHARD" ? "shard" : "fleet"} />}
+              {phase === "PLAN" ? (
+                <PlanningStudio />
+              ) : (
+                // key by mode so SHARD and FLEET are separate instances — no stale
+                // drill-in state carries across; FLEET always lands on Activity.
+                <FleetView key={phase === "SHARD" ? "shard" : "fleet"} mode={phase === "SHARD" ? "shard" : "fleet"} />
+              )}
             </div>
             {wbTab && projectRoot && (
               <div

@@ -98,6 +98,7 @@ export function TerminalDrawer({
           aria-label="Resize terminal panel (arrow keys)"
           aria-valuenow={Math.round(height)}
           aria-valuemin={MIN_H}
+          aria-valuemax={Math.round(window.innerHeight * 0.8)}
           tabIndex={0}
           title="Drag to resize (or focus + arrow keys)"
           className="cadre-divider"
