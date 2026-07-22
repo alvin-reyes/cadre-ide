@@ -27,6 +27,9 @@ export function CadreApp() {
   const [preview, setPreview] = useState(false);
   const [wbTab, setWbTab] = useState<WorkbenchTab | null>(null);
   const [termOpen, setTermOpen] = useState(false);
+  // Once opened, the Terminal stays MOUNTED (just hidden when closed) so its PTY
+  // sessions and running processes survive closing/reopening or switching views.
+  const [termMounted, setTermMounted] = useState(false);
   const [teamOpen, setTeamOpen] = useState(false);
   const workbenchOpen = wbTab !== null;
   const projectRoot = useBmadStore((s) => s.projectRoot);
@@ -47,6 +50,17 @@ export function CadreApp() {
   // Open the Workbench (Files) automatically when a project opens, so the toolset is visible.
   useEffect(() => {
     if (projectRoot) setWbTab("files");
+  }, [projectRoot]);
+
+  // First time the Terminal opens, mount it for good (kept alive while hidden).
+  useEffect(() => {
+    if (termOpen) setTermMounted(true);
+  }, [termOpen]);
+
+  // A different project means a different cwd — drop the old terminal sessions.
+  useEffect(() => {
+    setTermMounted(false);
+    setTermOpen(false);
   }, [projectRoot]);
 
   // Phase gating: SHARD/FLEET open only once the plan is approved; DONE only when
@@ -110,13 +124,17 @@ export function CadreApp() {
         onOpenSettings={() => setShowSettings(true)}
       />
       <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {termOpen && projectRoot ? (
-            <TerminalWorkspace root={projectRoot} onClose={() => setTermOpen(false)} />
-          ) : phase === "PLAN" ? (
-            <PlanningStudio />
-          ) : (
-            <FleetView />
+        <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
+          {/* Phase view — hidden (not unmounted) while the terminal is showing. */}
+          <div style={{ height: "100%", display: termOpen ? "none" : "block" }}>
+            {phase === "PLAN" ? <PlanningStudio /> : <FleetView />}
+          </div>
+          {/* Terminal — mounted once opened, then only toggled visible, so its PTY
+              sessions persist across close/reopen and view switches. */}
+          {termMounted && projectRoot && (
+            <div style={{ position: "absolute", inset: 0, display: termOpen ? "block" : "none" }}>
+              <TerminalWorkspace root={projectRoot} onClose={() => setTermOpen(false)} />
+            </div>
           )}
         </div>
         {wbTab && projectRoot && (
