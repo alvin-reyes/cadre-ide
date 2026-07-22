@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { recordUsage } from "../../stores/usageStore";
+import { FALLBACK_MODEL, isModelError } from "./planningChat";
 
 /**
  * Adversarial review (§3.11): every artifact is critiqued by a same-discipline
@@ -88,15 +89,28 @@ export async function reviewArtifact(opts: {
     "\n\nReview this adversarially — try to BREAK it. Call report_findings with your verdict and every material flaw.",
   ].join("\n");
 
-  const response = await client.messages.create({
-    model: opts.model,
-    max_tokens: 2048,
-    system: opts.systemPrompt,
-    tools: [REPORT_FINDINGS_TOOL as Anthropic.Tool],
-    tool_choice: { type: "tool", name: "report_findings" },
-    messages: [{ role: "user", content: userPrompt }],
-  });
-  recordUsage(response.usage, opts.model);
+  const runCreate = (model: string) =>
+    client.messages.create({
+      model,
+      max_tokens: 2048,
+      system: opts.systemPrompt,
+      tools: [REPORT_FINDINGS_TOOL as Anthropic.Tool],
+      tool_choice: { type: "tool", name: "report_findings" },
+      messages: [{ role: "user", content: userPrompt }],
+    });
+  let usedModel = opts.model;
+  let response: Anthropic.Message;
+  try {
+    response = await runCreate(opts.model);
+  } catch (e) {
+    if (isModelError(e) && opts.model !== FALLBACK_MODEL) {
+      usedModel = FALLBACK_MODEL;
+      response = await runCreate(FALLBACK_MODEL);
+    } else {
+      throw e;
+    }
+  }
+  recordUsage(response.usage, usedModel);
 
   for (const block of response.content) {
     if (block.type === "tool_use" && block.name === "report_findings") {

@@ -2,6 +2,23 @@ import Anthropic from "@anthropic-ai/sdk";
 import { recordUsage } from "../../stores/usageStore";
 
 /**
+ * If the configured model id doesn't resolve on the account, fall back once to a
+ * known-good dated Sonnet id. Keeps the smoke test alive despite model-alias drift.
+ */
+export const FALLBACK_MODEL = "claude-sonnet-4-20250514";
+export function isModelError(e: unknown): boolean {
+  const s = String((e as { message?: string })?.message ?? e).toLowerCase();
+  return (
+    s.includes("model") &&
+    (s.includes("not_found") ||
+      s.includes("not found") ||
+      s.includes("404") ||
+      s.includes("does not exist") ||
+      s.includes("invalid model"))
+  );
+}
+
+/**
  * The Planning Studio's live SDK binding. The PM/Architect persona converses
  * with the user and, via the write_document tool, produces the artifact
  * (prd.md / architecture.md) that forms in the live-document pane.
@@ -155,19 +172,35 @@ export async function planningTurn(opts: {
     SUGGEST_REPLIES_TOOL,
   ] as Anthropic.Tool[];
 
-  const stream = client.messages.stream({
-    model: opts.model,
-    max_tokens: 4096,
-    system: opts.systemPrompt,
-    tools,
-    messages: opts.messages.map((m) => ({ role: m.role, content: toApiContent(m) })),
-  });
-  if (opts.onText) {
-    const onText = opts.onText;
-    stream.on("text", (delta: string) => onText(delta));
+  const apiMessages = opts.messages.map((m) => ({ role: m.role, content: toApiContent(m) }));
+  const runStream = (model: string) => {
+    const stream = client.messages.stream({
+      model,
+      max_tokens: 4096,
+      system: opts.systemPrompt,
+      tools,
+      messages: apiMessages,
+    });
+    if (opts.onText) {
+      const onText = opts.onText;
+      stream.on("text", (delta: string) => onText(delta));
+    }
+    return stream.finalMessage();
+  };
+
+  let usedModel = opts.model;
+  let response: Anthropic.Message;
+  try {
+    response = await runStream(opts.model);
+  } catch (e) {
+    if (isModelError(e) && opts.model !== FALLBACK_MODEL) {
+      usedModel = FALLBACK_MODEL;
+      response = await runStream(FALLBACK_MODEL);
+    } else {
+      throw e;
+    }
   }
-  const response = await stream.finalMessage();
-  recordUsage(response.usage, opts.model);
+  recordUsage(response.usage, usedModel);
 
   let reply = "";
   let document: string | undefined;
@@ -214,15 +247,28 @@ export async function callTool(opts: {
     dangerouslyAllowBrowser: true,
   });
   const tool = opts.tool as Anthropic.Tool;
-  const response = await client.messages.create({
-    model: opts.model,
-    max_tokens: 4096,
-    system: opts.systemPrompt,
-    tools: [tool],
-    tool_choice: { type: "tool", name: tool.name },
-    messages: [{ role: "user", content: opts.userPrompt }],
-  });
-  recordUsage(response.usage, opts.model);
+  const runCreate = (model: string) =>
+    client.messages.create({
+      model,
+      max_tokens: 4096,
+      system: opts.systemPrompt,
+      tools: [tool],
+      tool_choice: { type: "tool", name: tool.name },
+      messages: [{ role: "user", content: opts.userPrompt }],
+    });
+  let usedModel = opts.model;
+  let response: Anthropic.Message;
+  try {
+    response = await runCreate(opts.model);
+  } catch (e) {
+    if (isModelError(e) && opts.model !== FALLBACK_MODEL) {
+      usedModel = FALLBACK_MODEL;
+      response = await runCreate(FALLBACK_MODEL);
+    } else {
+      throw e;
+    }
+  }
+  recordUsage(response.usage, usedModel);
   for (const block of response.content) {
     if (block.type === "tool_use") return block.input;
   }
