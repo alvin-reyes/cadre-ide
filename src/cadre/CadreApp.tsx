@@ -121,7 +121,7 @@ export function CadreApp() {
           {/* File view — tree + editable code. */}
           {filesMounted && projectRoot && (
             <div style={hidden(view === "files")}>
-              <Workbench root={projectRoot} />
+              <Workbench root={projectRoot} active={view === "files"} />
             </div>
           )}
 

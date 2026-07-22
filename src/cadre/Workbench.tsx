@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Save, FileCode2 } from "lucide-react";
+import { Save, FileCode2, RefreshCw } from "lucide-react";
 import MonacoWrapper from "../components/editor/MonacoWrapper";
 import { FileTree } from "./FileTree";
 import { useThemeStore } from "../stores/themeStore";
@@ -16,13 +16,23 @@ function relTo(root: string, path: string): string {
   return path.startsWith(root) ? path.slice(root.length).replace(/^\//, "") || "." : path;
 }
 
-export function Workbench({ root }: { root: string }) {
+export function Workbench({ root, active }: { root: string; active?: boolean }) {
   const theme = useThemeStore((s) => s.theme);
   const [openPath, setOpenPath] = useState<string | null>(null);
   const [content, setContent] = useState("");
   const [saved, setSaved] = useState(""); // last-persisted content
   const [error, setError] = useState<string | null>(null);
+  // Bumping reloadKey remounts the tree → re-lists from disk (no live watcher).
+  const [reloadKey, setReloadKey] = useState(0);
   const dirty = openPath != null && content !== saved;
+
+  // Refresh the tree whenever the File view becomes active, so files written since
+  // (e.g. docs/prd.md on sign-off) show up without a manual reload.
+  const wasActive = useRef(false);
+  useEffect(() => {
+    if (active && !wasActive.current) setReloadKey((k) => k + 1);
+    wasActive.current = !!active;
+  }, [active]);
 
   async function openFile(path: string) {
     try {
@@ -85,11 +95,22 @@ export function Workbench({ root }: { root: string }) {
       <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
         {/* Explorer tree */}
         <div style={{ width: 240, flexShrink: 0, minHeight: 0, overflow: "auto", borderRight: "1px solid var(--c-border)", padding: "var(--c-space-2) 4px", background: "var(--c-surface-1)" }}>
-          <div style={{ padding: "2px 8px 8px", fontSize: "var(--c-fs-xs)", letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--c-text-muted)", fontWeight: 600 as const, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {relTo(root, root) === "." ? root.split("/").pop() : root}
+          <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 4px 8px 8px" }}>
+            <span style={{ flex: 1, fontSize: "var(--c-fs-xs)", letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--c-text-muted)", fontWeight: 600 as const, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {relTo(root, root) === "." ? root.split("/").pop() : root}
+            </span>
+            <button
+              onClick={() => setReloadKey((k) => k + 1)}
+              title="Refresh the file tree"
+              aria-label="Refresh the file tree"
+              className="cadre-hover"
+              style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, borderRadius: "var(--c-radius-sm)", background: "transparent", border: "none", color: "var(--c-text-muted)", cursor: "pointer", flexShrink: 0 }}
+            >
+              <RefreshCw size={13} strokeWidth={2} />
+            </button>
           </div>
           {error && <div style={{ padding: "4px 8px", fontSize: "var(--c-fs-xs)", color: "var(--c-danger)" }}>{error}</div>}
-          <FileTree root={root} onOpen={openFile} selected={openPath} />
+          <FileTree key={reloadKey} root={root} onOpen={openFile} selected={openPath} />
         </div>
 
         {/* Editor */}

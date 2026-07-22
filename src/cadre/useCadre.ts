@@ -224,8 +224,10 @@ export const useCadre = create<CadreState>((set, get) => ({
       }
       // Freeze the verification command in engine-owned state (agents can't forge it).
       await invoke("approve_plan", { verification: cmds });
-      set({ verification: cmds, phase: "FLEET", busy: null, needsReplan: false });
-      toast("Plan signed off — fleet unlocked", "success");
+      // Land on SHARD — the next step is breaking the plan into stories (the board
+      // is empty until the SM shards), not the (empty) execution board.
+      set({ verification: cmds, phase: "SHARD", busy: null, needsReplan: false });
+      toast("Plan signed off — shard it into stories", "success");
     } catch (e) {
       set({ error: String(e), busy: null });
       toast("Sign-off failed", "error");
