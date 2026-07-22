@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
-import { Circle, Plus, Play, Cpu, MessageSquarePlus, AlertTriangle, RefreshCw, ShieldCheck, ShieldAlert, Gavel, FileDown } from "lucide-react";
+import { Circle, Plus, Play, Cpu, MessageSquarePlus, AlertTriangle, RefreshCw, ShieldCheck, ShieldAlert, Gavel, FileDown, ArrowRight, ArrowLeft } from "lucide-react";
 import { FleetBoard } from "./components/FleetBoard";
+import { StatusPill } from "./components/StatusPill";
 import { Markdown } from "./components/Markdown";
 import { exportHtmlToPdf } from "./exportPdf";
 import { useBmadStore } from "../stores/bmadStore";
@@ -29,7 +30,8 @@ function stateInfo(status: Status): { label: string; color: string; live: boolea
   }
 }
 
-export function FleetView() {
+export function FleetView({ mode = "fleet" }: { mode?: "shard" | "fleet" }) {
+  const shard = mode === "shard";
   const stories = useBmadStore((s) => s.stories);
   const projectRoot = useBmadStore((s) => s.projectRoot);
   const shardNextStory = useCadre((s) => s.shardNextStory);
@@ -46,6 +48,13 @@ export function FleetView() {
   const display = stories;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = display.find((c) => c.id === selectedId) ?? display[0] ?? null;
+  // FLEET right pane: "activity" = the whole fleet at a glance; "task" = drill into
+  // one agent's live run. SHARD always shows the task breakdown.
+  const [rightView, setRightView] = useState<"activity" | "task">("activity");
+  function openTask(id: string) {
+    setSelectedId(id);
+    setRightView("task");
+  }
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
@@ -82,7 +91,15 @@ export function FleetView() {
           Generate story (SM)
         </button>
         <span style={{ fontSize: "var(--c-fs-xs)", color: busy ? "var(--c-accent)" : error ? "var(--c-danger)" : "var(--c-text-muted)" }}>
-          {busy ?? error ?? (preview ? "Preview — open a project to run the fleet." : `${stories.length} stor${stories.length === 1 ? "y" : "ies"}`)}
+          {busy ??
+            error ??
+            (preview
+              ? shard
+                ? "Preview — open a project to shard stories."
+                : "Preview — open a project to run the fleet."
+              : shard
+                ? `${stories.length} stor${stories.length === 1 ? "y" : "ies"} — review the breakdown, then go to Fleet to build`
+                : `${stories.length} stor${stories.length === 1 ? "y" : "ies"}`)}
         </span>
         <div style={{ flex: 1 }} />
         {!preview && (
@@ -107,7 +124,29 @@ export function FleetView() {
             New requirement
           </button>
         )}
-        {!preview && <FleetModelPicker />}
+        {!preview && shard && stories.length > 0 && (
+          <button
+            onClick={() => setPhase("FLEET")}
+            title="Happy with the breakdown? Go to Fleet to dispatch agents"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              fontSize: "var(--c-fs-sm)",
+              fontWeight: 550 as const,
+              padding: "5px 12px",
+              borderRadius: "var(--c-radius)",
+              background: "var(--c-accent)",
+              color: "var(--c-on-accent)",
+              border: "none",
+              cursor: "pointer",
+            }}
+          >
+            Go to Fleet
+            <ArrowRight size={14} strokeWidth={2.5} />
+          </button>
+        )}
+        {!preview && !shard && <FleetModelPicker />}
       </div>
 
       {!preview && needsReplan && (
@@ -172,12 +211,155 @@ export function FleetView() {
       )}
 
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-        <FleetBoard stories={display} selectedId={selected?.id ?? null} onSelect={setSelectedId} />
+        <FleetBoard
+          stories={display}
+          selectedId={rightView === "task" || shard ? selected?.id ?? null : null}
+          onSelect={(id) => (shard ? setSelectedId(id) : openTask(id))}
+        />
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-          {selected ? <AgentPane card={selected} preview={preview} /> : <EmptyAgent />}
+          {shard ? (
+            selected ? <AgentPane card={selected} preview={preview} mode="shard" /> : <EmptyAgent shard />
+          ) : rightView === "activity" || !selected ? (
+            <FleetActivity stories={display} preview={preview} onOpen={openTask} />
+          ) : (
+            <AgentPane card={selected} preview={preview} mode="fleet" onBack={() => setRightView("activity")} />
+          )}
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Fleet Activity — the whole agent fleet at a glance: who's working on what right
+ * now (live output tail), plus queued and finished tasks. Click any task to drill
+ * into its full agent monitor.
+ */
+function FleetActivity({
+  stories,
+  preview,
+  onOpen,
+}: {
+  stories: StoryCard[];
+  preview: boolean;
+  onOpen: (id: string) => void;
+}) {
+  const logs = useCadre((s) => s.logs);
+  const active = useCadre((s) => s.active);
+
+  const working = stories.filter((c) => c.status === "InProgress" || c.status === "InReview");
+  const rest = stories.filter((c) => c.status !== "InProgress" && c.status !== "InReview");
+
+  if (stories.length === 0) {
+    return (
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--c-text-muted)", fontSize: "var(--c-fs-sm)", textAlign: "center", padding: "var(--c-space-5)" }}>
+        {preview ? "Preview — open a project to run the fleet." : "No stories yet. Shard the plan, then dispatch agents here."}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "var(--c-space-4)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: "var(--c-space-3)" }}>
+        <span style={{ position: "relative", display: "inline-flex" }}>
+          <Circle size={8} fill="currentColor" strokeWidth={0} style={{ color: working.length ? "var(--c-accent)" : "var(--c-text-faint)" }} />
+        </span>
+        <span style={{ fontSize: "var(--c-fs-sm)", fontWeight: 600 as const, color: "var(--c-text)" }}>
+          {working.length ? `${working.length} agent${working.length === 1 ? "" : "s"} working` : "Fleet idle"}
+        </span>
+        <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)" }}>· {stories.length} task{stories.length === 1 ? "" : "s"} total</span>
+      </div>
+
+      {working.map((c) => (
+        <ActivityTile key={c.id} card={c} log={logs[c.id] ?? ""} live={!!active[c.id]} onOpen={() => onOpen(c.id)} />
+      ))}
+
+      {rest.length > 0 && (
+        <div style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--c-text-muted)", fontWeight: 600 as const, margin: `${working.length ? "var(--c-space-4)" : "0"} 0 var(--c-space-2)` }}>
+          Not running
+        </div>
+      )}
+      {rest.map((c) => {
+        const info = stateInfo(c.status);
+        return (
+          <button
+            key={c.id}
+            onClick={() => onOpen(c.id)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              width: "100%",
+              textAlign: "left",
+              padding: "8px 10px",
+              marginBottom: 6,
+              borderRadius: "var(--c-radius)",
+              background: "var(--c-surface-1)",
+              border: "1px solid var(--c-border)",
+              cursor: "pointer",
+            }}
+          >
+            <Circle size={7} fill="currentColor" strokeWidth={0} style={{ color: info.color, flexShrink: 0 }} />
+            <span style={{ fontSize: "var(--c-fs-xs)", fontFamily: "var(--c-font-mono)", color: "var(--c-text-muted)", flexShrink: 0 }}>{c.id}</span>
+            <span style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.title || "(untitled)"}</span>
+            <div style={{ flex: 1 }} />
+            <StatusPill status={c.status} />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** One live task card in the activity view: header + a tail of the agent's output. */
+function ActivityTile({ card, log, live, onOpen }: { card: StoryCard; log: string; live: boolean; onOpen: () => void }) {
+  const info = stateInfo(card.status);
+  const tail = log ? log.split("\n").slice(-7).join("\n") : "";
+  return (
+    <button
+      onClick={onOpen}
+      style={{
+        display: "block",
+        width: "100%",
+        textAlign: "left",
+        marginBottom: "var(--c-space-3)",
+        borderRadius: "var(--c-radius)",
+        background: "var(--c-surface-1)",
+        border: "1px solid var(--c-border-strong)",
+        overflow: "hidden",
+        cursor: "pointer",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px" }}>
+        <span className={live ? "cadre-typing-dot" : undefined} style={{ display: "inline-flex", color: info.color }}>
+          <Circle size={8} fill="currentColor" strokeWidth={0} />
+        </span>
+        <span style={{ fontSize: "var(--c-fs-xs)", fontFamily: "var(--c-font-mono)", color: "var(--c-text-muted)", flexShrink: 0 }}>{card.id}</span>
+        <span style={{ fontSize: "var(--c-fs-sm)", fontWeight: 550 as const, color: "var(--c-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {card.title || "(untitled)"}
+        </span>
+        <div style={{ flex: 1 }} />
+        <span style={{ fontSize: "var(--c-fs-xs)", color: info.color }}>{info.label}</span>
+      </div>
+      <pre
+        style={{
+          margin: 0,
+          padding: "8px 10px",
+          background: "var(--c-code-bg)",
+          borderTop: "1px solid var(--c-border)",
+          fontFamily: "var(--c-font-mono)",
+          fontSize: "var(--c-fs-xs)",
+          lineHeight: 1.5,
+          color: "var(--c-text-secondary)",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          maxHeight: 120,
+          overflow: "hidden",
+        }}
+      >
+        {tail || "waiting for output…"}
+      </pre>
+    </button>
   );
 }
 
@@ -276,7 +458,8 @@ function FleetModelPicker() {
   );
 }
 
-function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
+function AgentPane({ card, preview, mode = "fleet", onBack }: { card: StoryCard; preview: boolean; mode?: "shard" | "fleet"; onBack?: () => void }) {
+  const fleet = mode === "fleet";
   const dispatchStory = useCadre((s) => s.dispatchStory);
   const getStoryMarkdown = useCadre((s) => s.getStoryMarkdown);
   const busy = useCadre((s) => s.busy);
@@ -285,9 +468,10 @@ function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
   // An InProgress/InReview story that isn't running this session is orphaned — its
   // agent died with a prior app process. Offer Resume (dispatch is idempotent).
   const interrupted = isInterrupted(card.status, active, card.epic, card.story);
+  // Execution actions belong to FLEET; SHARD is for reviewing the breakdown.
   // Dispatch is paused while the plan is changed-but-not-re-approved (§5.1).
-  const canDispatch = !preview && !busy && !needsReplan && (card.status === "Draft" || card.status === "Failed");
-  const canResume = !preview && !busy && !needsReplan && interrupted;
+  const canDispatch = fleet && !preview && !busy && !needsReplan && (card.status === "Draft" || card.status === "Failed");
+  const canResume = fleet && !preview && !busy && !needsReplan && interrupted;
   const info = interrupted
     ? { label: "Interrupted — the run stopped when the app closed. Resume to re-dispatch.", color: "var(--c-warning)", live: false }
     : stateInfo(card.status);
@@ -296,7 +480,7 @@ function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
   const codeReview = useCadre((s) => s.codeReviews[card.id]);
   const reviewing = codeReview?.status === "reviewing";
   // The review fleet runs after the agent has produced code (a worktree exists).
-  const canReview = !preview && !busy && !reviewing && (card.status === "InReview" || card.status === "Done" || card.status === "Failed");
+  const canReview = fleet && !preview && !busy && !reviewing && (card.status === "InReview" || card.status === "Done" || card.status === "Failed");
 
   const log = useCadre((s) => s.logs[card.id] ?? "");
   const hasLog = log.length > 0;
@@ -319,12 +503,13 @@ function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
     };
   }, [preview, card.epic, card.story, card.status, getStoryMarkdown]);
 
-  // Default to the live Output once a dispatch has produced any; Story otherwise.
-  // (Manual toggles below persist — deps only change on card switch / first output.)
+  // SHARD is about the breakdown → default to the Story. FLEET is execution →
+  // default to live Output once a dispatch has produced any. (Manual toggles below
+  // persist — deps only change on card switch / first output / mode.)
   const [view, setView] = useState<"story" | "output">("story");
   useEffect(() => {
-    setView(hasLog ? "output" : "story");
-  }, [card.id, hasLog]);
+    setView(fleet && hasLog ? "output" : "story");
+  }, [card.id, hasLog, fleet]);
 
   return (
     <>
@@ -338,6 +523,29 @@ function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
           flexShrink: 0,
         }}
       >
+        {onBack && (
+          <button
+            onClick={onBack}
+            aria-label="Back to fleet activity"
+            title="Back to fleet activity"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              fontSize: "var(--c-fs-xs)",
+              fontWeight: 550 as const,
+              padding: "3px 8px",
+              borderRadius: "var(--c-radius-sm)",
+              background: "transparent",
+              color: "var(--c-text-secondary)",
+              border: "1px solid var(--c-border)",
+              cursor: "pointer",
+            }}
+          >
+            <ArrowLeft size={12} strokeWidth={2} />
+            Activity
+          </button>
+        )}
         <span
           style={{
             fontSize: "var(--c-fs-sm)",
@@ -657,7 +865,7 @@ function LiveTerminal({ log, empty }: { log: string; empty: string }) {
 }
 
 
-function EmptyAgent() {
+function EmptyAgent({ shard }: { shard?: boolean }) {
   return (
     <div
       style={{
@@ -665,11 +873,15 @@ function EmptyAgent() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        color: "var(--c-text-faint)",
+        color: "var(--c-text-muted)",
         fontSize: "var(--c-fs-sm)",
+        textAlign: "center",
+        padding: "var(--c-space-5)",
       }}
     >
-      Select a story to watch its agent.
+      {shard
+        ? "No stories yet — Generate story (SM) to break the plan into tasks."
+        : "Select a task to watch its agent."}
     </div>
   );
 }

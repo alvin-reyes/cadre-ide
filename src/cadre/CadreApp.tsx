@@ -67,8 +67,8 @@ export function CadreApp() {
     setWbMax(false);
   }, [projectRoot]);
 
-  // Phase gating: SHARD/FLEET open only once the plan is approved; DONE only when
-  // there are stories and they're all Done. Planning "finalizes" at approval.
+  // Phase gating: SHARD/FLEET open once the plan is approved; DONE only when there
+  // are stories and they're all Done. Planning "finalizes" at approval.
   const planApproved = useCadre((s) => s.verification.length > 0);
   const stories = useBmadStore((s) => s.stories);
   const allDone = stories.length > 0 && stories.every((st) => st.status === "Done");
@@ -152,7 +152,7 @@ export function CadreApp() {
           <div style={{ flex: showMax ? "0 0 0" : 1, minHeight: 0, display: showMax ? "none" : "flex" }}>
             {/* Plan/Fleet — hidden while the Workbench is maximized. */}
             <div style={{ flex: 1, minWidth: 0, display: wbShowMax ? "none" : "block" }}>
-              {phase === "PLAN" ? <PlanningStudio /> : <FleetView />}
+              {phase === "PLAN" ? <PlanningStudio /> : <FleetView mode={phase === "SHARD" ? "shard" : "fleet"} />}
             </div>
             {wbTab && projectRoot && (
               <div

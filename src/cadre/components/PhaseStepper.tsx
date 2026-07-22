@@ -2,6 +2,8 @@ import { Check, Lock } from "lucide-react";
 
 export type Phase = "PLAN" | "SHARD" | "FLEET" | "DONE";
 
+// PLAN = produce the plan; SHARD = break it into stories (the task list) and
+// review them; FLEET = dispatch agents to build; DONE = all verified.
 const PHASES: Phase[] = ["PLAN", "SHARD", "FLEET", "DONE"];
 
 /** The always-visible discipline stepper (§4.3). Phases lock until their gate is met. */
