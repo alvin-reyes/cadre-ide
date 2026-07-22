@@ -56,6 +56,16 @@ export function FleetView({ mode = "fleet" }: { mode?: "shard" | "fleet" }) {
     setRightView("task");
   }
 
+  // Fleet-state tally for the context band (working / queued / done / failed).
+  const counts = { working: 0, queued: 0, done: 0, failed: 0 };
+  for (const c of stories) {
+    if (c.status === "InProgress" || c.status === "InReview") counts.working++;
+    else if (c.status === "Done") counts.done++;
+    else if (c.status === "Failed" || c.status === "Blocked") counts.failed++;
+    else counts.queued++;
+  }
+  const allDone = stories.length > 0 && counts.done === stories.length;
+
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
       {/* Fleet toolbar */}
@@ -148,6 +158,42 @@ export function FleetView({ mode = "fleet" }: { mode?: "shard" | "fleet" }) {
         )}
         {!preview && !shard && <FleetModelPicker />}
       </div>
+
+      {/* Context band — what this screen is for + live fleet state. */}
+      {!preview && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 16,
+            padding: "6px var(--c-space-4)",
+            borderBottom: "1px solid var(--c-border)",
+            background: "var(--c-surface-1)",
+            flexShrink: 0,
+            fontSize: "var(--c-fs-xs)",
+          }}
+        >
+          {shard ? (
+            <span style={{ color: "var(--c-text-muted)" }}>
+              Break the approved plan into small, testable stories — review each below, then{" "}
+              <b style={{ color: "var(--c-text-secondary)" }}>Go to Fleet</b> to build.
+            </span>
+          ) : (
+            <>
+              <Stat color="var(--c-accent)" label="working" n={counts.working} />
+              <Stat color="var(--c-text-muted)" label="queued" n={counts.queued} />
+              <Stat color="var(--c-success)" label="done" n={counts.done} />
+              <Stat color="var(--c-danger)" label="failed" n={counts.failed} />
+              <div style={{ flex: 1 }} />
+              {allDone && (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--c-success)", fontWeight: 550 as const }}>
+                  <ShieldCheck size={12} strokeWidth={2} /> All tasks verified
+                </span>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {!preview && needsReplan && (
         <div
@@ -260,14 +306,16 @@ function FleetActivity({
 
   return (
     <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "var(--c-space-4)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: "var(--c-space-3)" }}>
-        <span style={{ position: "relative", display: "inline-flex" }}>
-          <Circle size={8} fill="currentColor" strokeWidth={0} style={{ color: working.length ? "var(--c-accent)" : "var(--c-text-faint)" }} />
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: "var(--c-space-3)" }}>
+        <span className={working.length ? "cadre-typing-dot" : undefined} style={{ display: "inline-flex", alignSelf: "center", color: working.length ? "var(--c-accent)" : "var(--c-text-faint)" }}>
+          <Circle size={8} fill="currentColor" strokeWidth={0} />
         </span>
         <span style={{ fontSize: "var(--c-fs-sm)", fontWeight: 600 as const, color: "var(--c-text)" }}>
           {working.length ? `${working.length} agent${working.length === 1 ? "" : "s"} working` : "Fleet idle"}
         </span>
-        <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)" }}>· {stories.length} task{stories.length === 1 ? "" : "s"} total</span>
+        <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)" }}>
+          {working.length ? "· click a task to open its live monitor" : "· open a queued task below and Dispatch it"}
+        </span>
       </div>
 
       {working.map((c) => (
@@ -285,11 +333,14 @@ function FleetActivity({
           <button
             key={c.id}
             onClick={() => onOpen(c.id)}
+            aria-label={`Open task ${c.id} — ${c.status}`}
+            className="cadre-hover"
             style={{
               display: "flex",
               alignItems: "center",
               gap: 8,
               width: "100%",
+              minHeight: 32,
               textAlign: "left",
               padding: "8px 10px",
               marginBottom: 6,
@@ -318,6 +369,7 @@ function ActivityTile({ card, log, live, onOpen }: { card: StoryCard; log: strin
   return (
     <button
       onClick={onOpen}
+      aria-label={`Open live monitor for task ${card.id}`}
       style={{
         display: "block",
         width: "100%",
@@ -558,9 +610,11 @@ function AgentPane({ card, preview, mode = "fleet", onBack }: { card: StoryCard;
         >
           dev · story {card.id}
         </span>
-        <span style={{ fontSize: "var(--c-fs-xs)", fontFamily: "var(--c-font-mono)", color: "var(--c-text-muted)" }}>
-          claude · branch story/{card.id}
-        </span>
+        {fleet && (
+          <span style={{ fontSize: "var(--c-fs-xs)", fontFamily: "var(--c-font-mono)", color: "var(--c-text-muted)" }}>
+            claude · branch story/{card.id}
+          </span>
+        )}
         <div style={{ flex: 1 }} />
         {canDispatch && (
           <button
@@ -679,12 +733,14 @@ function AgentPane({ card, preview, mode = "fleet", onBack }: { card: StoryCard;
         <Circle size={7} fill="currentColor" strokeWidth={0} />
         {info.label}
         <div style={{ flex: 1 }} />
-        {!preview && (
+        {!preview && fleet && (
           <div style={{ display: "flex", gap: 2 }}>
             {(["story", "output"] as const).map((v) => (
               <button
                 key={v}
                 onClick={() => setView(v)}
+                aria-pressed={view === v}
+                className="cadre-hover"
                 style={{
                   fontSize: "var(--c-fs-xs)",
                   fontWeight: 550 as const,
@@ -864,6 +920,18 @@ function LiveTerminal({ log, empty }: { log: string; empty: string }) {
   );
 }
 
+
+/** A colored count in the fleet context band. Dimmed when zero. */
+function Stat({ color, label, n }: { color: string; label: string; n: number }) {
+  const on = n > 0;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, opacity: on ? 1 : 0.5 }}>
+      <Circle size={7} fill="currentColor" strokeWidth={0} style={{ color: on ? color : "var(--c-text-faint)" }} />
+      <span style={{ color: "var(--c-text)", fontWeight: 600 as const }}>{n}</span>
+      <span style={{ color: "var(--c-text-muted)" }}>{label}</span>
+    </span>
+  );
+}
 
 function EmptyAgent({ shard }: { shard?: boolean }) {
   return (
