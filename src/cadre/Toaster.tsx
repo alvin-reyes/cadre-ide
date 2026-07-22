@@ -7,6 +7,8 @@ export function Toaster() {
   const remove = useToastStore((s) => s.remove);
   return (
     <div
+      aria-live="polite"
+      aria-relevant="additions"
       style={{
         position: "fixed",
         bottom: 16,
@@ -26,6 +28,7 @@ export function Toaster() {
           <div
             key={t.id}
             className="cadre-toast"
+            role={t.kind === "error" ? "alert" : "status"}
             style={{
               pointerEvents: "auto",
               display: "flex",
@@ -47,8 +50,9 @@ export function Toaster() {
             <span style={{ flex: 1 }}>{t.message}</span>
             <button
               onClick={() => remove(t.id)}
+              aria-label="Dismiss notification"
               title="Dismiss"
-              style={{ background: "transparent", border: "none", color: "var(--c-text-muted)", cursor: "pointer", display: "inline-flex", padding: 0 }}
+              style={{ background: "transparent", border: "none", color: "var(--c-text-muted)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, padding: 0, flexShrink: 0 }}
             >
               <X size={13} strokeWidth={2} />
             </button>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { X, KeyRound, Cpu, Eye, EyeOff, Check } from "lucide-react";
+import { KeyRound, Cpu, Eye, EyeOff, Check } from "lucide-react";
+import { Modal } from "./components/Modal";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre } from "./useCadre";
 import { PROVIDERS } from "../lib/engine/providers";
@@ -34,31 +35,12 @@ export function Settings({ onClose }: { onClose: () => void }) {
   const provider = PROVIDERS[fleetProvider] ?? PROVIDERS.claude;
 
   return (
-    <div
-      onClick={onClose}
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 900, padding: "var(--c-space-5)" }}
+    <Modal
+      label="Settings — API keys and models"
+      width={560}
+      onClose={onClose}
+      title={<span style={{ fontSize: "var(--c-fs-lg)", fontWeight: 600 as const, color: "var(--c-text)" }}>Settings</span>}
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 560,
-          maxWidth: "100%",
-          maxHeight: "88vh",
-          overflow: "auto",
-          background: "var(--c-surface-1)",
-          border: "1px solid var(--c-border-strong)",
-          borderRadius: "var(--c-radius-lg)",
-          boxShadow: "var(--c-elev-3)",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "var(--c-space-4)", borderBottom: "1px solid var(--c-border)", position: "sticky", top: 0, background: "var(--c-surface-1)" }}>
-          <span style={{ fontSize: "var(--c-fs-lg)", fontWeight: 600 as const, color: "var(--c-text)" }}>Settings</span>
-          <div style={{ flex: 1 }} />
-          <button onClick={onClose} title="Close" style={{ display: "inline-flex", background: "transparent", border: "none", color: "var(--c-text-muted)", cursor: "pointer" }}>
-            <X size={18} strokeWidth={2} />
-          </button>
-        </div>
-
         {!isTauri() && (
           <div style={{ margin: "var(--c-space-4) var(--c-space-4) 0", padding: "8px 12px", borderRadius: "var(--c-radius)", background: "var(--c-warning-subtle)", color: "var(--c-warning)", fontSize: "var(--c-fs-xs)" }}>
             Browser preview — keys can't be saved to the OS keychain here. Run the desktop app (`npm run tauri dev`) to store them securely.
@@ -117,8 +99,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
         </Section>
 
         <div style={{ height: "var(--c-space-4)" }} />
-      </div>
-    </div>
+    </Modal>
   );
 }
 

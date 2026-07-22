@@ -89,6 +89,9 @@
 
   /* Code/diagram surface — dark by default; light theme overrides below. */
   --c-code-bg: #14100c;
+
+  /* Modal/overlay scrim. */
+  --c-scrim: rgba(0, 0, 0, 0.5);
 }
 
 /*
@@ -133,6 +136,9 @@
 
   /* Code/diagram surface — light paper block */
   --c-code-bg: #f1ece3;
+
+  /* Softer, warm scrim on light. */
+  --c-scrim: rgba(40, 30, 20, 0.32);
 }
 
 /* Dark-tuned scrollbars flip to dark-on-light in the light theme. */

@@ -1,6 +1,5 @@
 import type { CSSProperties } from "react";
 import {
-  X,
   Crown,
   PencilRuler,
   Ruler,
@@ -12,6 +11,7 @@ import {
   FlaskConical,
   Rocket,
 } from "lucide-react";
+import { Modal } from "./components/Modal";
 import { useCadre } from "./useCadre";
 import { useBmadStore } from "../stores/bmadStore";
 
@@ -125,24 +125,17 @@ export function Team({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div
-      onClick={onClose}
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 900, padding: "var(--c-space-5)" }}
-    >
-      <div
-        className="cadre-bubble"
-        onClick={(e) => e.stopPropagation()}
-        style={{ width: 560, maxWidth: "100%", maxHeight: "86vh", overflow: "auto", background: "var(--c-surface-1)", border: "1px solid var(--c-border-strong)", borderRadius: "var(--c-radius-lg)", boxShadow: "var(--c-elev-3)" }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "var(--c-space-3) var(--c-space-4)", borderBottom: "1px solid var(--c-border)", position: "sticky", top: 0, background: "var(--c-surface-1)" }}>
+    <Modal
+      label="Team — your agent fleet"
+      width={560}
+      onClose={onClose}
+      title={
+        <>
           <span className="cadre-wordmark" style={{ fontSize: "var(--c-fs-lg)" }}>Team</span>
           <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)" }}>your agent fleet · Opus thinks, Sonnet builds</span>
-          <div style={{ flex: 1 }} />
-          <button onClick={onClose} title="Close" style={{ display: "inline-flex", background: "transparent", border: "none", color: "var(--c-text-muted)", cursor: "pointer" }}>
-            <X size={16} strokeWidth={2} />
-          </button>
-        </div>
-
+        </>
+      }
+    >
         <div style={{ padding: "var(--c-space-4)", display: "flex", flexDirection: "column", gap: "var(--c-space-4)" }}>
           {/* You — the CTO */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "var(--c-success-subtle)", border: "1px solid var(--c-accent-ring)", borderRadius: "var(--c-radius)" }}>
@@ -191,7 +184,6 @@ export function Team({ onClose }: { onClose: () => void }) {
             </div>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
