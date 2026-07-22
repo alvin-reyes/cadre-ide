@@ -86,6 +86,63 @@
   --c-dur-fast: 120ms;
   --c-dur: 180ms;
   --c-dur-slow: 240ms;
+
+  /* Code/diagram surface — dark by default; light theme overrides below. */
+  --c-code-bg: #14100c;
+}
+
+/*
+ * Light theme — warm ivory, same clay accent. Toggled via
+ * document.documentElement[data-theme="light"] (see themeStore).
+ * :root[data-theme] outweighs :root, so these win by source order + specificity.
+ */
+:root[data-theme="light"] {
+  /* Surfaces — warm paper, subtle elevation steps */
+  --c-bg: #f6f2ec;
+  --c-surface-1: #fbf8f3;
+  --c-surface-2: #f1ece3;
+  --c-surface-3: #e8e1d6;
+  --c-overlay: #ffffff;
+
+  /* Content — warm near-black */
+  --c-text: #2a2420;
+  --c-text-secondary: #574f45;
+  --c-text-muted: #857a6b;
+  --c-text-faint: #a89c8b;
+
+  /* Hairlines — warm, low-alpha on light */
+  --c-border: rgba(60, 45, 30, 0.12);
+  --c-border-strong: rgba(60, 45, 30, 0.2);
+
+  /* Accent unchanged — clay reads well on paper; tint the subtles a touch stronger */
+  --c-accent-subtle: rgba(217, 119, 87, 0.16);
+  --c-accent-ring: rgba(217, 119, 87, 0.5);
+
+  /* Status — deepened for contrast on a light ground */
+  --c-success: #4f9d6f;
+  --c-success-subtle: rgba(79, 157, 111, 0.16);
+  --c-warning: #b3801f;
+  --c-warning-subtle: rgba(179, 128, 31, 0.16);
+  --c-danger: #c8524d;
+  --c-danger-subtle: rgba(200, 82, 77, 0.14);
+
+  /* Elevation — soft, warm-tinted shadows instead of near-black */
+  --c-elev-1: 0 1px 2px rgba(60, 45, 30, 0.08);
+  --c-elev-2: 0 4px 16px rgba(60, 45, 30, 0.1);
+  --c-elev-3: 0 12px 40px rgba(60, 45, 30, 0.14);
+
+  /* Code/diagram surface — light paper block */
+  --c-code-bg: #f1ece3;
+}
+
+/* Dark-tuned scrollbars flip to dark-on-light in the light theme. */
+:root[data-theme="light"] .cadre-ui *::-webkit-scrollbar-thumb {
+  background: rgba(60, 45, 30, 0.16);
+  background-clip: padding-box;
+}
+:root[data-theme="light"] .cadre-ui *::-webkit-scrollbar-thumb:hover {
+  background: rgba(60, 45, 30, 0.28);
+  background-clip: padding-box;
 }
 
 /* Premium base for the Cadre UI shell. Apply `.cadre-ui` at the app root. */
@@ -278,7 +335,7 @@
   justify-content: center;
   margin: 1.2em 0;
   padding: var(--c-space-4);
-  background: #14100c;
+  background: var(--c-code-bg);
   border: 1px solid var(--c-border);
   border-radius: var(--c-radius);
   overflow: auto;
@@ -383,7 +440,7 @@
   padding: 0.1em 0.35em;
 }
 .cadre-doc pre {
-  background: #14100c;
+  background: var(--c-code-bg);
   border: 1px solid var(--c-border);
   border-radius: var(--c-radius);
   padding: var(--c-space-3);

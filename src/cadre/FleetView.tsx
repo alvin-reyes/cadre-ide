@@ -599,7 +599,7 @@ function LiveTerminal({ log, empty }: { log: string; empty: string }) {
           justifyContent: "center",
           color: "var(--c-text-faint)",
           fontSize: "var(--c-fs-sm)",
-          background: "#14100c",
+          background: "var(--c-code-bg)",
         }}
       >
         {empty}
@@ -611,7 +611,7 @@ function LiveTerminal({ log, empty }: { log: string; empty: string }) {
       ref={ref}
       style={{
         flex: 1,
-        background: "#14100c",
+        background: "var(--c-code-bg)",
         padding: "var(--c-space-3) var(--c-space-4)",
         fontFamily: "var(--c-font-mono)",
         fontSize: "var(--c-fs-base)",

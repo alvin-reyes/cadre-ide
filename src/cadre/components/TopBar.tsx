@@ -1,6 +1,7 @@
-import { Hexagon, ArrowUp, ArrowDown, PanelRight, Users } from "lucide-react";
+import { Hexagon, ArrowUp, ArrowDown, PanelRight, Users, Sun, Moon } from "lucide-react";
 import { PhaseStepper, type Phase } from "./PhaseStepper";
 import { useUsageStore } from "../../stores/usageStore";
+import { useThemeStore } from "../../stores/themeStore";
 
 function fmtK(n: number): string {
   return n < 1000 ? String(n) : `${(n / 1000).toFixed(1)}k`;
@@ -26,6 +27,8 @@ export function TopBar({
   const output = useUsageStore((s) => s.output);
   const cost = useUsageStore((s) => s.costUsd);
   const calls = useUsageStore((s) => s.calls);
+  const theme = useThemeStore((s) => s.theme);
+  const toggleTheme = useThemeStore((s) => s.toggle);
 
   return (
     <div
@@ -73,6 +76,25 @@ export function TopBar({
           Team
         </button>
       )}
+
+      <button
+        onClick={toggleTheme}
+        title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 28,
+          height: 24,
+          borderRadius: "var(--c-radius-sm)",
+          background: "transparent",
+          border: "1px solid var(--c-border)",
+          color: "var(--c-text-secondary)",
+          cursor: "pointer",
+        }}
+      >
+        {theme === "dark" ? <Sun size={15} strokeWidth={2} /> : <Moon size={15} strokeWidth={2} />}
+      </button>
 
       {onToggleWorkbench && (
         <button
