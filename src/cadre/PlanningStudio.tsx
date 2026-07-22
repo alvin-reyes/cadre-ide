@@ -538,8 +538,33 @@ export function PlanningStudio() {
           <div ref={scrollRef} style={{ flex: 1, overflow: "auto", padding: "var(--c-space-4)", display: "flex", flexDirection: "column" }}>
             {messages.length === 0 ? (
               <div style={{ margin: "auto 0" }}>
+                {persona !== "pm" && prd.trim() && (
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      marginBottom: "var(--c-space-3)",
+                      fontSize: "var(--c-fs-xs)",
+                      fontWeight: 550 as const,
+                      color: "var(--c-success)",
+                      background: "var(--c-success-subtle)",
+                      border: "1px solid var(--c-border)",
+                      borderRadius: "var(--c-radius-full)",
+                      padding: "3px 10px",
+                    }}
+                  >
+                    <Check size={12} strokeWidth={3} /> PRD ready — working from it
+                  </div>
+                )}
                 <p style={{ fontSize: "var(--c-fs-md)", lineHeight: 1.6, color: "var(--c-text-secondary)", maxWidth: 380 }}>
-                  {meta.intro}
+                  {persona !== "pm" && prd.trim()
+                    ? persona === "architect"
+                      ? "I've read the PRD — let's design the build."
+                      : persona === "design"
+                        ? "I've read the PRD — let's shape the UX and mock up the screens."
+                        : meta.intro
+                    : meta.intro}
                 </p>
                 <div style={{ fontSize: "var(--c-fs-xl)", fontWeight: 600 as const, marginTop: "var(--c-space-4)" }}>
                   {meta.opener}
