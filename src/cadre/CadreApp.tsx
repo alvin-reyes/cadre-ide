@@ -5,7 +5,7 @@ import { PhaseStepper } from "./components/PhaseStepper";
 import { PlanningStudio } from "./PlanningStudio";
 import { FleetView } from "./FleetView";
 import { Workbench, type WorkbenchTab } from "./Workbench";
-import { TerminalWorkspace } from "./TerminalWorkspace";
+import { TerminalDrawer } from "./TerminalDrawer";
 
 /** Dock-rail entries: the side-panel Workbench tabs plus the large Terminal pane. */
 type RailId = WorkbenchTab | "terminal";
@@ -42,9 +42,8 @@ export function CadreApp() {
     if (id === "terminal") setTermOpen((v) => !v);
     else setWbTab((cur) => (cur === id ? null : id));
   }
-  // Navigating phases returns you to the phase view (out of the terminal pane).
+  // The terminal is a docked bottom panel now, so it stays open across phase nav.
   function navigate(p: typeof phase) {
-    setTermOpen(false);
     setPhase(p);
   }
 
@@ -94,17 +93,16 @@ export function CadreApp() {
     return () => window.removeEventListener("keydown", onKey);
   }, [projectRoot]);
 
-  // Esc closes the large Terminal pane first, else the Workbench panel.
+  // Esc closes the Workbench panel. (Not the terminal — Esc belongs to the shell;
+  // toggle the terminal with Ctrl+` or the dock rail / Close button.)
   useEffect(() => {
-    if (!workbenchOpen && !termOpen) return;
+    if (!workbenchOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (termOpen) setTermOpen(false);
-      else setWbTab(null);
+      if (e.key === "Escape") setWbTab(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [workbenchOpen, termOpen]);
+  }, [workbenchOpen]);
 
   if (!projectRoot && !preview) {
     return <Welcome onPreview={() => setPreview(true)} />;
@@ -136,24 +134,27 @@ export function CadreApp() {
         <PhaseStepper current={phase} onNavigate={navigate} unlocked={unlocked} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
-        <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
-          {/* Phase view — hidden (not unmounted) while the terminal is showing. */}
-          <div style={{ height: "100%", display: termOpen ? "none" : "block" }}>
-            {phase === "PLAN" ? <PlanningStudio /> : <FleetView />}
+        {/* Left area: the Plan/Fleet view (+ Files/Code side panel) with the
+            Terminal docked as a collapsible bottom panel, VS Code–style. */}
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+          <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {phase === "PLAN" ? <PlanningStudio /> : <FleetView />}
+            </div>
+            {wbTab && projectRoot && (
+              <div style={{ width: 420, flexShrink: 0, borderLeft: "1px solid var(--c-border)", minHeight: 0 }}>
+                <Workbench root={projectRoot} tab={wbTab} onTab={setWbTab} />
+              </div>
+            )}
           </div>
-          {/* Terminal — mounted once opened, then only toggled visible, so its PTY
-              sessions persist across close/reopen and view switches. */}
+          {/* Terminal drawer — mounted once opened, then only toggled visible, so
+              its PTY sessions persist across collapse/show and view switches. */}
           {termMounted && projectRoot && (
-            <div style={{ position: "absolute", inset: 0, display: termOpen ? "block" : "none" }}>
-              <TerminalWorkspace root={projectRoot} onClose={() => setTermOpen(false)} />
+            <div style={{ display: termOpen ? "flex" : "none", flexDirection: "column", flexShrink: 0 }}>
+              <TerminalDrawer root={projectRoot} onClose={() => setTermOpen(false)} />
             </div>
           )}
         </div>
-        {wbTab && projectRoot && (
-          <div style={{ width: 420, flexShrink: 0, borderLeft: "1px solid var(--c-border)", minHeight: 0 }}>
-            <Workbench root={projectRoot} tab={wbTab} onTab={setWbTab} />
-          </div>
-        )}
         {projectRoot && (
           <DockRail active={railActive} onSelect={onRailSelect} />
         )}
@@ -176,7 +177,7 @@ function DockRail({
   const items: { id: RailId; icon: typeof FolderTree; label: string }[] = [
     { id: "files", icon: FolderTree, label: "Files" },
     { id: "code", icon: FileCode2, label: "Code" },
-    { id: "terminal", icon: SquareTerminal, label: "Terminal — ⌃` (large pane)" },
+    { id: "terminal", icon: SquareTerminal, label: "Terminal — ⌃` (bottom panel)" },
   ];
   return (
     <div
