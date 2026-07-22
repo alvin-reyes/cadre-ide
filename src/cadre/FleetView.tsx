@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import { Circle, Plus, Play, Cpu, MessageSquarePlus, AlertTriangle, RefreshCw, ShieldCheck, ShieldAlert, Gavel } from "lucide-react";
+import { Circle, Plus, Play, Cpu, MessageSquarePlus, AlertTriangle, RefreshCw, ShieldCheck, ShieldAlert, Gavel, FileDown } from "lucide-react";
 import { FleetBoard } from "./components/FleetBoard";
 import { Markdown } from "./components/Markdown";
+import { exportHtmlToPdf } from "./exportPdf";
 import { useBmadStore } from "../stores/bmadStore";
 import { useCadre } from "./useCadre";
 import { aggregateReviews, type LensReview } from "../lib/engine/reviewFleet";
@@ -294,6 +295,11 @@ function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
   const hasLog = log.length > 0;
 
   const [markdown, setMarkdown] = useState<string>("");
+  const storyDocRef = useRef<HTMLDivElement>(null);
+  function exportStory() {
+    const el = storyDocRef.current?.querySelector(".cadre-doc");
+    if (el) exportHtmlToPdf(`story-${card.id}`, el.innerHTML);
+  }
   useEffect(() => {
     if (preview) return;
     let alive = true;
@@ -385,6 +391,26 @@ function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
             {reviewing ? "Reviewing…" : "Review"}
           </button>
         )}
+        {markdown && (
+          <button
+            onClick={exportStory}
+            title="Export the story to PDF"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              fontSize: "var(--c-fs-xs)",
+              color: "var(--c-text-secondary)",
+              background: "transparent",
+              border: "1px solid var(--c-border)",
+              borderRadius: "var(--c-radius-sm)",
+              padding: "3px 8px",
+              cursor: "pointer",
+            }}
+          >
+            <FileDown size={12} strokeWidth={2} /> PDF
+          </button>
+        )}
         <span
           style={{
             display: "inline-flex",
@@ -445,7 +471,7 @@ function AgentPane({ card, preview }: { card: StoryCard; preview: boolean }) {
       {view === "output" ? (
         <LiveTerminal log={log} empty="No agent output yet — Dispatch to run the story." />
       ) : markdown ? (
-        <div style={{ flex: 1, overflow: "auto", padding: "var(--c-space-5)" }}>
+        <div ref={storyDocRef} style={{ flex: 1, overflow: "auto", padding: "var(--c-space-5)" }}>
           <Markdown className="cadre-doc" content={markdown} />
         </div>
       ) : (

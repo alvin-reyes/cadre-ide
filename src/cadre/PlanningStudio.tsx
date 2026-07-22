@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, type CSSProperties, type ClipboardEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { marked } from "marked";
-import { ArrowUp, ArrowRight, Lock, RefreshCw, AlertTriangle, FileText, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, ShieldAlert, Gavel, Paperclip, X, Check, Copy, Eye, Code2 } from "lucide-react";
+import { ArrowUp, ArrowRight, Lock, RefreshCw, AlertTriangle, FileText, FileDown, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, ShieldAlert, Gavel, Paperclip, X, Check, Copy, Eye, Code2 } from "lucide-react";
+import { exportHtmlToPdf } from "./exportPdf";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useBmadStore } from "../stores/bmadStore";
 import { useCadre, MODEL } from "./useCadre";
@@ -231,6 +232,12 @@ export function PlanningStudio() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const docRef = useRef<HTMLDivElement>(null);
+
+  function exportDoc() {
+    const el = docRef.current?.querySelector(".cadre-doc");
+    if (el) exportHtmlToPdf(meta.file.replace(/^docs\//, "").replace(/\.md$/, ""), el.innerHTML);
+  }
 
   // Keep the conversation pinned to the latest message.
   useEffect(() => {
@@ -738,6 +745,26 @@ export function PlanningStudio() {
                 {review.status === "reviewing" ? "Reviewing…" : "Review"}
               </button>
             )}
+            {!showDesignPreview && doc.trim() && (
+              <button
+                onClick={exportDoc}
+                title="Export this document to PDF"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  fontSize: "var(--c-fs-xs)",
+                  color: "var(--c-text-secondary)",
+                  background: "transparent",
+                  border: "1px solid var(--c-border)",
+                  borderRadius: "var(--c-radius-sm)",
+                  padding: "3px 8px",
+                  cursor: "pointer",
+                }}
+              >
+                <FileDown size={12} strokeWidth={2} /> PDF
+              </button>
+            )}
             {showDesignPreview ? mockupHtml && <CopyButton text={mockupHtml} label="HTML" /> : doc && <CopyButton text={doc} />}
           </div>
 
@@ -757,7 +784,7 @@ export function PlanningStudio() {
               <EmptyPane text="The Designer mocks up the actual screens here — describe the UI to begin." />
             )
           ) : doc ? (
-            <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "var(--c-space-5)" }}>
+            <div ref={docRef} style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "var(--c-space-5)" }}>
               <Markdown className="cadre-doc" content={doc} />
             </div>
           ) : thinking ? (
