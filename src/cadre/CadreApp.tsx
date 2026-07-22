@@ -4,6 +4,7 @@ import { TopBar } from "./components/TopBar";
 import { PlanningStudio } from "./PlanningStudio";
 import { FleetView } from "./FleetView";
 import { Workbench, type WorkbenchTab } from "./Workbench";
+import { Team } from "./Team";
 import { Toaster } from "./Toaster";
 import { Welcome } from "./Welcome";
 import { useBmadStore } from "../stores/bmadStore";
@@ -18,6 +19,7 @@ export function CadreApp() {
   const hydrateSecrets = useSettingsStore((s) => s.hydrateSecrets);
   const [preview, setPreview] = useState(false);
   const [wbTab, setWbTab] = useState<WorkbenchTab | null>(null);
+  const [teamOpen, setTeamOpen] = useState(false);
   const workbenchOpen = wbTab !== null;
   const projectRoot = useBmadStore((s) => s.projectRoot);
 
@@ -68,6 +70,7 @@ export function CadreApp() {
         unlocked={unlocked}
         onToggleWorkbench={projectRoot ? () => setWbTab((t) => (t ? null : "files")) : undefined}
         workbenchOpen={workbenchOpen}
+        onOpenTeam={() => setTeamOpen(true)}
       />
       <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -82,6 +85,7 @@ export function CadreApp() {
           <DockRail active={wbTab} onSelect={(t) => setWbTab((cur) => (cur === t ? null : t))} />
         )}
       </div>
+      {teamOpen && <Team onClose={() => setTeamOpen(false)} />}
       <Toaster />
     </div>
   );

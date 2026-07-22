@@ -1,4 +1,4 @@
-import { Hexagon, ArrowUp, ArrowDown, PanelRight } from "lucide-react";
+import { Hexagon, ArrowUp, ArrowDown, PanelRight, Users } from "lucide-react";
 import { PhaseStepper, type Phase } from "./PhaseStepper";
 import { useUsageStore } from "../../stores/usageStore";
 
@@ -13,12 +13,14 @@ export function TopBar({
   unlocked,
   onToggleWorkbench,
   workbenchOpen,
+  onOpenTeam,
 }: {
   phase: Phase;
   onNavigate?: (phase: Phase) => void;
   unlocked?: Partial<Record<Phase, boolean>>;
   onToggleWorkbench?: () => void;
   workbenchOpen?: boolean;
+  onOpenTeam?: () => void;
 }) {
   const input = useUsageStore((s) => s.input);
   const output = useUsageStore((s) => s.output);
@@ -47,6 +49,30 @@ export function TopBar({
       <PhaseStepper current={phase} onNavigate={onNavigate} unlocked={unlocked} />
 
       <div style={{ flex: 1 }} />
+
+      {onOpenTeam && (
+        <button
+          onClick={onOpenTeam}
+          title="Team — your agent fleet"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            height: 24,
+            padding: "0 9px",
+            borderRadius: "var(--c-radius-sm)",
+            background: "transparent",
+            border: "1px solid var(--c-border)",
+            color: "var(--c-text-secondary)",
+            fontSize: "var(--c-fs-xs)",
+            fontWeight: 550 as const,
+            cursor: "pointer",
+          }}
+        >
+          <Users size={14} strokeWidth={2} />
+          Team
+        </button>
+      )}
 
       {onToggleWorkbench && (
         <button
