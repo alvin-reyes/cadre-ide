@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { FolderTree, FileCode2, SquareTerminal } from "lucide-react";
-import { TerminalPanel } from "./TerminalPanel";
+import { TerminalTabs } from "./TerminalTabs";
 import { Markdown } from "./components/Markdown";
 import { FileTree } from "./FileTree";
 
@@ -115,7 +115,7 @@ export function Workbench({
 
         {tab === "terminal" && (
           <div style={{ flex: 1, minHeight: 0 }}>
-            <TerminalPanel cwd={root} />
+            <TerminalTabs cwd={root} />
           </div>
         )}
       </div>
