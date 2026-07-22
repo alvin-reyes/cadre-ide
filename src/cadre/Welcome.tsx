@@ -48,6 +48,37 @@ export function Welcome({ onPreview }: { onPreview: () => void }) {
     }
   }
 
+  // Start-new goes straight to the folder picker; the chosen folder becomes the
+  // project root where everything (cadre.json, docs, git) is scaffolded.
+  async function startNew() {
+    if (busy) return;
+    if (!isTauri()) {
+      setError(
+        "Creating a project needs the desktop app. You're on the browser preview (localhost:1420) — run `npm run tauri dev` and use the native Cadre window instead."
+      );
+      return;
+    }
+    let dir: string | null = null;
+    try {
+      const picked = await openDialog({ directory: true, multiple: false, title: "Choose a folder for the new project" });
+      if (typeof picked === "string") dir = picked;
+    } catch (e) {
+      setError(String(e));
+      return;
+    }
+    if (!dir) return; // cancelled
+    setPath(dir);
+    setBusy("new");
+    setError(null);
+    try {
+      await newProject(dir);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <div
       className="cadre-ui"
@@ -126,9 +157,9 @@ export function Welcome({ onPreview }: { onPreview: () => void }) {
 
         <div style={{ display: "flex", alignItems: "center", gap: "var(--c-space-2)", marginTop: "var(--c-space-3)" }}>
           <button
-            onClick={() => run("new")}
-            disabled={!!busy || !path.trim()}
-            title="Scaffold a fresh Cadre project (git + docs) at that path"
+            onClick={startNew}
+            disabled={!!busy}
+            title="Pick a folder — Cadre scaffolds a fresh project (git + docs) inside it"
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -142,11 +173,11 @@ export function Welcome({ onPreview }: { onPreview: () => void }) {
               border: "1px solid var(--c-border-strong)",
               fontSize: "var(--c-fs-sm)",
               fontWeight: 550 as const,
-              cursor: path.trim() && !busy ? "pointer" : "default",
+              cursor: busy ? "default" : "pointer",
             }}
           >
             <Sparkles size={14} strokeWidth={2} />
-            {busy === "new" ? "Creating…" : "Start a new project here"}
+            {busy === "new" ? "Creating…" : "Start a new project…"}
           </button>
         </div>
 
