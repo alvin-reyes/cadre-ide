@@ -291,6 +291,10 @@ interface Settings {
   scrollback: number;
   defaultProvider: Provider;
   anthropicApiKey: string;
+  /** Planning "brain" model — PM/Architect/Designer chat, sharding, plan validation, reviews. */
+  planningModel: string;
+  /** Fleet (dev) model override; empty string = use the selected provider's default. */
+  fleetModel: string;
   orchestratorModel: string;
   ollamaEndpoint: string;
   ollamaModel: string;
@@ -315,6 +319,8 @@ interface SettingsStore extends Settings {
   setScrollback: (lines: number) => void;
   setDefaultProvider: (provider: Provider) => void;
   setAnthropicApiKey: (key: string) => void;
+  setPlanningModel: (model: string) => void;
+  setFleetModel: (model: string) => void;
   /** Load secrets (API key) from the OS keychain into the store (desktop only). */
   hydrateSecrets: () => Promise<void>;
   setOrchestratorModel: (model: string) => void;
@@ -366,6 +372,8 @@ const defaults: Settings = {
   scrollback: 10000,
   defaultProvider: "claude" as Provider,
   anthropicApiKey: "",
+  planningModel: "claude-opus-4-8",
+  fleetModel: "",
   orchestratorModel: "claude-opus-4-20250514",
   ollamaEndpoint: "http://localhost:11434",
   ollamaModel: "deepseek-r1",
@@ -447,6 +455,16 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     persistSettings(get());
     // Mirror into the OS keychain on desktop (no-op in the browser preview).
     void secretSet("anthropic_api_key", key);
+  },
+
+  setPlanningModel: (planningModel) => {
+    set({ planningModel });
+    persistSettings(get());
+  },
+
+  setFleetModel: (fleetModel) => {
+    set({ fleetModel });
+    persistSettings(get());
   },
 
   hydrateSecrets: async () => {

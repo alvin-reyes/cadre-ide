@@ -31,7 +31,18 @@ import type { PlanApproval } from "../lib/engine/planApproval";
 // The planning brain (PM/Architect/Designer chat, SM sharding, plan validation,
 // and the SDK adversarial reviews) runs on Opus — quality where it matters, low
 // volume. The dev fleet stays on Sonnet (providers.claude.defaultModel).
+// MODEL is the default; Settings can override it (planningModel / fleetModel).
 export const MODEL = "claude-opus-4-8";
+
+/** The configured planning-brain model (Settings override, else the default). */
+export function planningModel(): string {
+  return useSettingsStore.getState().planningModel || MODEL;
+}
+
+/** The configured fleet-model override, if any (empty → caller uses provider default). */
+export function fleetModelOverride(): string {
+  return useSettingsStore.getState().fleetModel || "";
+}
 
 const SM_SYSTEM_PROMPT = `You are the Scrum Master (SM). Turn the approved plan into the NEXT single implementation story via the create_story tool.
 
@@ -218,7 +229,7 @@ export const useCadre = create<CadreState>((set, get) => ({
       await generateStory(
         {
           callWithTool: (systemPrompt, userPrompt, tool) =>
-            callTool({ apiKey, model: MODEL, systemPrompt, userPrompt, tool }),
+            callTool({ apiKey, model: planningModel(), systemPrompt, userPrompt, tool }),
           writeFile: (relPath, content) =>
             invoke("write_text_file", { path: `${root}/${relPath}`, content }),
         },
@@ -269,7 +280,7 @@ export const useCadre = create<CadreState>((set, get) => ({
       if (!token) {
         throw new Error(`No API key for ${provider.name} — add it in the fleet model picker.`);
       }
-      const { env, model: providerModel } = resolveAgentEnv(provider, token, provider.defaultModel);
+      const { env, model: providerModel } = resolveAgentEnv(provider, token, fleetModelOverride() || provider.defaultModel);
       // Native Claude CLI: let it use its own default model (an unknown --model id can fail).
       const model = provider.id === "claude" ? undefined : providerModel;
       onOutput(`[cadre] dispatching on ${provider.name} (${model})\n`);
@@ -320,7 +331,7 @@ export const useCadre = create<CadreState>((set, get) => ({
         token = useSettingsStore.getState().anthropicApiKey || null;
       }
       if (!token) throw new Error(`No API key for ${provider.name} — add it in the fleet model picker.`);
-      const { env, model: providerModel } = resolveAgentEnv(provider, token, provider.defaultModel);
+      const { env, model: providerModel } = resolveAgentEnv(provider, token, fleetModelOverride() || provider.defaultModel);
       // Native Claude CLI: let it use its own default model (an unknown --model id can fail).
       const model = provider.id === "claude" ? undefined : providerModel;
       onOutput(`[cadre] dispatching ${CODE_REVIEW_LENSES.length} adversarial reviewers on ${provider.name}\n`);
@@ -363,7 +374,7 @@ export const useCadre = create<CadreState>((set, get) => ({
         token = useSettingsStore.getState().anthropicApiKey || null;
       }
       if (!token) throw new Error(`No API key for ${provider.name} — add it in the fleet model picker.`);
-      const { env, model: providerModel } = resolveAgentEnv(provider, token, provider.defaultModel);
+      const { env, model: providerModel } = resolveAgentEnv(provider, token, fleetModelOverride() || provider.defaultModel);
       // Native Claude CLI: let it use its own default model (an unknown --model id can fail).
       const model = provider.id === "claude" ? undefined : providerModel;
 
@@ -408,7 +419,7 @@ export const useCadre = create<CadreState>((set, get) => ({
       // 1. Architect re-derives the architecture from the amended PRD.
       const arch = await planningTurn({
         apiKey,
-        model: MODEL,
+        model: planningModel(),
         systemPrompt: `${ARCHITECT_SYSTEM_PROMPT}\n\n## Current PRD\n${prd}`,
         messages: [
           {
@@ -425,7 +436,7 @@ export const useCadre = create<CadreState>((set, get) => ({
         set({ busy: "Updating the UX…" });
         const ux = await planningTurn({
           apiKey,
-          model: MODEL,
+          model: planningModel(),
           systemPrompt: `${DESIGN_SYSTEM_PROMPT}\n\n## Current PRD\n${prd}`,
           messages: [
             {

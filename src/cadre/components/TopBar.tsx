@@ -1,4 +1,4 @@
-import { Hexagon, ArrowUp, ArrowDown, PanelRight, Users, Sun, Moon, SunMoon } from "lucide-react";
+import { Hexagon, ArrowUp, ArrowDown, PanelRight, Users, Sun, Moon, SunMoon, Settings as SettingsIcon } from "lucide-react";
 import { PhaseStepper, type Phase } from "./PhaseStepper";
 import { useUsageStore } from "../../stores/usageStore";
 import { useThemeStore } from "../../stores/themeStore";
@@ -15,6 +15,7 @@ export function TopBar({
   onToggleWorkbench,
   workbenchOpen,
   onOpenTeam,
+  onOpenSettings,
 }: {
   phase: Phase;
   onNavigate?: (phase: Phase) => void;
@@ -22,6 +23,7 @@ export function TopBar({
   onToggleWorkbench?: () => void;
   workbenchOpen?: boolean;
   onOpenTeam?: () => void;
+  onOpenSettings?: () => void;
 }) {
   const input = useUsageStore((s) => s.input);
   const output = useUsageStore((s) => s.output);
@@ -102,6 +104,27 @@ export function TopBar({
       >
         <ThemeIcon size={15} strokeWidth={2} />
       </button>
+
+      {onOpenSettings && (
+        <button
+          onClick={onOpenSettings}
+          title="Settings — API keys & models"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 28,
+            height: 24,
+            borderRadius: "var(--c-radius-sm)",
+            background: "transparent",
+            border: "1px solid var(--c-border)",
+            color: "var(--c-text-secondary)",
+            cursor: "pointer",
+          }}
+        >
+          <SettingsIcon size={15} strokeWidth={2} />
+        </button>
+      )}
 
       {onToggleWorkbench && (
         <button

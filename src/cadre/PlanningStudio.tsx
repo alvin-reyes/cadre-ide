@@ -81,6 +81,7 @@ const paneHead: CSSProperties = {
 export function PlanningStudio() {
   const apiKey = useSettingsStore((s) => s.anthropicApiKey);
   const setApiKey = useSettingsStore((s) => s.setAnthropicApiKey);
+  const planningModel = useSettingsStore((s) => s.planningModel) || MODEL;
 
   const prd = useCadre((s) => s.prd);
   const architecture = useCadre((s) => s.architecture);
@@ -181,7 +182,7 @@ export function PlanningStudio() {
       const context = active === "pm" ? undefined : prd.trim() || undefined;
       const result = await reviewArtifact({
         apiKey,
-        model: MODEL,
+        model: planningModel,
         systemPrompt: ADVERSARIAL_REVIEW_PROMPTS[active],
         artifact: doc,
         context,
@@ -211,7 +212,7 @@ export function PlanningStudio() {
         .join("\n\n---\n\n");
       const result = await reviewArtifact({
         apiKey,
-        model: MODEL,
+        model: planningModel,
         systemPrompt: PLAN_VALIDATION_PROMPT,
         artifact: plan,
       });
@@ -367,7 +368,7 @@ export function PlanningStudio() {
     try {
       const result = await planningTurn({
         apiKey,
-        model: MODEL,
+        model: planningModel,
         systemPrompt: systemPromptFor(active),
         messages: base,
         allowMockup: active === "design",
