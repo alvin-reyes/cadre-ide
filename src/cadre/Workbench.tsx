@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { FolderTree, FileCode2 } from "lucide-react";
+import { FolderTree, FileCode2, Maximize2, Minimize2 } from "lucide-react";
 import { Markdown } from "./components/Markdown";
 import { FileTree } from "./FileTree";
 
@@ -21,10 +21,14 @@ export function Workbench({
   root,
   tab,
   onTab,
+  maximized,
+  onToggleMaximize,
 }: {
   root: string;
   tab: WorkbenchTab;
   onTab: (t: WorkbenchTab) => void;
+  maximized?: boolean;
+  onToggleMaximize?: () => void;
 }) {
   const [file, setFile] = useState<{ path: string; content: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +78,27 @@ export function Workbench({
             </button>
           );
         })}
+        <div style={{ flex: 1 }} />
+        {onToggleMaximize && (
+          <button
+            onClick={onToggleMaximize}
+            title={maximized ? "Restore panel" : "Maximize panel"}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 24,
+              height: 22,
+              borderRadius: "var(--c-radius-sm)",
+              background: "transparent",
+              border: "1px solid var(--c-border)",
+              color: "var(--c-text-secondary)",
+              cursor: "pointer",
+            }}
+          >
+            {maximized ? <Minimize2 size={13} strokeWidth={2} /> : <Maximize2 size={13} strokeWidth={2} />}
+          </button>
+        )}
       </div>
 
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>

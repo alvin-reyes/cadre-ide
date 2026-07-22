@@ -27,6 +27,7 @@ export function CadreApp() {
   const setShowSettings = useSettingsStore((s) => s.setShowSettings);
   const [preview, setPreview] = useState(false);
   const [wbTab, setWbTab] = useState<WorkbenchTab | null>(null);
+  const [wbMax, setWbMax] = useState(false);
   const [termOpen, setTermOpen] = useState(false);
   const [termMax, setTermMax] = useState(false);
   // Once opened, the Terminal stays MOUNTED (just hidden when closed) so its PTY
@@ -34,9 +35,10 @@ export function CadreApp() {
   const [termMounted, setTermMounted] = useState(false);
   const [teamOpen, setTeamOpen] = useState(false);
   const workbenchOpen = wbTab !== null;
-  // Maximize only takes effect while the terminal is actually shown (so closing a
-  // maximized terminal doesn't leave the main view hidden).
+  // Maximize only takes effect while the panel is actually shown (so closing a
+  // maximized panel doesn't leave the main view hidden).
   const showMax = termOpen && termMax;
+  const wbShowMax = workbenchOpen && wbMax;
   const projectRoot = useBmadStore((s) => s.projectRoot);
 
   // The dock rail routes Files/Code to the side Workbench and Terminal to the
@@ -51,11 +53,7 @@ export function CadreApp() {
     setPhase(p);
   }
 
-  // Open the Workbench (Files) automatically when a project opens, so the toolset is visible.
-  useEffect(() => {
-    if (projectRoot) setWbTab("files");
-  }, [projectRoot]);
-
+  // Files/Code start hidden — the dock rail (always visible) opens them on demand.
   // First time the Terminal opens, mount it for good (kept alive while hidden).
   useEffect(() => {
     if (termOpen) setTermMounted(true);
@@ -66,6 +64,7 @@ export function CadreApp() {
     setTermMounted(false);
     setTermOpen(false);
     setTermMax(false);
+    setWbMax(false);
   }, [projectRoot]);
 
   // Phase gating: SHARD/FLEET open only once the plan is approved; DONE only when
@@ -151,12 +150,25 @@ export function CadreApp() {
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
           {/* Main row — hidden while the terminal is maximized. */}
           <div style={{ flex: showMax ? "0 0 0" : 1, minHeight: 0, display: showMax ? "none" : "flex" }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
+            {/* Plan/Fleet — hidden while the Workbench is maximized. */}
+            <div style={{ flex: 1, minWidth: 0, display: wbShowMax ? "none" : "block" }}>
               {phase === "PLAN" ? <PlanningStudio /> : <FleetView />}
             </div>
             {wbTab && projectRoot && (
-              <div style={{ width: 420, flexShrink: 0, borderLeft: "1px solid var(--c-border)", minHeight: 0 }}>
-                <Workbench root={projectRoot} tab={wbTab} onTab={setWbTab} />
+              <div
+                style={
+                  wbShowMax
+                    ? { flex: 1, minWidth: 0, borderLeft: "1px solid var(--c-border)", minHeight: 0 }
+                    : { width: 420, flexShrink: 0, borderLeft: "1px solid var(--c-border)", minHeight: 0 }
+                }
+              >
+                <Workbench
+                  root={projectRoot}
+                  tab={wbTab}
+                  onTab={setWbTab}
+                  maximized={wbShowMax}
+                  onToggleMaximize={() => setWbMax((v) => !v)}
+                />
               </div>
             )}
           </div>
