@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Hexagon, FolderOpen, ArrowRight, Sparkles } from "lucide-react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useBmadStore } from "../stores/bmadStore";
 import { isTauri } from "../lib/secrets";
 
@@ -10,6 +11,22 @@ export function Welcome({ onPreview }: { onPreview: () => void }) {
   const [path, setPath] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"open" | "new" | null>(null);
+
+  async function browse() {
+    if (!isTauri()) {
+      setError("The folder picker needs the desktop app — run `npm run tauri dev` and use the native Cadre window.");
+      return;
+    }
+    try {
+      const dir = await openDialog({ directory: true, multiple: false, title: "Choose a project folder" });
+      if (typeof dir === "string") {
+        setPath(dir);
+        setError(null);
+      }
+    } catch (e) {
+      setError(String(e));
+    }
+  }
 
   async function run(kind: "open" | "new") {
     if (!path.trim() || busy) return;
@@ -63,12 +80,18 @@ export function Welcome({ onPreview }: { onPreview: () => void }) {
             alignItems: "center",
           }}
         >
-          <FolderOpen size={16} strokeWidth={2} style={{ color: "var(--c-text-muted)", flexShrink: 0 }} />
+          <button
+            onClick={browse}
+            title="Browse for a folder"
+            style={{ display: "inline-flex", background: "transparent", border: "none", color: "var(--c-text-muted)", cursor: "pointer", flexShrink: 0, padding: 0 }}
+          >
+            <FolderOpen size={16} strokeWidth={2} />
+          </button>
           <input
             value={path}
             onChange={(e) => setPath(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && run("open")}
-            placeholder="/path/to/your/project"
+            placeholder="Browse or paste a folder path…"
             style={{
               flex: 1,
               background: "transparent",

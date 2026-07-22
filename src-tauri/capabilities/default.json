@@ -6,6 +6,7 @@
     "core:default",
     "core:window:allow-create",
     "opener:default",
-    "clipboard-manager:default"
+    "clipboard-manager:default",
+    "dialog:allow-open"
   ]
 }
