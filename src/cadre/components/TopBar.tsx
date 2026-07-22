@@ -1,4 +1,4 @@
-import { Hexagon, ArrowUp, ArrowDown, PanelRight, Users, Sun, Moon } from "lucide-react";
+import { Hexagon, ArrowUp, ArrowDown, PanelRight, Users, Sun, Moon, SunMoon } from "lucide-react";
 import { PhaseStepper, type Phase } from "./PhaseStepper";
 import { useUsageStore } from "../../stores/usageStore";
 import { useThemeStore } from "../../stores/themeStore";
@@ -27,8 +27,15 @@ export function TopBar({
   const output = useUsageStore((s) => s.output);
   const cost = useUsageStore((s) => s.costUsd);
   const calls = useUsageStore((s) => s.calls);
-  const theme = useThemeStore((s) => s.theme);
-  const toggleTheme = useThemeStore((s) => s.toggle);
+  const themeMode = useThemeStore((s) => s.mode);
+  const cycleTheme = useThemeStore((s) => s.cycle);
+  const ThemeIcon = themeMode === "auto" ? SunMoon : themeMode === "light" ? Sun : Moon;
+  const themeTitle =
+    themeMode === "auto"
+      ? "Theme: Auto (follows time of day) — click for Light"
+      : themeMode === "light"
+        ? "Theme: Light — click for Dark"
+        : "Theme: Dark — click for Auto";
 
   return (
     <div
@@ -78,8 +85,8 @@ export function TopBar({
       )}
 
       <button
-        onClick={toggleTheme}
-        title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+        onClick={cycleTheme}
+        title={themeTitle}
         style={{
           display: "inline-flex",
           alignItems: "center",
@@ -89,11 +96,11 @@ export function TopBar({
           borderRadius: "var(--c-radius-sm)",
           background: "transparent",
           border: "1px solid var(--c-border)",
-          color: "var(--c-text-secondary)",
+          color: themeMode === "auto" ? "var(--c-accent)" : "var(--c-text-secondary)",
           cursor: "pointer",
         }}
       >
-        {theme === "dark" ? <Sun size={15} strokeWidth={2} /> : <Moon size={15} strokeWidth={2} />}
+        <ThemeIcon size={15} strokeWidth={2} />
       </button>
 
       {onToggleWorkbench && (
