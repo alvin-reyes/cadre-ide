@@ -1,7 +1,8 @@
-import { useState } from "react";
-import { Hexagon, FolderOpen, ArrowRight, Sparkles } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Hexagon, FolderOpen, ArrowRight, Sparkles, KeyRound, Eye, EyeOff, Check } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useBmadStore } from "../stores/bmadStore";
+import { useSettingsStore } from "../stores/settingsStore";
 import { isTauri } from "../lib/secrets";
 
 /** First-run: start a new idea, open an existing project, or preview the UI. */
@@ -11,6 +12,23 @@ export function Welcome({ onPreview }: { onPreview: () => void }) {
   const [path, setPath] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"open" | "new" | null>(null);
+
+  // Anthropic API key — settable here so it's ready before opening a project.
+  // Stored in the OS keychain (setAnthropicApiKey mirrors it there).
+  const anthropicKey = useSettingsStore((s) => s.anthropicApiKey);
+  const setAnthropicKey = useSettingsStore((s) => s.setAnthropicApiKey);
+  const [keyDraft, setKeyDraft] = useState("");
+  const [revealKey, setRevealKey] = useState(false);
+  const [keySaved, setKeySaved] = useState(false);
+  // Reflect a key hydrated from the keychain after mount.
+  useEffect(() => {
+    setKeyDraft(anthropicKey);
+  }, [anthropicKey]);
+  function saveKey() {
+    setAnthropicKey(keyDraft.trim());
+    setKeySaved(true);
+    setTimeout(() => setKeySaved(false), 1600);
+  }
 
   async function browse() {
     if (!isTauri()) {
@@ -191,6 +209,82 @@ export function Welcome({ onPreview }: { onPreview: () => void }) {
             {error}
           </div>
         )}
+
+        {/* Anthropic API key — set it now so planning works the moment a project opens. */}
+        <div style={{ marginTop: "var(--c-space-5)", textAlign: "left" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+            <KeyRound size={13} strokeWidth={2} style={{ color: "var(--c-text-muted)" }} />
+            <span style={{ fontSize: "var(--c-fs-xs)", fontWeight: 550 as const, color: "var(--c-text-secondary)" }}>
+              Anthropic API key
+            </span>
+            {anthropicKey && !keySaved && (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: "var(--c-fs-xs)", color: "var(--c-success)" }}>
+                <Check size={11} strokeWidth={3} /> set
+              </span>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <div style={{ position: "relative", flex: 1 }}>
+              <input
+                type={revealKey ? "text" : "password"}
+                value={keyDraft}
+                onChange={(e) => {
+                  setKeyDraft(e.target.value);
+                  setKeySaved(false);
+                }}
+                onKeyDown={(e) => e.key === "Enter" && keyDraft.trim() && saveKey()}
+                placeholder="sk-ant-…"
+                autoComplete="off"
+                spellCheck={false}
+                style={{
+                  width: "100%",
+                  background: "var(--c-surface-1)",
+                  border: "1px solid var(--c-border-strong)",
+                  borderRadius: "var(--c-radius)",
+                  outline: "none",
+                  color: "var(--c-text)",
+                  fontSize: "var(--c-fs-sm)",
+                  fontFamily: "var(--c-font-mono)",
+                  padding: "7px 34px 7px 10px",
+                }}
+              />
+              <button
+                onClick={() => setRevealKey((r) => !r)}
+                title={revealKey ? "Hide" : "Reveal"}
+                tabIndex={-1}
+                style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", display: "inline-flex", background: "transparent", border: "none", color: "var(--c-text-muted)", cursor: "pointer", padding: 4 }}
+              >
+                {revealKey ? <EyeOff size={14} strokeWidth={2} /> : <Eye size={14} strokeWidth={2} />}
+              </button>
+            </div>
+            <button
+              onClick={saveKey}
+              disabled={!keyDraft.trim()}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                fontSize: "var(--c-fs-sm)",
+                fontWeight: 550 as const,
+                padding: "0 14px",
+                borderRadius: "var(--c-radius)",
+                background: keySaved ? "var(--c-success-subtle)" : keyDraft.trim() ? "var(--c-accent)" : "var(--c-surface-3)",
+                color: keySaved ? "var(--c-success)" : keyDraft.trim() ? "var(--c-on-accent)" : "var(--c-text-muted)",
+                border: "none",
+                cursor: keyDraft.trim() ? "pointer" : "default",
+                flexShrink: 0,
+              }}
+            >
+              {keySaved ? <Check size={14} strokeWidth={2.5} /> : null}
+              {keySaved ? "Saved" : "Save"}
+            </button>
+          </div>
+          <div style={{ marginTop: 5, fontSize: "var(--c-fs-xs)", color: "var(--c-text-faint)" }}>
+            {isTauri()
+              ? "Stored in your OS keychain. Get one at console.anthropic.com."
+              : "Browser preview — kept in memory only; the desktop app saves it to the keychain."}
+          </div>
+        </div>
 
         <button
           onClick={onPreview}
