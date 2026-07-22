@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, type CSSProperties, type ClipboardEvent, t
 import { marked } from "marked";
 import { ArrowUp, ArrowRight, Lock, RefreshCw, AlertTriangle, FileText, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, ShieldAlert, Gavel, Paperclip, X, Check, Copy, Eye, Code2 } from "lucide-react";
 import { useSettingsStore } from "../stores/settingsStore";
+import { useBmadStore } from "../stores/bmadStore";
 import { useCadre, MODEL } from "./useCadre";
 import { Markdown } from "./components/Markdown";
 import { planningTurn, type ChatMessage, type Attachment } from "../lib/planning/planningChat";
@@ -94,6 +95,9 @@ export function PlanningStudio() {
   const uxSpec = useCadre((s) => s.uxSpec);
   const mockupHtml = useCadre((s) => s.mockupHtml);
   const poValidation = useCadre((s) => s.poValidation);
+  const projectContext = useCadre((s) => s.projectContext);
+  const documentProject = useCadre((s) => s.documentProject);
+  const projectRoot = useBmadStore((s) => s.projectRoot);
   const setPrd = useCadre((s) => s.setPrd);
   const setArchitecture = useCadre((s) => s.setArchitecture);
   const setUxSpec = useCadre((s) => s.setUxSpec);
@@ -233,11 +237,17 @@ export function PlanningStudio() {
 
   function systemPromptFor(id: PersonaId): string {
     if (id === "pm") {
+      let p = PM_SYSTEM_PROMPT;
+      // Brownfield: ground the PM in the existing-project analysis if we have it.
+      if (projectContext.trim()) {
+        p += `\n\n## Existing project analysis (this is a brownfield project — build on what exists)\n${projectContext}`;
+      }
       // On re-entry with an existing PRD, the PM amends scope in place — new
       // requirements always flow through the PM (§5.1), not a loose story.
-      return prd.trim()
-        ? `${PM_SYSTEM_PROMPT}\n\n## Current PRD (amend this as new requirements or added scope arrive; always emit the FULL updated PRD via write_document)\n${prd}`
-        : PM_SYSTEM_PROMPT;
+      if (prd.trim()) {
+        p += `\n\n## Current PRD (amend this as new requirements or added scope arrive; always emit the FULL updated PRD via write_document)\n${prd}`;
+      }
+      return p;
     }
     if (id === "po") {
       // The PO validates against everything produced so far.
@@ -431,6 +441,29 @@ export function PlanningStudio() {
                 <div style={{ fontSize: "var(--c-fs-xl)", fontWeight: 600 as const, marginTop: "var(--c-space-4)" }}>
                   {meta.opener}
                 </div>
+                {persona === "pm" && apiKey && projectRoot && !projectContext.trim() && !prd.trim() && (
+                  <button
+                    onClick={() => documentProject()}
+                    disabled={!!busy}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      marginTop: "var(--c-space-4)",
+                      fontSize: "var(--c-fs-sm)",
+                      fontWeight: 550 as const,
+                      padding: "7px 13px",
+                      borderRadius: "var(--c-radius)",
+                      background: busy ? "var(--c-surface-3)" : "var(--c-surface-2)",
+                      color: busy ? "var(--c-text-muted)" : "var(--c-text)",
+                      border: "1px solid var(--c-border-strong)",
+                      cursor: busy ? "default" : "pointer",
+                    }}
+                  >
+                    <ClipboardCheck size={14} strokeWidth={2} />
+                    {busy ?? "Existing project? Have the PM analyze it first (2 passes)"}
+                  </button>
+                )}
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "var(--c-space-4)", maxWidth: 720, width: "100%", margin: "0 auto" }}>

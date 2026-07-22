@@ -8,6 +8,7 @@ import { ARCHITECT_SYSTEM_PROMPT, DESIGN_SYSTEM_PROMPT } from "../lib/planning/p
 import { generateStory } from "../lib/planning/generateStory";
 import { runApprovedStory } from "../lib/engine/orchestrator";
 import { reviewStory as reviewStoryFleet, aggregateReviews, type LensReview } from "../lib/engine/reviewFleet";
+import { documentProject as documentProjectFleet, BROWNFIELD_DOC_PATH } from "../lib/engine/brownfield";
 import { CODE_REVIEW_LENSES } from "../lib/planning/review";
 import { tauriOrchestratorDeps, tauriReviewFleetDeps } from "../lib/engine/tauriDeps";
 import { composeDispatchPrompt } from "../lib/engine/dispatch";
@@ -62,6 +63,8 @@ interface CadreState {
   mockupHtml: string;
   /** optional PO validation report (PO tab) — sign-off / gaps vs the PRD */
   poValidation: string;
+  /** brownfield analysis of an existing project (grounds the PM), if generated */
+  projectContext: string;
   /** the frozen verification command(s) once the plan is approved */
   verification: string[];
   /** true when the PRD/plan changed after approval — the fleet must re-approve (§5.1) */
@@ -93,6 +96,8 @@ interface CadreState {
   dispatchStory: (epic: number, story: number) => Promise<void>;
   /** Run the adversarial code-review fleet (diverse-lens agent loops) on a story. */
   reviewStory: (epic: number, story: number) => Promise<void>;
+  /** Brownfield onboarding: a PM/Analyst agent documents an existing project (twice). */
+  documentProject: () => Promise<void>;
   /** Read a story's markdown (docs/stories/{epic}.{story}.*.md), or "" if none. */
   getStoryMarkdown: (epic: number, story: number) => Promise<string>;
   /** Reload the plan (prd/architecture), frozen verification, and phase from disk (§3.8). */
@@ -133,6 +138,7 @@ export const useCadre = create<CadreState>((set, get) => ({
   uxSpec: "",
   mockupHtml: "",
   poValidation: "",
+  projectContext: "",
   verification: [],
   needsReplan: false,
   logs: {},
@@ -315,6 +321,41 @@ export const useCadre = create<CadreState>((set, get) => ({
     }
   },
 
+  documentProject: async () => {
+    set({ busy: "Analyzing the existing project (2 passes)…", error: null });
+    const onOutput = (chunk: string) => {
+      set((s) => {
+        const next = (s.logs["brownfield"] ?? "") + chunk;
+        const capped = next.length > 200_000 ? next.slice(next.length - 200_000) : next;
+        return { logs: { ...s.logs, brownfield: capped } };
+      });
+    };
+    try {
+      const root = requireRoot();
+      const provider = getProvider(get().fleetProvider);
+      let token = await secretGet(provider.secretKey);
+      if (!token && provider.id === "claude") {
+        token = useSettingsStore.getState().anthropicApiKey || null;
+      }
+      if (!token) throw new Error(`No API key for ${provider.name} — add it in the fleet model picker.`);
+      const { env, model } = resolveAgentEnv(provider, token, provider.defaultModel);
+
+      const res = await documentProjectFleet(tauriReviewFleetDeps(onOutput), {
+        root,
+        passes: 2,
+        model,
+        env,
+      });
+      // Ground the PM in the existing project (read back what the agent wrote).
+      const content =
+        res.content ||
+        (await invoke<string>("read_file", { path: `${root}/${BROWNFIELD_DOC_PATH}` }).catch(() => ""));
+      set({ projectContext: content, busy: null });
+    } catch (e) {
+      set({ error: String(e), busy: null });
+    }
+  },
+
   getStoryMarkdown: async (epic, story) => {
     const root = useBmadStore.getState().projectRoot;
     if (!root) return "";
@@ -399,12 +440,13 @@ export const useCadre = create<CadreState>((set, get) => ({
         return "";
       }
     };
-    const [prd, architecture, uxSpec, mockupHtml, poValidation] = await Promise.all([
+    const [prd, architecture, uxSpec, mockupHtml, poValidation, projectContext] = await Promise.all([
       readOr(PRD_PATH),
       readOr(ARCH_PATH),
       readOr(UX_PATH),
       readOr(MOCKUP_PATH),
       readOr(PO_PATH),
+      readOr(BROWNFIELD_DOC_PATH),
     ]);
     const approval = await invoke<PlanApproval | null>("get_plan_approval").catch(() => null);
     const approved = !!approval?.approved && (approval?.verification?.length ?? 0) > 0;
@@ -414,6 +456,7 @@ export const useCadre = create<CadreState>((set, get) => ({
       uxSpec: uxSpec || s.uxSpec,
       mockupHtml: mockupHtml || s.mockupHtml,
       poValidation: poValidation || s.poValidation,
+      projectContext: projectContext || s.projectContext,
       verification: approval?.verification ?? s.verification,
       // If the plan was already approved in a prior session, jump to the fleet.
       phase: approved ? "FLEET" : s.phase,
