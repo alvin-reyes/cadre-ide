@@ -27,7 +27,10 @@ import type { PlanApproval } from "../lib/engine/planApproval";
  * the UI phase calls.
  */
 
-export const MODEL = "claude-sonnet-4-6";
+// The planning brain (PM/Architect/Designer chat, SM sharding, plan validation,
+// and the SDK adversarial reviews) runs on Opus — quality where it matters, low
+// volume. The dev fleet stays on Sonnet (providers.claude.defaultModel).
+export const MODEL = "claude-opus-4-8";
 
 const SM_SYSTEM_PROMPT = `You are the Scrum Master (SM). Turn the approved plan into the NEXT single implementation story via the create_story tool.
 

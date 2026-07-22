@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { recordUsage } from "../../stores/usageStore";
-import { FALLBACK_MODEL, isModelError } from "./planningChat";
+import { fallbackModel, isModelError } from "./planningChat";
 
 /**
  * Adversarial review (§3.11): every artifact is critiqued by a same-discipline
@@ -103,9 +103,10 @@ export async function reviewArtifact(opts: {
   try {
     response = await runCreate(opts.model);
   } catch (e) {
-    if (isModelError(e) && opts.model !== FALLBACK_MODEL) {
-      usedModel = FALLBACK_MODEL;
-      response = await runCreate(FALLBACK_MODEL);
+    if (isModelError(e) && opts.model !== fallbackModel(opts.model)) {
+      const fb = fallbackModel(opts.model);
+      usedModel = fb;
+      response = await runCreate(fb);
     } else {
       throw e;
     }

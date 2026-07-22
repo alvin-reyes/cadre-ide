@@ -3,9 +3,14 @@ import { recordUsage } from "../../stores/usageStore";
 
 /**
  * If the configured model id doesn't resolve on the account, fall back once to a
- * known-good dated Sonnet id. Keeps the smoke test alive despite model-alias drift.
+ * known-good DATED id of the same tier (Opus→Opus, Sonnet→Sonnet). Keeps calls
+ * alive despite model-alias drift.
  */
-export const FALLBACK_MODEL = "claude-sonnet-4-20250514";
+export function fallbackModel(model: string): string {
+  return model.toLowerCase().includes("opus")
+    ? "claude-opus-4-20250514"
+    : "claude-sonnet-4-20250514";
+}
 export function isModelError(e: unknown): boolean {
   const s = String((e as { message?: string })?.message ?? e).toLowerCase();
   return (
@@ -193,9 +198,10 @@ export async function planningTurn(opts: {
   try {
     response = await runStream(opts.model);
   } catch (e) {
-    if (isModelError(e) && opts.model !== FALLBACK_MODEL) {
-      usedModel = FALLBACK_MODEL;
-      response = await runStream(FALLBACK_MODEL);
+    if (isModelError(e) && opts.model !== fallbackModel(opts.model)) {
+      const fb = fallbackModel(opts.model);
+      usedModel = fb;
+      response = await runStream(fb);
     } else {
       throw e;
     }
@@ -261,9 +267,10 @@ export async function callTool(opts: {
   try {
     response = await runCreate(opts.model);
   } catch (e) {
-    if (isModelError(e) && opts.model !== FALLBACK_MODEL) {
-      usedModel = FALLBACK_MODEL;
-      response = await runCreate(FALLBACK_MODEL);
+    if (isModelError(e) && opts.model !== fallbackModel(opts.model)) {
+      const fb = fallbackModel(opts.model);
+      usedModel = fb;
+      response = await runCreate(fb);
     } else {
       throw e;
     }
