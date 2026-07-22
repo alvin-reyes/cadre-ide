@@ -40,6 +40,8 @@ interface BmadState {
   /** set if a directory watch failed to register — the board may be static */
   watchError: string | null;
   openProject: (root: string) => Promise<void>;
+  /** Scaffold a fresh Cadre project (git + cadre.json + docs) at `path`, then open it. */
+  newProject: (path: string) => Promise<void>;
   /**
    * Authoritative status write: updates the board immediately (so the UI is
    * live) AND writes the engine-owned state file. The watcher echo of this
@@ -85,6 +87,21 @@ export const useBmadStore = create<BmadState>((set, get) => {
       // Optimistic board update, then the engine writes the authoritative file.
       push(applyStatus(get().board, epic, story, status));
       await invoke("story_set_status", { epic, story, status });
+    },
+
+    newProject: async (path: string) => {
+      const name = basename(path) || "cadre-project";
+      const manifest = JSON.stringify({ cadre: "0.1", name, createdAt: new Date().toISOString() }, null, 2);
+      // write_text_file creates parent dirs, so this also creates the project folder.
+      await invoke("write_text_file", { path: `${path}/cadre.json`, content: manifest });
+      await invoke("write_text_file", { path: `${path}/README.md`, content: `# ${name}\n\nA Cadre project. Disciplined AI development — verified, not vibed.\n` });
+      await invoke("write_text_file", { path: `${path}/docs/.gitkeep`, content: "" });
+      // git repo with an initial commit (dispatch needs a HEAD to branch from).
+      const idc = ["-c", "user.name=Cadre", "-c", "user.email=cadre@local"];
+      await invoke("run_git", { cwd: path, args: ["init"] }).catch(() => {});
+      await invoke("run_git", { cwd: path, args: [...idc, "add", "-A"] }).catch(() => {});
+      await invoke("run_git", { cwd: path, args: [...idc, "commit", "-m", "cadre: init"] }).catch(() => {});
+      await get().openProject(path);
     },
 
     openProject: async (root: string) => {

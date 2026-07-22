@@ -69,6 +69,8 @@ interface CadreState {
   poValidation: string;
   /** brownfield analysis of an existing project (grounds the PM), if generated */
   projectContext: string;
+  /** true when the opened project has existing code but no Cadre plan yet */
+  isBrownfield: boolean;
   /** the frozen verification command(s) once the plan is approved */
   verification: string[];
   /** true when the PRD/plan changed after approval — the fleet must re-approve (§5.1) */
@@ -143,6 +145,7 @@ export const useCadre = create<CadreState>((set, get) => ({
   mockupHtml: "",
   poValidation: "",
   projectContext: "",
+  isBrownfield: false,
   verification: [],
   needsReplan: false,
   logs: {},
@@ -368,7 +371,7 @@ export const useCadre = create<CadreState>((set, get) => ({
       const content =
         res.content ||
         (await invoke<string>("read_file", { path: `${root}/${BROWNFIELD_DOC_PATH}` }).catch(() => ""));
-      set({ projectContext: content, busy: null });
+      set({ projectContext: content, isBrownfield: false, busy: null });
       toast("Project analyzed — the PM now has context", "success");
     } catch (e) {
       set({ error: String(e), busy: null });
@@ -472,6 +475,19 @@ export const useCadre = create<CadreState>((set, get) => ({
     ]);
     const approval = await invoke<PlanApproval | null>("get_plan_approval").catch(() => null);
     const approved = !!approval?.approved && (approval?.verification?.length ?? 0) > 0;
+
+    // Brownfield: existing code present, but no Cadre plan (PRD) and no analysis yet.
+    let isBrownfield = false;
+    if (!prd.trim() && !projectContext.trim()) {
+      try {
+        const entries = await invoke<{ name: string; is_dir: boolean }[]>("list_directory", { path: root });
+        const ignore = new Set([".git", ".cadre", "docs", "cadre.json", "README.md", ".gitignore", ".DS_Store"]);
+        isBrownfield = entries.some((e) => !ignore.has(e.name));
+      } catch {
+        /* ignore */
+      }
+    }
+
     set((s) => ({
       prd: prd || s.prd,
       architecture: architecture || s.architecture,
@@ -479,6 +495,7 @@ export const useCadre = create<CadreState>((set, get) => ({
       mockupHtml: mockupHtml || s.mockupHtml,
       poValidation: poValidation || s.poValidation,
       projectContext: projectContext || s.projectContext,
+      isBrownfield,
       verification: approval?.verification ?? s.verification,
       // If the plan was already approved in a prior session, jump to the fleet.
       phase: approved ? "FLEET" : s.phase,

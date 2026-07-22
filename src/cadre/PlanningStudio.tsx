@@ -3,7 +3,6 @@ import { marked } from "marked";
 import { ArrowUp, ArrowRight, Lock, RefreshCw, AlertTriangle, FileText, FileDown, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, ShieldAlert, Gavel, Paperclip, X, Check, Copy, Eye, Code2 } from "lucide-react";
 import { exportHtmlToPdf } from "./exportPdf";
 import { useSettingsStore } from "../stores/settingsStore";
-import { useBmadStore } from "../stores/bmadStore";
 import { useCadre, MODEL } from "./useCadre";
 import { Markdown } from "./components/Markdown";
 import { planningTurn, type ChatMessage, type Attachment } from "../lib/planning/planningChat";
@@ -89,7 +88,7 @@ export function PlanningStudio() {
   const mockupHtml = useCadre((s) => s.mockupHtml);
   const projectContext = useCadre((s) => s.projectContext);
   const documentProject = useCadre((s) => s.documentProject);
-  const projectRoot = useBmadStore((s) => s.projectRoot);
+  const isBrownfield = useCadre((s) => s.isBrownfield);
   const setPrd = useCadre((s) => s.setPrd);
   const setArchitecture = useCadre((s) => s.setArchitecture);
   const setUxSpec = useCadre((s) => s.setUxSpec);
@@ -460,6 +459,47 @@ export function PlanningStudio() {
             <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)" }}>{meta.sub}</span>
           </div>
 
+          {persona === "pm" && isBrownfield && !projectContext.trim() && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--c-space-2)",
+                margin: "var(--c-space-3)",
+                padding: "9px 12px",
+                background: "var(--c-accent-subtle)",
+                border: "1px solid var(--c-accent-ring)",
+                borderRadius: "var(--c-radius)",
+              }}
+            >
+              <ClipboardCheck size={15} strokeWidth={2} style={{ color: "var(--c-accent)", flexShrink: 0 }} />
+              <span style={{ flex: 1, fontSize: "var(--c-fs-sm)", color: "var(--c-text-secondary)" }}>
+                Existing project detected — have the PM read the whole codebase (2 passes) so it plans with full context.
+              </span>
+              <button
+                onClick={() => documentProject()}
+                disabled={!!busy || !apiKey}
+                title={!apiKey ? "Add your API key first" : "The PM analyzes the project in two passes"}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  fontSize: "var(--c-fs-sm)",
+                  fontWeight: 550 as const,
+                  padding: "5px 12px",
+                  borderRadius: "var(--c-radius)",
+                  background: busy || !apiKey ? "var(--c-surface-3)" : "var(--c-accent)",
+                  color: busy || !apiKey ? "var(--c-text-muted)" : "var(--c-on-accent)",
+                  border: "none",
+                  cursor: busy || !apiKey ? "default" : "pointer",
+                  flexShrink: 0,
+                }}
+              >
+                {busy ?? "Analyze project"}
+              </button>
+            </div>
+          )}
+
           {!apiKey && (
             <div
               style={{
@@ -504,29 +544,6 @@ export function PlanningStudio() {
                 <div style={{ fontSize: "var(--c-fs-xl)", fontWeight: 600 as const, marginTop: "var(--c-space-4)" }}>
                   {meta.opener}
                 </div>
-                {persona === "pm" && apiKey && projectRoot && !projectContext.trim() && !prd.trim() && (
-                  <button
-                    onClick={() => documentProject()}
-                    disabled={!!busy}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                      marginTop: "var(--c-space-4)",
-                      fontSize: "var(--c-fs-sm)",
-                      fontWeight: 550 as const,
-                      padding: "7px 13px",
-                      borderRadius: "var(--c-radius)",
-                      background: busy ? "var(--c-surface-3)" : "var(--c-surface-2)",
-                      color: busy ? "var(--c-text-muted)" : "var(--c-text)",
-                      border: "1px solid var(--c-border-strong)",
-                      cursor: busy ? "default" : "pointer",
-                    }}
-                  >
-                    <ClipboardCheck size={14} strokeWidth={2} />
-                    {busy ?? "Existing project? Have the PM analyze it first (2 passes)"}
-                  </button>
-                )}
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "var(--c-space-4)", maxWidth: 720, width: "100%", margin: "0 auto" }}>

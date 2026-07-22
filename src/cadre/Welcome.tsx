@@ -1,24 +1,26 @@
 import { useState } from "react";
-import { Hexagon, FolderOpen, ArrowRight } from "lucide-react";
+import { Hexagon, FolderOpen, ArrowRight, Sparkles } from "lucide-react";
 import { useBmadStore } from "../stores/bmadStore";
 
-/** First-run: open a project (Tauri) or preview the UI (browser). */
+/** First-run: start a new idea, open an existing project, or preview the UI. */
 export function Welcome({ onPreview }: { onPreview: () => void }) {
   const openProject = useBmadStore((s) => s.openProject);
+  const newProject = useBmadStore((s) => s.newProject);
   const [path, setPath] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"open" | "new" | null>(null);
 
-  async function open() {
-    if (!path.trim()) return;
-    setBusy(true);
+  async function run(kind: "open" | "new") {
+    if (!path.trim() || busy) return;
+    setBusy(kind);
     setError(null);
     try {
-      await openProject(path.trim());
+      if (kind === "new") await newProject(path.trim());
+      else await openProject(path.trim());
     } catch (e) {
       setError(String(e));
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -58,7 +60,7 @@ export function Welcome({ onPreview }: { onPreview: () => void }) {
           <input
             value={path}
             onChange={(e) => setPath(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && open()}
+            onKeyDown={(e) => e.key === "Enter" && run("open")}
             placeholder="/path/to/your/project"
             style={{
               flex: 1,
@@ -71,8 +73,8 @@ export function Welcome({ onPreview }: { onPreview: () => void }) {
             }}
           />
           <button
-            onClick={open}
-            disabled={busy || !path.trim()}
+            onClick={() => run("open")}
+            disabled={!!busy || !path.trim()}
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -87,9 +89,40 @@ export function Welcome({ onPreview }: { onPreview: () => void }) {
               cursor: path.trim() ? "pointer" : "default",
             }}
           >
-            {busy ? "Opening…" : "Open"}
-            {!busy && <ArrowRight size={14} strokeWidth={2.5} />}
+            {busy === "open" ? "Opening…" : "Open"}
+            {busy !== "open" && <ArrowRight size={14} strokeWidth={2.5} />}
           </button>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--c-space-2)", marginTop: "var(--c-space-3)" }}>
+          <button
+            onClick={() => run("new")}
+            disabled={!!busy || !path.trim()}
+            title="Scaffold a fresh Cadre project (git + docs) at that path"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+              flex: 1,
+              padding: "8px 12px",
+              borderRadius: "var(--c-radius)",
+              background: "var(--c-surface-2)",
+              color: "var(--c-text)",
+              border: "1px solid var(--c-border-strong)",
+              fontSize: "var(--c-fs-sm)",
+              fontWeight: 550 as const,
+              cursor: path.trim() && !busy ? "pointer" : "default",
+            }}
+          >
+            <Sparkles size={14} strokeWidth={2} />
+            {busy === "new" ? "Creating…" : "Start a new project here"}
+          </button>
+        </div>
+
+        <div style={{ marginTop: "var(--c-space-3)", fontSize: "var(--c-fs-xs)", color: "var(--c-text-faint)", lineHeight: 1.5 }}>
+          Open an <b style={{ color: "var(--c-text-muted)" }}>existing</b> project and the PM can read the whole
+          codebase (twice) to plan with full context.
         </div>
 
         {error && (
