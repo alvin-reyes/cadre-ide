@@ -3,6 +3,7 @@ import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { useSettingsStore } from "../stores/settingsStore";
+import { useThemeStore } from "../stores/themeStore";
 import "@xterm/xterm/css/xterm.css";
 
 /**
@@ -16,8 +17,31 @@ type PtyEvent =
   | { type: "exit"; code: number | null }
   | { type: "error"; message: string };
 
+/** Read a CSS token off the root, with a fallback. */
+function cssVar(name: string, fallback: string): string {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
+
+/** Resolve the xterm palette from the app's theme tokens (so it follows light/dark). */
+function xtermTheme() {
+  return {
+    background: cssVar("--c-code-bg", "#14100c"),
+    foreground: cssVar("--c-text", "#efe9df"),
+    cursor: cssVar("--c-accent", "#d97757"),
+    selectionBackground: cssVar("--c-accent-subtle", "rgba(217,119,87,0.3)"),
+  };
+}
+
 export function TerminalPanel({ cwd }: { cwd: string }) {
   const ref = useRef<HTMLDivElement>(null);
+  const termRef = useRef<XTerm | null>(null);
+  const theme = useThemeStore((s) => s.theme);
+
+  // Re-theme the live terminal when the app theme flips (no PTY churn).
+  useEffect(() => {
+    if (termRef.current) termRef.current.options.theme = xtermTheme();
+  }, [theme]);
 
   useEffect(() => {
     const host = ref.current;
@@ -33,13 +57,9 @@ export function TerminalPanel({ cwd }: { cwd: string }) {
       cursorStyle: s.cursorStyle,
       cursorBlink: s.cursorBlink,
       scrollback: s.scrollback,
-      theme: {
-        background: "#14100c",
-        foreground: "#efe9df",
-        cursor: "#d97757",
-        selectionBackground: "rgba(217,119,87,0.3)",
-      },
+      theme: xtermTheme(),
     });
+    termRef.current = term;
     // Let app shortcuts (new tab / toggle panel) win over the shell for these
     // chords — returning false makes xterm ignore the key and lets it bubble.
     term.attachCustomKeyEventHandler((e) => {
@@ -116,8 +136,9 @@ export function TerminalPanel({ cwd }: { cwd: string }) {
       ro.disconnect();
       if (ptyId != null) invoke("kill_pty", { id: ptyId }).catch(() => {});
       term.dispose();
+      termRef.current = null;
     };
   }, [cwd]);
 
-  return <div ref={ref} style={{ width: "100%", height: "100%", padding: "6px 8px", background: "#14100c" }} />;
+  return <div ref={ref} style={{ width: "100%", height: "100%", padding: "6px 8px", background: "var(--c-code-bg)" }} />;
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { marked } from "marked";
 import mermaid from "mermaid";
+import { useThemeStore } from "../../stores/themeStore";
 
 /**
  * Renders Markdown, and upgrades ```mermaid fenced blocks into rendered SVG
@@ -8,22 +9,25 @@ import mermaid from "mermaid";
  * diagrams). Used by the Planning Studio doc pane and the fleet story view.
  */
 
-let initialized = false;
 let idCounter = 0;
+let currentMermaidTheme: string | null = null;
 
-function ensureInit() {
-  if (initialized) return;
+/** (Re)initialize mermaid for the given app theme — diagrams follow light/dark. */
+function ensureInit(appTheme: "dark" | "light") {
+  const mermaidTheme = appTheme === "light" ? "neutral" : "dark";
+  if (currentMermaidTheme === mermaidTheme) return;
   mermaid.initialize({
     startOnLoad: false,
     securityLevel: "strict",
-    theme: "dark",
+    theme: mermaidTheme,
     fontFamily: "Inter, system-ui, sans-serif",
   });
-  initialized = true;
+  currentMermaidTheme = mermaidTheme;
 }
 
 export function Markdown({ content, className }: { content: string; className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
+  const theme = useThemeStore((s) => s.theme);
 
   useEffect(() => {
     const el = ref.current;
@@ -34,7 +38,7 @@ export function Markdown({ content, className }: { content: string; className?: 
 
     const blocks = Array.from(el.querySelectorAll<HTMLElement>("code.language-mermaid"));
     if (blocks.length > 0) {
-      ensureInit();
+      ensureInit(theme);
       for (const code of blocks) {
         const src = (code.textContent ?? "").trim();
         const id = `cadre-mmd-${idCounter++}`;
@@ -56,7 +60,7 @@ export function Markdown({ content, className }: { content: string; className?: 
     return () => {
       cancelled = true;
     };
-  }, [content]);
+  }, [content, theme]);
 
   return <div ref={ref} className={className} />;
 }
