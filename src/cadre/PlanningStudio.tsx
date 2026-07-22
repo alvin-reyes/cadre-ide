@@ -1,13 +1,13 @@
 import { useState, useRef, useEffect, type CSSProperties, type ClipboardEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { marked } from "marked";
-import { ArrowUp, ArrowRight, Lock, RefreshCw, AlertTriangle, FileText, FileDown, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, ShieldAlert, Gavel, Paperclip, X, Check, Copy, Eye, Code2 } from "lucide-react";
+import { ArrowUp, ArrowRight, Lock, RefreshCw, AlertTriangle, FileText, FileDown, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, ShieldAlert, Gavel, Paperclip, X, Check, Copy, Eye, Code2, Wrench } from "lucide-react";
 import { exportHtmlToPdf } from "./exportPdf";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre, MODEL } from "./useCadre";
 import { Markdown } from "./components/Markdown";
 import { planningTurn, type ChatMessage, type Attachment } from "../lib/planning/planningChat";
 import { PM_SYSTEM_PROMPT, ARCHITECT_SYSTEM_PROMPT, DESIGN_SYSTEM_PROMPT, ADVERSARIAL_REVIEW_PROMPTS, PLAN_VALIDATION_PROMPT } from "../lib/planning/personas";
-import { reviewArtifact, type ReviewResult, type Severity } from "../lib/planning/review";
+import { reviewArtifact, type ReviewResult, type Severity, type Finding } from "../lib/planning/review";
 
 /** Read a pasted/dropped File as text. */
 function readFileText(file: File): Promise<string> {
@@ -221,10 +221,21 @@ export function PlanningStudio() {
     }
   }
 
+  // Route selected validation gaps to a persona as a concrete fix request.
+  function solveGaps(target: PersonaId, gaps: Finding[]) {
+    if (!gaps.length || thinking) return;
+    const list = gaps
+      .map((f, i) => `${i + 1}. [${f.severity.toUpperCase()}] ${f.title} — ${f.detail}`)
+      .join("\n");
+    const msg =
+      `The CTO's plan validation flagged these gaps for you to resolve. ` +
+      `Address each one and update ${PERSONAS[target].file} accordingly, then briefly confirm what changed:\n\n${list}`;
+    send(msg, target);
+  }
+
   const docFor = (id: PersonaId) =>
     id === "pm" ? prd : id === "architect" ? architecture : uxSpec;
   const doc = docFor(persona);
-  const setDoc = persona === "pm" ? setPrd : persona === "architect" ? setArchitecture : setUxSpec;
   const messages = threads[persona];
   const meta = PERSONAS[persona];
   const canApprove = prd.trim().length > 0 && architecture.trim().length > 0;
@@ -319,13 +330,23 @@ export function PlanningStudio() {
   }
 
   // `override` lets a quick-reply chip send its text directly.
-  async function send(override?: string) {
+  async function send(override?: string, target?: PersonaId) {
     const text = (override ?? draft).trim();
     if ((!text && attachments.length === 0) || thinking || !apiKey) return;
-    const active = persona;
+    const active = target ?? persona;
+    // Routing to another persona (e.g. "solve gaps"): switch to it, keep it open,
+    // and don't drag the current composer's attachments along.
+    if (target && target !== persona) {
+      setPersona(target);
+      setHandedOff((h) => ({ ...h, [target]: true }));
+    }
+    const atts = target ? [] : attachments;
+    // Resolve the doc setter from `active`, not the render-time persona — otherwise a
+    // routed turn would write its updated document into the wrong pane.
+    const applyDoc = active === "pm" ? setPrd : active === "architect" ? setArchitecture : setUxSpec;
     const base: ChatMessage[] = [
-      ...messages,
-      { role: "user", content: text, attachments: attachments.length ? attachments : undefined },
+      ...threads[active],
+      { role: "user", content: text, attachments: atts.length ? atts : undefined },
     ];
     // Append an empty assistant placeholder that we stream into (Claude-style).
     setThreads((t) => ({ ...t, [active]: [...base, { role: "assistant", content: "" }] }));
@@ -362,7 +383,7 @@ export function PlanningStudio() {
         setHandedOff((h) => ({ ...h, [result.handoff as PersonaId]: true }));
       }
       setAssistant((result.reply || acc).trim() || "(updated the document)");
-      if (result.document) setDoc(result.document);
+      if (result.document) applyDoc(result.document);
       if (result.mockup) {
         setMockupHtml(result.mockup);
         setDesignView("preview");
@@ -940,7 +961,9 @@ export function PlanningStudio() {
         </div>
       ) : canApprove ? (
         <>
-          {poCheck.status !== "idle" && <PoValidationPanel state={poCheck} />}
+          {poCheck.status !== "idle" && (
+            <PoValidationPanel state={poCheck} onSolve={solveGaps} solving={thinking} />
+          )}
           <div
             style={{
               display: "flex",
@@ -1360,7 +1383,30 @@ function resolveBtn(primary: boolean): CSSProperties {
 }
 
 /** The adversarial PO validation of the whole plan — read-only; you (the human PO) sign off. */
-function PoValidationPanel({ state }: { state: { status: "idle" | "reviewing" | "done"; result?: ReviewResult } }) {
+const SOLVE_TARGETS: { id: PersonaId; label: string }[] = [
+  { id: "pm", label: "PM" },
+  { id: "architect", label: "Architect" },
+  { id: "design", label: "Designer" },
+];
+
+function PoValidationPanel({
+  state,
+  onSolve,
+  solving,
+}: {
+  state: { status: "idle" | "reviewing" | "done"; result?: ReviewResult };
+  onSolve: (target: PersonaId, gaps: Finding[]) => void;
+  solving: boolean;
+}) {
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [target, setTarget] = useState<PersonaId>("architect");
+  const toggle = (i: number) =>
+    setSelected((s) => {
+      const next = new Set(s);
+      next.has(i) ? next.delete(i) : next.add(i);
+      return next;
+    });
+
   if (state.status === "reviewing") {
     return (
       <div style={{ flexShrink: 0, borderTop: "1px solid var(--c-border)", background: "var(--c-surface-1)", padding: "10px var(--c-space-4)", display: "flex", alignItems: "center", gap: 8 }}>
@@ -1389,12 +1435,38 @@ function PoValidationPanel({ state }: { state: { status: "idle" | "reviewing" | 
           </span>
         )}
         <div style={{ flex: 1 }} />
-        <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-faint)" }}>you decide — CTO signs off below</span>
+        {r.findings.length > 0 ? (
+          <button
+            onClick={() => setSelected((s) => (s.size === r.findings.length ? new Set() : new Set(r.findings.map((_, i) => i))))}
+            style={{ background: "none", border: "none", color: "var(--c-accent)", fontSize: "var(--c-fs-xs)", cursor: "pointer", padding: 0 }}
+          >
+            {selected.size === r.findings.length ? "Clear all" : "Select all"}
+          </button>
+        ) : (
+          <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-faint)" }}>you decide — CTO signs off below</span>
+        )}
       </div>
       {r.findings.length > 0 && (
-        <div style={{ padding: "var(--c-space-3) var(--c-space-4)", display: "flex", flexDirection: "column", gap: 11 }}>
+        <div style={{ padding: "var(--c-space-3) var(--c-space-4)", display: "flex", flexDirection: "column", gap: 4 }}>
           {r.findings.map((f, i) => (
-            <div key={i} style={{ display: "flex", gap: 8 }}>
+            <label
+              key={i}
+              style={{
+                display: "flex",
+                gap: 9,
+                alignItems: "flex-start",
+                padding: "6px 8px",
+                borderRadius: "var(--c-radius)",
+                cursor: "pointer",
+                background: selected.has(i) ? "var(--c-surface-2)" : "transparent",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={selected.has(i)}
+                onChange={() => toggle(i)}
+                style={{ marginTop: 3, accentColor: "var(--c-accent)", cursor: "pointer", flexShrink: 0 }}
+              />
               <span style={{ width: 6, height: 6, borderRadius: "50%", background: sevColor(f.severity), marginTop: 6, flexShrink: 0 }} />
               <div>
                 <div style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text)" }}>
@@ -1405,8 +1477,72 @@ function PoValidationPanel({ state }: { state: { status: "idle" | "reviewing" | 
                 </div>
                 <div style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text-muted)", lineHeight: 1.5 }}>{f.detail}</div>
               </div>
-            </div>
+            </label>
           ))}
+        </div>
+      )}
+      {selected.size > 0 && (
+        <div
+          style={{
+            position: "sticky",
+            bottom: 0,
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--c-space-2)",
+            padding: "8px var(--c-space-4)",
+            background: "var(--c-surface-2)",
+            borderTop: "1px solid var(--c-border)",
+          }}
+        >
+          <span style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text-secondary)", flexShrink: 0 }}>
+            {selected.size} gap{selected.size === 1 ? "" : "s"} → send to
+          </span>
+          <div style={{ display: "flex", gap: 2, background: "var(--c-surface-1)", border: "1px solid var(--c-border-strong)", borderRadius: "var(--c-radius)", padding: 2 }}>
+            {SOLVE_TARGETS.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTarget(t.id)}
+                style={{
+                  fontSize: "var(--c-fs-xs)",
+                  fontWeight: 550 as const,
+                  padding: "3px 10px",
+                  borderRadius: "calc(var(--c-radius) - 2px)",
+                  border: "none",
+                  cursor: "pointer",
+                  background: target === t.id ? "var(--c-accent)" : "transparent",
+                  color: target === t.id ? "var(--c-on-accent)" : "var(--c-text-muted)",
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div style={{ flex: 1 }} />
+          <button
+            onClick={() => {
+              const gaps = r.findings.filter((_, i) => selected.has(i));
+              onSolve(target, gaps);
+              setSelected(new Set());
+            }}
+            disabled={solving}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              fontSize: "var(--c-fs-sm)",
+              fontWeight: 600 as const,
+              padding: "6px 14px",
+              borderRadius: "var(--c-radius)",
+              background: solving ? "var(--c-surface-3)" : "var(--c-accent)",
+              color: solving ? "var(--c-text-muted)" : "var(--c-on-accent)",
+              border: "none",
+              cursor: solving ? "default" : "pointer",
+              flexShrink: 0,
+            }}
+          >
+            <Wrench size={13} strokeWidth={2} />
+            {solving ? "Sending…" : `Solve ${selected.size}`}
+          </button>
         </div>
       )}
     </div>
