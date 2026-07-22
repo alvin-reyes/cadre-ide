@@ -355,8 +355,10 @@ export function PlanningStudio() {
 
   const showDesignPreview = persona === "design" && designView === "preview";
   const prdReady = prd.trim().length > 0;
-  // A role is reachable only if the PM has handed off to it (or its doc already exists, e.g. on reload).
-  const isOpen = (id: PersonaId) => id === "pm" || handedOff[id] || docFor(id).trim().length > 0;
+  // PM stays the lead (requirements first), but once the PRD exists the owner can
+  // summon ANY specialist on demand — just click its tab to open a chat.
+  const isOpen = (id: PersonaId) =>
+    id === "pm" || prdReady || handedOff[id] || docFor(id).trim().length > 0;
   const architectOpen = isOpen("architect");
 
   // Next-step guidance — PM-mediated (the PM brings in the Architect).
@@ -365,10 +367,10 @@ export function PlanningStudio() {
       ? { done: null, msg: "Start here — describe your idea and the PM will close down the requirements.", to: null, cta: "" }
       : { done: null, msg: "Everything starts with the PM.", to: "pm", cta: "Go to PM" }
     : persona === "architect"
-      ? { done: "PRD ready", msg: "Now talk to the Architect to design the build.", to: null, cta: "" }
-      : architectOpen
-        ? { done: "PRD ready", msg: "The PM brought in the Architect.", to: "architect", cta: "Go to Architect" }
-        : { done: "PRD ready", msg: "Ask the PM to bring in the Architect when the requirements are set.", to: null, cta: "" };
+      ? { done: "PRD ready", msg: "Design the build with the Architect — or summon the Designer/PO from the tabs.", to: null, cta: "" }
+      : persona === "design" || persona === "po"
+        ? { done: "PRD ready", msg: "Summon any specialist from the tabs, or head to the Architect to unlock dispatch.", to: "architect", cta: "Go to Architect" }
+        : { done: "PRD ready", msg: "Requirements captured — chat with the Architect, or summon the Designer/PO from the tabs.", to: "architect", cta: "Go to Architect" };
 
   // The PM hands off to the Architect only after the PRD is reviewed AND its findings resolved.
   const pmNeedsHandoff = persona === "pm" && prdReady && !architectOpen;
