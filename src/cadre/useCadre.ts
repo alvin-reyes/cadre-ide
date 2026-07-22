@@ -269,7 +269,9 @@ export const useCadre = create<CadreState>((set, get) => ({
       if (!token) {
         throw new Error(`No API key for ${provider.name} — add it in the fleet model picker.`);
       }
-      const { env, model } = resolveAgentEnv(provider, token, provider.defaultModel);
+      const { env, model: providerModel } = resolveAgentEnv(provider, token, provider.defaultModel);
+      // Native Claude CLI: let it use its own default model (an unknown --model id can fail).
+      const model = provider.id === "claude" ? undefined : providerModel;
       onOutput(`[cadre] dispatching on ${provider.name} (${model})\n`);
 
       // Route engine status writes through bmadStore so the board updates
@@ -318,7 +320,9 @@ export const useCadre = create<CadreState>((set, get) => ({
         token = useSettingsStore.getState().anthropicApiKey || null;
       }
       if (!token) throw new Error(`No API key for ${provider.name} — add it in the fleet model picker.`);
-      const { env, model } = resolveAgentEnv(provider, token, provider.defaultModel);
+      const { env, model: providerModel } = resolveAgentEnv(provider, token, provider.defaultModel);
+      // Native Claude CLI: let it use its own default model (an unknown --model id can fail).
+      const model = provider.id === "claude" ? undefined : providerModel;
       onOutput(`[cadre] dispatching ${CODE_REVIEW_LENSES.length} adversarial reviewers on ${provider.name}\n`);
 
       const reviews = await reviewStoryFleet(tauriReviewFleetDeps(onOutput), {
@@ -359,7 +363,9 @@ export const useCadre = create<CadreState>((set, get) => ({
         token = useSettingsStore.getState().anthropicApiKey || null;
       }
       if (!token) throw new Error(`No API key for ${provider.name} — add it in the fleet model picker.`);
-      const { env, model } = resolveAgentEnv(provider, token, provider.defaultModel);
+      const { env, model: providerModel } = resolveAgentEnv(provider, token, provider.defaultModel);
+      // Native Claude CLI: let it use its own default model (an unknown --model id can fail).
+      const model = provider.id === "claude" ? undefined : providerModel;
 
       const res = await documentProjectFleet(tauriReviewFleetDeps(onOutput), {
         root,
