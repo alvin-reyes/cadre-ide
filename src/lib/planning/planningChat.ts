@@ -65,14 +65,14 @@ export const SUGGEST_VERIFICATION_TOOL = {
 export const HANDOFF_TOOL = {
   name: "handoff" as const,
   description:
-    "Bring in the next role once the requirements are captured. The user reaches the Architect, Designer, and PO ONLY through you (the PM). Call this to hand off — e.g. to the Architect when the PRD is solid and the user is ready to design the build.",
+    "Bring in the next specialist once the requirements are captured. Call this to hand off — e.g. to the Architect when the PRD is solid and it's time to design the build, or the Designer for UX.",
   input_schema: {
     type: "object" as const,
     properties: {
       role: {
         type: "string" as const,
-        enum: ["architect", "design", "po"],
-        description: "which role to bring in",
+        enum: ["architect", "design"],
+        description: "which specialist to bring in",
       },
       note: { type: "string" as const, description: "one short line on what they should focus on" },
     },
@@ -122,7 +122,7 @@ export interface PlanningTurnResult {
   mockup?: string;
   /** present if the Architect proposed the verification command */
   verification?: string;
-  /** set when the PM hands off to the next role ("architect" | "design" | "po") */
+  /** set when the PM hands off to the next specialist ("architect" | "design") */
   handoff?: string;
   /** short quick-reply suggestions the user can tap instead of typing */
   suggestions?: string[];
@@ -189,7 +189,7 @@ export async function planningTurn(opts: {
       if (typeof input.command === "string" && input.command.trim()) verification = input.command.trim();
     } else if (block.type === "tool_use" && block.name === "handoff") {
       const input = block.input as { role?: string };
-      if (input.role === "architect" || input.role === "design" || input.role === "po") handoff = input.role;
+      if (input.role === "architect" || input.role === "design") handoff = input.role;
     } else if (block.type === "tool_use" && block.name === "suggest_replies") {
       const input = block.input as { replies?: unknown };
       if (Array.isArray(input.replies)) {

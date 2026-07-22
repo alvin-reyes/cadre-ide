@@ -6,7 +6,7 @@ import { useBmadStore } from "../stores/bmadStore";
 import { useCadre, MODEL } from "./useCadre";
 import { Markdown } from "./components/Markdown";
 import { planningTurn, type ChatMessage, type Attachment } from "../lib/planning/planningChat";
-import { PM_SYSTEM_PROMPT, ARCHITECT_SYSTEM_PROMPT, DESIGN_SYSTEM_PROMPT, ADVERSARIAL_REVIEW_PROMPTS } from "../lib/planning/personas";
+import { PM_SYSTEM_PROMPT, ARCHITECT_SYSTEM_PROMPT, DESIGN_SYSTEM_PROMPT, ADVERSARIAL_REVIEW_PROMPTS, PLAN_VALIDATION_PROMPT } from "../lib/planning/personas";
 import { reviewArtifact, type ReviewResult, type Severity } from "../lib/planning/review";
 
 /** Read a pasted/dropped File as text. */
@@ -189,7 +189,7 @@ export function PlanningStudio() {
       const result = await reviewArtifact({
         apiKey,
         model: MODEL,
-        systemPrompt: ADVERSARIAL_REVIEW_PROMPTS.po,
+        systemPrompt: PLAN_VALIDATION_PROMPT,
         artifact: plan,
       });
       setPoCheck({ status: "done", result });
