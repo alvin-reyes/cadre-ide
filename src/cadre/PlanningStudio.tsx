@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, type CSSProperties, type ClipboardEvent, type KeyboardEvent } from "react";
+import { useState, useRef, useEffect, type CSSProperties, type ClipboardEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { marked } from "marked";
 import { ArrowUp, ArrowRight, Lock, RefreshCw, AlertTriangle, FileText, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, ShieldAlert, Gavel, Paperclip, X, Check, Copy, Eye, Code2 } from "lucide-react";
 import { useSettingsStore } from "../stores/settingsStore";
@@ -107,6 +107,28 @@ export function PlanningStudio() {
   const [thinking, setThinking] = useState(false);
   const [keyDraft, setKeyDraft] = useState("");
   const [verifyCmd, setVerifyCmd] = useState("npm test");
+  const [split, setSplit] = useState(50); // % width of the conversation pane (draggable divider)
+
+  function onDividerDown(e: MouseEvent) {
+    e.preventDefault();
+    const row = (e.currentTarget as HTMLElement).parentElement;
+    if (!row) return;
+    const rect = row.getBoundingClientRect();
+    const onMove = (ev: globalThis.MouseEvent) => {
+      const pct = ((ev.clientX - rect.left) / rect.width) * 100;
+      setSplit(Math.min(72, Math.max(28, pct)));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [designView, setDesignView] = useState<"spec" | "preview">("preview");
   const [verifySuggested, setVerifySuggested] = useState(false);
@@ -379,7 +401,7 @@ export function PlanningStudio() {
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
         {/* Conversation */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <div style={{ width: `${split}%`, flexShrink: 0, display: "flex", flexDirection: "column", minWidth: 0 }}>
           <div style={paneHead}>
             {PERSONA_IDS.map((id) => {
               const P = PERSONAS[id];
@@ -633,8 +655,18 @@ export function PlanningStudio() {
           </div>
         </div>
 
+        {/* Draggable divider */}
+        <div
+          className="cadre-divider"
+          onMouseDown={onDividerDown}
+          title="Drag to resize"
+          style={{ width: 7, flexShrink: 0, cursor: "col-resize", display: "flex", alignItems: "stretch", justifyContent: "center" }}
+        >
+          <div className="cadre-divider-line" style={{ width: 1, background: "var(--c-border)" }} />
+        </div>
+
         {/* Live document / mockup */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", borderLeft: "1px solid var(--c-border)", background: "var(--c-bg)", minWidth: 0 }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "var(--c-bg)", minWidth: 0 }}>
           <div style={paneHead}>
             <FileText size={13} strokeWidth={2} style={{ color: "var(--c-text-muted)" }} />
             <span style={{ fontSize: "var(--c-fs-sm)", fontFamily: "var(--c-font-mono)", color: "var(--c-text-secondary)" }}>

@@ -106,6 +106,13 @@
   stroke-width: 1.75;
 }
 
+/* Draggable pane divider — highlights on hover/drag. */
+.cadre-divider:hover .cadre-divider-line,
+.cadre-divider:active .cadre-divider-line {
+  background: var(--c-accent) !important;
+  width: 2px;
+}
+
 /* Conversational motion — message entrance, typing dots, quick-reply chips. */
 @keyframes cadre-bubble-in {
   from {
