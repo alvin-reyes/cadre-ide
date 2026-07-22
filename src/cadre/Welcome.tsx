@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Hexagon, FolderOpen, ArrowRight, Sparkles } from "lucide-react";
 import { useBmadStore } from "../stores/bmadStore";
+import { isTauri } from "../lib/secrets";
 
 /** First-run: start a new idea, open an existing project, or preview the UI. */
 export function Welcome({ onPreview }: { onPreview: () => void }) {
@@ -12,6 +13,12 @@ export function Welcome({ onPreview }: { onPreview: () => void }) {
 
   async function run(kind: "open" | "new") {
     if (!path.trim() || busy) return;
+    if (!isTauri()) {
+      setError(
+        "Opening or creating a project needs the desktop app. You're on the browser preview (localhost:1420) — run `npm run tauri dev` and use the native Cadre window instead."
+      );
+      return;
+    }
     setBusy(kind);
     setError(null);
     try {
