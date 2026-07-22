@@ -6,7 +6,7 @@ import { useBmadStore } from "../stores/bmadStore";
 import { useCadre, MODEL } from "./useCadre";
 import { Markdown } from "./components/Markdown";
 import { planningTurn, type ChatMessage, type Attachment } from "../lib/planning/planningChat";
-import { PM_SYSTEM_PROMPT, ARCHITECT_SYSTEM_PROMPT, DESIGN_SYSTEM_PROMPT, PO_SYSTEM_PROMPT, ADVERSARIAL_REVIEW_PROMPTS } from "../lib/planning/personas";
+import { PM_SYSTEM_PROMPT, ARCHITECT_SYSTEM_PROMPT, DESIGN_SYSTEM_PROMPT, ADVERSARIAL_REVIEW_PROMPTS } from "../lib/planning/personas";
 import { reviewArtifact, type ReviewResult, type Severity } from "../lib/planning/review";
 
 /** Read a pasted/dropped File as text. */
@@ -35,7 +35,7 @@ function wordCount(text: string): number {
   return text.trim() ? text.trim().split(/\s+/).length : 0;
 }
 
-type PersonaId = "pm" | "architect" | "design" | "po";
+type PersonaId = "pm" | "architect" | "design";
 
 const PERSONAS: Record<
   PersonaId,
@@ -65,17 +65,9 @@ const PERSONAS: Record<
     intro: "I'm your Designer. From the PRD I'll shape the UX and mock up the actual screens.",
     opener: "What should it look and feel like?",
   },
-  po: {
-    label: "PO",
-    icon: ClipboardCheck,
-    sub: "Product Owner · validating the plan",
-    file: "docs/po-validation.md",
-    intro: "I'm your PO. I check the plan against your goals and flag gaps before the fleet builds it.",
-    opener: "Ready for a plan review?",
-  },
 };
 
-const PERSONA_IDS: PersonaId[] = ["pm", "architect", "design", "po"];
+const PERSONA_IDS: PersonaId[] = ["pm", "architect", "design"];
 
 const paneHead: CSSProperties = {
   display: "flex",
@@ -94,7 +86,6 @@ export function PlanningStudio() {
   const architecture = useCadre((s) => s.architecture);
   const uxSpec = useCadre((s) => s.uxSpec);
   const mockupHtml = useCadre((s) => s.mockupHtml);
-  const poValidation = useCadre((s) => s.poValidation);
   const projectContext = useCadre((s) => s.projectContext);
   const documentProject = useCadre((s) => s.documentProject);
   const projectRoot = useBmadStore((s) => s.projectRoot);
@@ -102,7 +93,6 @@ export function PlanningStudio() {
   const setArchitecture = useCadre((s) => s.setArchitecture);
   const setUxSpec = useCadre((s) => s.setUxSpec);
   const setMockupHtml = useCadre((s) => s.setMockupHtml);
-  const setPoValidation = useCadre((s) => s.setPoValidation);
   const approvePlan = useCadre((s) => s.approvePlan);
   const cascadeReplan = useCadre((s) => s.cascadeReplan);
   const needsReplan = useCadre((s) => s.needsReplan);
@@ -111,7 +101,7 @@ export function PlanningStudio() {
   const error = useCadre((s) => s.error);
 
   const [persona, setPersona] = useState<PersonaId>("pm");
-  const [threads, setThreads] = useState<Record<PersonaId, ChatMessage[]>>({ pm: [], architect: [], design: [], po: [] });
+  const [threads, setThreads] = useState<Record<PersonaId, ChatMessage[]>>({ pm: [], architect: [], design: [] });
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [thinking, setThinking] = useState(false);
@@ -121,7 +111,7 @@ export function PlanningStudio() {
   const [designView, setDesignView] = useState<"spec" | "preview">("preview");
   const [verifySuggested, setVerifySuggested] = useState(false);
   // Which roles the PM has brought in this session (the user reaches them only via the PM).
-  const [handedOff, setHandedOff] = useState<Record<PersonaId, boolean>>({ pm: true, architect: false, design: false, po: false });
+  const [handedOff, setHandedOff] = useState<Record<PersonaId, boolean>>({ pm: true, architect: false, design: false });
   // Adversarial review state per artifact (a reviewer agent is part of the fleet).
   // Each finding must be resolved by the user (confirmed or commented) to clear the review.
   type Resolution = { action: "confirmed" | "commented"; comment?: string };
@@ -134,7 +124,6 @@ export function PlanningStudio() {
     pm: { status: "idle" },
     architect: { status: "idle" },
     design: { status: "idle" },
-    po: { status: "idle" },
   });
   const review = reviews[persona];
 
@@ -183,17 +172,36 @@ export function PlanningStudio() {
     }
   }
 
+  // PO sign-off: you're the human PO. This runs an adversarial PO validation over
+  // the WHOLE plan (coverage vs goals, testable ACs, gaps) to assist your sign-off.
+  const [poCheck, setPoCheck] = useState<{ status: "idle" | "reviewing" | "done"; result?: ReviewResult }>({ status: "idle" });
+  async function runPoValidation() {
+    if (!apiKey || poCheck.status === "reviewing") return;
+    setPoCheck({ status: "reviewing" });
+    try {
+      const plan = [
+        prd.trim() && `# PRD\n${prd}`,
+        architecture.trim() && `# Architecture\n${architecture}`,
+        uxSpec.trim() && `# UX Spec\n${uxSpec}`,
+      ]
+        .filter(Boolean)
+        .join("\n\n---\n\n");
+      const result = await reviewArtifact({
+        apiKey,
+        model: MODEL,
+        systemPrompt: ADVERSARIAL_REVIEW_PROMPTS.po,
+        artifact: plan,
+      });
+      setPoCheck({ status: "done", result });
+    } catch (e) {
+      setPoCheck({ status: "done", result: { verdict: "block", summary: String(e), findings: [] } });
+    }
+  }
+
   const docFor = (id: PersonaId) =>
-    id === "pm" ? prd : id === "architect" ? architecture : id === "design" ? uxSpec : poValidation;
+    id === "pm" ? prd : id === "architect" ? architecture : uxSpec;
   const doc = docFor(persona);
-  const setDoc =
-    persona === "pm"
-      ? setPrd
-      : persona === "architect"
-        ? setArchitecture
-        : persona === "design"
-          ? setUxSpec
-          : setPoValidation;
+  const setDoc = persona === "pm" ? setPrd : persona === "architect" ? setArchitecture : setUxSpec;
   const messages = threads[persona];
   const meta = PERSONAS[persona];
   const canApprove = prd.trim().length > 0 && architecture.trim().length > 0;
@@ -276,14 +284,6 @@ export function PlanningStudio() {
         p += `\n\n## Current PRD (amend this as new requirements or added scope arrive; always emit the FULL updated PRD via write_document)\n${prd}`;
       }
       return p;
-    }
-    if (id === "po") {
-      // The PO validates against everything produced so far.
-      let ctx = PO_SYSTEM_PROMPT;
-      if (prd.trim()) ctx += `\n\n## PRD (context)\n${prd}`;
-      if (architecture.trim()) ctx += `\n\n## Architecture (context)\n${architecture}`;
-      if (uxSpec.trim()) ctx += `\n\n## UX Spec (context)\n${uxSpec}`;
-      return ctx;
     }
     const base = id === "architect" ? ARCHITECT_SYSTEM_PROMPT : DESIGN_SYSTEM_PROMPT;
     return prd.trim() ? `${base}\n\n## PRD (context)\n${prd}` : base;
@@ -368,9 +368,9 @@ export function PlanningStudio() {
       : { done: null, msg: "Everything starts with the PM.", to: "pm", cta: "Go to PM" }
     : persona === "architect"
       ? { done: "PRD ready", msg: "Design the build with the Architect — or summon the Designer/PO from the tabs.", to: null, cta: "" }
-      : persona === "design" || persona === "po"
-        ? { done: "PRD ready", msg: "Summon any specialist from the tabs, or head to the Architect to unlock dispatch.", to: "architect", cta: "Go to Architect" }
-        : { done: "PRD ready", msg: "Requirements captured — chat with the Architect, or summon the Designer/PO from the tabs.", to: "architect", cta: "Go to Architect" };
+      : persona === "design"
+        ? { done: "PRD ready", msg: "Summon the Architect from the tabs, or approve when the architecture's ready.", to: "architect", cta: "Go to Architect" }
+        : { done: "PRD ready", msg: "Requirements captured — chat with the Architect, or summon the Designer from the tabs.", to: "architect", cta: "Go to Architect" };
 
   // The PM hands off to the Architect only after the PRD is reviewed AND its findings resolved.
   const pmNeedsHandoff = persona === "pm" && prdReady && !architectOpen;
@@ -826,76 +826,92 @@ export function PlanningStudio() {
           </button>
         </div>
       ) : canApprove ? (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "var(--c-space-3)",
-            padding: "9px var(--c-space-4)",
-            background: "var(--c-success-subtle)",
-            borderTop: "1px solid var(--c-border)",
-            flexShrink: 0,
-          }}
-        >
-          <ShieldCheck size={15} strokeWidth={2} style={{ color: "var(--c-success)", flexShrink: 0 }} />
-          <span style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text-secondary)", flexShrink: 0 }}>
-            Plan ready. Cadre verifies every story against:
-          </span>
-          <input
-            value={verifyCmd}
-            onChange={(e) => {
-              setVerifyCmd(e.target.value);
-              setVerifySuggested(false);
-            }}
-            placeholder="npm test"
+        <>
+          {poCheck.status !== "idle" && <PoValidationPanel state={poCheck} />}
+          <div
             style={{
-              flex: 1,
-              minWidth: 120,
-              background: "var(--c-surface-1)",
-              border: "1px solid var(--c-border-strong)",
-              borderRadius: "var(--c-radius)",
-              outline: "none",
-              color: "var(--c-text)",
-              fontSize: "var(--c-fs-sm)",
-              fontFamily: "var(--c-font-mono)",
-              padding: "5px 10px",
-            }}
-          />
-          {verifySuggested && (
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-                fontSize: "var(--c-fs-xs)",
-                color: "var(--c-accent)",
-                flexShrink: 0,
-              }}
-            >
-              <Ruler size={11} strokeWidth={2} /> Architect's suggestion
-            </span>
-          )}
-          <button
-            onClick={() => approvePlan([verifyCmd])}
-            disabled={!!busy || !verifyCmd.trim()}
-            style={{
-              display: "inline-flex",
+              display: "flex",
               alignItems: "center",
-              gap: 5,
-              fontSize: "var(--c-fs-sm)",
-              fontWeight: 550 as const,
-              padding: "6px 14px",
-              borderRadius: "var(--c-radius)",
-              background: busy ? "var(--c-surface-3)" : "var(--c-success)",
-              color: busy ? "var(--c-text-muted)" : "var(--c-on-accent)",
-              border: "none",
-              cursor: busy ? "default" : "pointer",
+              gap: "var(--c-space-3)",
+              padding: "9px var(--c-space-4)",
+              background: "var(--c-success-subtle)",
+              borderTop: "1px solid var(--c-border)",
               flexShrink: 0,
             }}
           >
-            {busy ?? "Approve plan → dispatch"}
-          </button>
-        </div>
+            <ShieldCheck size={15} strokeWidth={2} style={{ color: "var(--c-success)", flexShrink: 0 }} />
+            <span style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text-secondary)", flexShrink: 0 }}>
+              You're the PO — verify against:
+            </span>
+            <input
+              value={verifyCmd}
+              onChange={(e) => {
+                setVerifyCmd(e.target.value);
+                setVerifySuggested(false);
+              }}
+              placeholder="npm test"
+              style={{
+                flex: 1,
+                minWidth: 100,
+                background: "var(--c-surface-1)",
+                border: "1px solid var(--c-border-strong)",
+                borderRadius: "var(--c-radius)",
+                outline: "none",
+                color: "var(--c-text)",
+                fontSize: "var(--c-fs-sm)",
+                fontFamily: "var(--c-font-mono)",
+                padding: "5px 10px",
+              }}
+            />
+            {verifySuggested && (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: "var(--c-fs-xs)", color: "var(--c-accent)", flexShrink: 0 }}>
+                <Ruler size={11} strokeWidth={2} /> Architect's
+              </span>
+            )}
+            <button
+              onClick={runPoValidation}
+              disabled={poCheck.status === "reviewing" || !!busy}
+              title="Adversarial PO validation of the whole plan (coverage, testable ACs, gaps)"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                fontSize: "var(--c-fs-sm)",
+                fontWeight: 550 as const,
+                padding: "5px 12px",
+                borderRadius: "var(--c-radius)",
+                background: "var(--c-surface-2)",
+                color: "var(--c-text)",
+                border: "1px solid var(--c-border-strong)",
+                cursor: poCheck.status === "reviewing" ? "default" : "pointer",
+                flexShrink: 0,
+              }}
+            >
+              <ClipboardCheck size={13} strokeWidth={2} />
+              {poCheck.status === "reviewing" ? "Validating…" : "PO validation"}
+            </button>
+            <button
+              onClick={() => approvePlan([verifyCmd])}
+              disabled={!!busy || !verifyCmd.trim()}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                fontSize: "var(--c-fs-sm)",
+                fontWeight: 550 as const,
+                padding: "6px 14px",
+                borderRadius: "var(--c-radius)",
+                background: busy ? "var(--c-surface-3)" : "var(--c-success)",
+                color: busy ? "var(--c-text-muted)" : "var(--c-on-accent)",
+                border: "none",
+                cursor: busy ? "default" : "pointer",
+                flexShrink: 0,
+              }}
+            >
+              {busy ?? "Sign off & dispatch"}
+            </button>
+          </div>
+        </>
       ) : pmNeedsHandoff ? (
         <div
           style={{
@@ -1228,6 +1244,60 @@ function resolveBtn(primary: boolean): CSSProperties {
     cursor: "pointer",
     flexShrink: 0,
   };
+}
+
+/** The adversarial PO validation of the whole plan — read-only; you (the human PO) sign off. */
+function PoValidationPanel({ state }: { state: { status: "idle" | "reviewing" | "done"; result?: ReviewResult } }) {
+  if (state.status === "reviewing") {
+    return (
+      <div style={{ flexShrink: 0, borderTop: "1px solid var(--c-border)", background: "var(--c-surface-1)", padding: "10px var(--c-space-4)", display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ color: "var(--c-accent)" }}>
+          <Dots />
+        </span>
+        <span style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text-muted)" }}>
+          PO validation running across the whole plan…
+        </span>
+      </div>
+    );
+  }
+  const r = state.result;
+  if (!r) return null;
+  const blocked = r.verdict === "block";
+  return (
+    <div style={{ flexShrink: 0, borderTop: "1px solid var(--c-border)", background: "var(--c-surface-1)", maxHeight: 220, overflow: "auto" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px var(--c-space-4)", position: "sticky", top: 0, background: "var(--c-surface-1)", borderBottom: "1px solid var(--c-border)" }}>
+        <ClipboardCheck size={14} strokeWidth={2} style={{ color: blocked ? "var(--c-warning)" : "var(--c-success)", flexShrink: 0 }} />
+        <span style={{ fontSize: "var(--c-fs-sm)", fontWeight: 600 as const, color: blocked ? "var(--c-warning)" : "var(--c-success)" }}>
+          {blocked ? `PO validation · ${r.findings.length} gap${r.findings.length === 1 ? "" : "s"}` : "PO validation · clean"}
+        </span>
+        {r.summary && (
+          <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            — {r.summary}
+          </span>
+        )}
+        <div style={{ flex: 1 }} />
+        <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-faint)" }}>you decide — sign off below</span>
+      </div>
+      {r.findings.length > 0 && (
+        <div style={{ padding: "var(--c-space-3) var(--c-space-4)", display: "flex", flexDirection: "column", gap: 11 }}>
+          {r.findings.map((f, i) => (
+            <div key={i} style={{ display: "flex", gap: 8 }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: sevColor(f.severity), marginTop: 6, flexShrink: 0 }} />
+              <div>
+                <div style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text)" }}>
+                  <span style={{ textTransform: "uppercase", fontSize: 9, letterSpacing: "0.06em", color: sevColor(f.severity), marginRight: 6, fontWeight: 600 as const }}>
+                    {f.severity}
+                  </span>
+                  {f.title}
+                </div>
+                <div style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text-muted)", lineHeight: 1.5 }}>{f.detail}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function EmptyPane({ text }: { text: string }) {
