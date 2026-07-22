@@ -1,4 +1,4 @@
-import { Hexagon, ArrowUp, ArrowDown, SquareTerminal } from "lucide-react";
+import { Hexagon, ArrowUp, ArrowDown, PanelRight } from "lucide-react";
 import { PhaseStepper, type Phase } from "./PhaseStepper";
 import { useUsageStore } from "../../stores/usageStore";
 
@@ -11,14 +11,14 @@ export function TopBar({
   phase,
   onNavigate,
   unlocked,
-  onToggleTerminal,
-  terminalOpen,
+  onToggleWorkbench,
+  workbenchOpen,
 }: {
   phase: Phase;
   onNavigate?: (phase: Phase) => void;
   unlocked?: Partial<Record<Phase, boolean>>;
-  onToggleTerminal?: () => void;
-  terminalOpen?: boolean;
+  onToggleWorkbench?: () => void;
+  workbenchOpen?: boolean;
 }) {
   const input = useUsageStore((s) => s.input);
   const output = useUsageStore((s) => s.output);
@@ -48,10 +48,10 @@ export function TopBar({
 
       <div style={{ flex: 1 }} />
 
-      {onToggleTerminal && (
+      {onToggleWorkbench && (
         <button
-          onClick={onToggleTerminal}
-          title="Toggle terminal"
+          onClick={onToggleWorkbench}
+          title="Toggle Workbench (Files · Code · Terminal)"
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -59,13 +59,13 @@ export function TopBar({
             width: 28,
             height: 24,
             borderRadius: "var(--c-radius-sm)",
-            background: terminalOpen ? "var(--c-surface-3)" : "transparent",
+            background: workbenchOpen ? "var(--c-surface-3)" : "transparent",
             border: "1px solid var(--c-border)",
-            color: terminalOpen ? "var(--c-accent)" : "var(--c-text-secondary)",
+            color: workbenchOpen ? "var(--c-accent)" : "var(--c-text-secondary)",
             cursor: "pointer",
           }}
         >
-          <SquareTerminal size={15} strokeWidth={2} />
+          <PanelRight size={15} strokeWidth={2} />
         </button>
       )}
 

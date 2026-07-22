@@ -1,9 +1,8 @@
 import { useState, useEffect } from "react";
-import { X } from "lucide-react";
 import { TopBar } from "./components/TopBar";
 import { PlanningStudio } from "./PlanningStudio";
 import { FleetView } from "./FleetView";
-import { TerminalPanel } from "./TerminalPanel";
+import { Workbench } from "./Workbench";
 import { Toaster } from "./Toaster";
 import { Welcome } from "./Welcome";
 import { useBmadStore } from "../stores/bmadStore";
@@ -17,7 +16,7 @@ export function CadreApp() {
   const hydrateFromProject = useCadre((s) => s.hydrateFromProject);
   const hydrateSecrets = useSettingsStore((s) => s.hydrateSecrets);
   const [preview, setPreview] = useState(false);
-  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [workbenchOpen, setWorkbenchOpen] = useState(false);
   const projectRoot = useBmadStore((s) => s.projectRoot);
 
   // Phase gating: SHARD/FLEET open only once the plan is approved; DONE only when
@@ -37,15 +36,15 @@ export function CadreApp() {
     if (projectRoot) hydrateFromProject();
   }, [projectRoot, hydrateFromProject]);
 
-  // Esc closes the terminal drawer.
+  // Esc closes the Workbench panel.
   useEffect(() => {
-    if (!terminalOpen) return;
+    if (!workbenchOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setTerminalOpen(false);
+      if (e.key === "Escape") setWorkbenchOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [terminalOpen]);
+  }, [workbenchOpen]);
 
   if (!projectRoot && !preview) {
     return <Welcome onPreview={() => setPreview(true)} />;
@@ -60,41 +59,19 @@ export function CadreApp() {
         phase={phase}
         onNavigate={setPhase}
         unlocked={unlocked}
-        onToggleTerminal={projectRoot ? () => setTerminalOpen((v) => !v) : undefined}
-        terminalOpen={terminalOpen}
+        onToggleWorkbench={projectRoot ? () => setWorkbenchOpen((v) => !v) : undefined}
+        workbenchOpen={workbenchOpen}
       />
-      <div style={{ flex: 1, minHeight: 0 }}>
-        {phase === "PLAN" ? <PlanningStudio /> : <FleetView />}
-      </div>
-      {terminalOpen && projectRoot && (
-        <div style={{ height: 280, display: "flex", flexDirection: "column", borderTop: "1px solid var(--c-border)", flexShrink: 0 }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "var(--c-space-2)",
-              padding: "4px var(--c-space-3)",
-              background: "var(--c-surface-1)",
-              borderBottom: "1px solid var(--c-border)",
-            }}
-          >
-            <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)", fontFamily: "var(--c-font-mono)" }}>
-              terminal · {projectRoot}
-            </span>
-            <div style={{ flex: 1 }} />
-            <button
-              onClick={() => setTerminalOpen(false)}
-              title="Close terminal"
-              style={{ display: "inline-flex", background: "transparent", border: "none", color: "var(--c-text-muted)", cursor: "pointer" }}
-            >
-              <X size={14} strokeWidth={2} />
-            </button>
-          </div>
-          <div style={{ flex: 1, minHeight: 0 }}>
-            <TerminalPanel cwd={projectRoot} />
-          </div>
+      <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {phase === "PLAN" ? <PlanningStudio /> : <FleetView />}
         </div>
-      )}
+        {workbenchOpen && projectRoot && (
+          <div style={{ width: 420, flexShrink: 0, borderLeft: "1px solid var(--c-border)", minHeight: 0 }}>
+            <Workbench root={projectRoot} />
+          </div>
+        )}
+      </div>
       <Toaster />
     </div>
   );
