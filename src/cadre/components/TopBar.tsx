@@ -10,9 +10,11 @@ function fmtK(n: number): string {
 export function TopBar({
   phase,
   onNavigate,
+  unlocked,
 }: {
   phase: Phase;
   onNavigate?: (phase: Phase) => void;
+  unlocked?: Partial<Record<Phase, boolean>>;
 }) {
   const input = useUsageStore((s) => s.input);
   const output = useUsageStore((s) => s.output);
@@ -38,7 +40,7 @@ export function TopBar({
         </span>
       </div>
 
-      <PhaseStepper current={phase} onNavigate={onNavigate} />
+      <PhaseStepper current={phase} onNavigate={onNavigate} unlocked={unlocked} />
 
       <div style={{ flex: 1 }} />
 

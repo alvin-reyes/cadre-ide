@@ -16,6 +16,13 @@ export function CadreApp() {
   const [preview, setPreview] = useState(false);
   const projectRoot = useBmadStore((s) => s.projectRoot);
 
+  // Phase gating: SHARD/FLEET open only once the plan is approved; DONE only when
+  // there are stories and they're all Done. Planning "finalizes" at approval.
+  const planApproved = useCadre((s) => s.verification.length > 0);
+  const stories = useBmadStore((s) => s.stories);
+  const allDone = stories.length > 0 && stories.every((st) => st.status === "Done");
+  const unlocked = { PLAN: true, SHARD: planApproved, FLEET: planApproved, DONE: allDone } as const;
+
   // Load the API key from the OS keychain on launch.
   useEffect(() => {
     hydrateSecrets();
@@ -35,7 +42,7 @@ export function CadreApp() {
       className="cadre-ui"
       style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}
     >
-      <TopBar phase={phase} onNavigate={setPhase} />
+      <TopBar phase={phase} onNavigate={setPhase} unlocked={unlocked} />
       <div style={{ flex: 1, minHeight: 0 }}>
         {phase === "PLAN" ? <PlanningStudio /> : <FleetView />}
       </div>
