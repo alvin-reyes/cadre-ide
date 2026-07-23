@@ -4,7 +4,6 @@ import type { OrchestratorDeps } from "./orchestrator";
 import type { ReviewFleetDeps } from "./reviewFleet";
 import type { PlanApproval } from "./planApproval";
 import type { Status } from "./status";
-import type { BmadFileReader } from "../bmad/adapter";
 import { ExitRegistry } from "./exitRegistry";
 
 /**
@@ -158,10 +157,4 @@ export function tauriReviewFleetDeps(onOutput?: OutputSink): ReviewFleetDeps {
     waitForExit,
     readFile: (path: string) => invoke<string>("read_file", { path }),
   };
-}
-
-/** A BmadFileReader that reads `${projectRoot}/.bmad-core/<relPath>` via Tauri. */
-export function tauriBmadReader(projectRoot: string): BmadFileReader {
-  return (relPath) =>
-    invoke<string>("read_file", { path: `${projectRoot}/.bmad-core/${relPath}` });
 }
