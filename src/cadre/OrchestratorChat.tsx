@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { Bot, X, ArrowUp, Plus, ScrollText, Play } from "lucide-react";
+import { Bot, X, ArrowUp, Plus, ScrollText, Play, PanelRight, Maximize2, Minimize2 } from "lucide-react";
 import { planningTurn, type ChatMessage } from "../lib/planning/planningChat";
 import { ORCHESTRATOR_SYSTEM_PROMPT } from "../lib/planning/personas";
 import { Markdown } from "./components/Markdown";
@@ -26,8 +26,12 @@ function buildContext(phase: string, prd: string, architecture: string, stories:
   return lines.join("\n");
 }
 
+type PanelMode = "float" | "side" | "max";
+
 export function OrchestratorChat() {
   const [open, setOpen] = useState(false);
+  // How the panel is laid out: floating bubble, docked full-height side panel, or maximized.
+  const [mode, setMode] = useState<PanelMode>("float");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [thinking, setThinking] = useState(false);
@@ -154,25 +158,28 @@ export function OrchestratorChat() {
     </button>
   );
 
+  const layout: React.CSSProperties =
+    mode === "float"
+      ? { bottom: 18, right: 18, width: 400, maxWidth: "calc(100vw - 36px)", height: 560, maxHeight: "calc(100vh - 90px)", borderRadius: "var(--c-radius-lg)" }
+      : mode === "side"
+        ? { top: 0, right: 0, bottom: 0, width: 460, maxWidth: "100vw", borderRadius: 0 }
+        : { top: 20, right: 20, bottom: 20, left: 20, borderRadius: "var(--c-radius-lg)" };
+
+  const headBtn: React.CSSProperties = { display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, borderRadius: "var(--c-radius-sm)", background: "transparent", border: "none", color: "var(--c-text-muted)", cursor: "pointer" };
+
   return (
     <div
       className="cadre-bubble"
       style={{
         position: "fixed",
-        bottom: 18,
-        right: 18,
         zIndex: 850,
-        width: 400,
-        maxWidth: "calc(100vw - 36px)",
-        height: 560,
-        maxHeight: "calc(100vh - 90px)",
         display: "flex",
         flexDirection: "column",
         background: "var(--c-surface-1)",
         border: "1px solid var(--c-border-strong)",
-        borderRadius: "var(--c-radius-lg)",
         boxShadow: "var(--c-elev-3)",
         overflow: "hidden",
+        ...layout,
       }}
     >
       {/* Header + live overview */}
@@ -181,7 +188,25 @@ export function OrchestratorChat() {
         <span style={{ fontSize: "var(--c-fs-sm)", fontWeight: 600 as const, color: "var(--c-text)" }}>Orchestrator</span>
         <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)" }}>{phase}</span>
         <div style={{ flex: 1 }} />
-        <button onClick={() => setOpen(false)} aria-label="Close" title="Close" style={{ display: "inline-flex", background: "transparent", border: "none", color: "var(--c-text-muted)", cursor: "pointer" }}>
+        <button
+          onClick={() => setMode((m) => (m === "side" ? "float" : "side"))}
+          aria-pressed={mode === "side"}
+          title={mode === "side" ? "Undock to floating" : "Dock as side panel"}
+          className="cadre-hover"
+          style={{ ...headBtn, color: mode === "side" ? "var(--c-accent)" : "var(--c-text-muted)" }}
+        >
+          <PanelRight size={15} strokeWidth={2} />
+        </button>
+        <button
+          onClick={() => setMode((m) => (m === "max" ? "float" : "max"))}
+          aria-pressed={mode === "max"}
+          title={mode === "max" ? "Restore" : "Maximize"}
+          className="cadre-hover"
+          style={headBtn}
+        >
+          {mode === "max" ? <Minimize2 size={15} strokeWidth={2} /> : <Maximize2 size={14} strokeWidth={2} />}
+        </button>
+        <button onClick={() => setOpen(false)} aria-label="Close" title="Close" className="cadre-hover" style={headBtn}>
           <X size={16} strokeWidth={2} />
         </button>
       </div>
