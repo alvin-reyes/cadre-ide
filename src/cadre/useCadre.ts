@@ -144,6 +144,8 @@ interface CadreState {
    * later batches. Every agent gets the shared Context Store injected.
    */
   dispatchReady: () => Promise<void>;
+  /** Gate a sharded story for the fleet: Draft → Approved (the SM/CTO review step). */
+  approveStory: (epic: number, story: number) => Promise<void>;
   /** Run the adversarial code-review fleet (diverse-lens agent loops) on a story. */
   reviewStory: (epic: number, story: number) => Promise<void>;
   /** Brownfield onboarding: a PM/Analyst agent documents an existing project (twice). */
@@ -404,6 +406,19 @@ export const useCadre = create<CadreState>((set, get) => ({
       });
       if (!silent) set({ busy: null });
       if (res.status === "Done") {
+        // QA gate: run the adversarial code-review fleet on the worktree BEFORE
+        // integrating. If it blocks, quarantine the story (Blocked) and don't merge
+        // — the review has real authority, not just an advisory badge. Toggleable.
+        if (useSettingsStore.getState().gateOnReview) {
+          await get().reviewStory(epic, story);
+          const reviews = get().codeReviews[key]?.reviews ?? [];
+          if (aggregateReviews(reviews).verdict === "block") {
+            await useBmadStore.getState().setStatus(epic, story, "Blocked");
+            onOutput(`\n[cadre] code review BLOCKED ${epic}.${story} — not integrated; resolve the findings\n`);
+            toast(`Story ${epic}.${story}: review blocked — not merged`, "error");
+            return;
+          }
+        }
         // Merge the verified worktree back into main — serialized so parallel
         // stories integrate safely. On conflict, mark Blocked for the human (A).
         const integ = await withMergeLock(() =>
@@ -439,11 +454,12 @@ export const useCadre = create<CadreState>((set, get) => ({
     try {
       const root = requireRoot();
       // Ready = not yet building/done: Draft (sharded) / Approved / Failed (retry).
+      // Ready = gated for the fleet: Approved (draft-reviewed) or Failed (retry).
       const ready = useBmadStore
         .getState()
-        .stories.filter((c) => c.status === "Draft" || c.status === "Approved" || c.status === "Failed");
+        .stories.filter((c) => c.status === "Approved" || c.status === "Failed");
       if (ready.length === 0) {
-        toast("No ready stories to dispatch", "info");
+        toast("No approved stories to dispatch — approve a draft first", "info");
         return;
       }
 
@@ -481,6 +497,16 @@ export const useCadre = create<CadreState>((set, get) => ({
     } catch (e) {
       set({ error: String(e), busy: null });
       toast("Parallel dispatch failed", "error");
+    }
+  },
+
+  approveStory: async (epic, story) => {
+    try {
+      await useBmadStore.getState().setStatus(epic, story, "Approved");
+      toast(`Story ${epic}.${story} approved — ready to dispatch`, "success");
+    } catch (e) {
+      set({ error: String(e) });
+      toast(`Approve failed for ${epic}.${story}`, "error");
     }
   },
 

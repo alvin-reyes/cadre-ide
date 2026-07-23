@@ -295,6 +295,8 @@ interface Settings {
   planningModel: string;
   /** Fleet (dev) model override; empty string = use the selected provider's default. */
   fleetModel: string;
+  /** When true, the adversarial code review must pass before a story merges to main. */
+  gateOnReview: boolean;
   orchestratorModel: string;
   ollamaEndpoint: string;
   ollamaModel: string;
@@ -321,6 +323,7 @@ interface SettingsStore extends Settings {
   setAnthropicApiKey: (key: string) => void;
   setPlanningModel: (model: string) => void;
   setFleetModel: (model: string) => void;
+  setGateOnReview: (on: boolean) => void;
   /** Load secrets (API key) from the OS keychain into the store (desktop only). */
   hydrateSecrets: () => Promise<void>;
   setOrchestratorModel: (model: string) => void;
@@ -374,6 +377,7 @@ const defaults: Settings = {
   anthropicApiKey: "",
   planningModel: "claude-opus-4-8",
   fleetModel: "",
+  gateOnReview: true,
   orchestratorModel: "claude-opus-4-20250514",
   ollamaEndpoint: "http://localhost:11434",
   ollamaModel: "deepseek-r1",
@@ -464,6 +468,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
   setFleetModel: (fleetModel) => {
     set({ fleetModel });
+    persistSettings(get());
+  },
+
+  setGateOnReview: (gateOnReview) => {
+    set({ gateOnReview });
     persistSettings(get());
   },
 

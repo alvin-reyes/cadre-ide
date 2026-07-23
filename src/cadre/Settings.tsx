@@ -29,6 +29,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
   const setPlanningModel = useSettingsStore((s) => s.setPlanningModel);
   const fleetModel = useSettingsStore((s) => s.fleetModel);
   const setFleetModel = useSettingsStore((s) => s.setFleetModel);
+  const gateOnReview = useSettingsStore((s) => s.gateOnReview);
+  const setGateOnReview = useSettingsStore((s) => s.setGateOnReview);
   const fleetProvider = useCadre((s) => s.fleetProvider);
   const setFleetProvider = useCadre((s) => s.setFleetProvider);
 
@@ -96,6 +98,21 @@ export function Settings({ onClose }: { onClose: () => void }) {
               style={inputStyle}
             />
           </Field>
+
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 9, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={gateOnReview}
+              onChange={(e) => setGateOnReview(e.target.checked)}
+              style={{ marginTop: 3, accentColor: "var(--c-accent)", cursor: "pointer", flexShrink: 0 }}
+            />
+            <span>
+              <span style={{ fontSize: "var(--c-fs-sm)", fontWeight: 550 as const, color: "var(--c-text-secondary)" }}>Gate merge on code review</span>
+              <span style={{ display: "block", fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)" }}>
+                Run the adversarial review after each story verifies; block the merge (Blocked) if it fails. More thorough, more agent runs.
+              </span>
+            </span>
+          </label>
         </Section>
 
         <div style={{ height: "var(--c-space-4)" }} />

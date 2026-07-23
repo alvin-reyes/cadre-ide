@@ -102,7 +102,7 @@ export function FleetView({ mode = "fleet" }: { mode?: "shard" | "fleet" }) {
           Generate story (SM)
         </button>
         {!shard && !preview && (() => {
-          const readyCount = stories.filter((c) => c.status === "Draft" || c.status === "Approved" || c.status === "Failed").length;
+          const readyCount = stories.filter((c) => c.status === "Approved" || c.status === "Failed").length;
           return (
             <button
               onClick={() => dispatchReady()}
@@ -540,6 +540,7 @@ function FleetModelPicker() {
 function AgentPane({ card, preview, mode = "fleet", onBack }: { card: StoryCard; preview: boolean; mode?: "shard" | "fleet"; onBack?: () => void }) {
   const fleet = mode === "fleet";
   const dispatchStory = useCadre((s) => s.dispatchStory);
+  const approveStory = useCadre((s) => s.approveStory);
   const getStoryMarkdown = useCadre((s) => s.getStoryMarkdown);
   const busy = useCadre((s) => s.busy);
   const needsReplan = useCadre((s) => s.needsReplan);
@@ -547,9 +548,12 @@ function AgentPane({ card, preview, mode = "fleet", onBack }: { card: StoryCard;
   // An InProgress/InReview story that isn't running this session is orphaned — its
   // agent died with a prior app process. Offer Resume (dispatch is idempotent).
   const interrupted = isInterrupted(card.status, active, card.epic, card.story);
+  // A freshly-sharded story is a Draft — the CTO reviews the breakdown and Approves
+  // it before it can be dispatched to a Dev agent (BMAD story-review gate).
+  const canApproveStory = !preview && !busy && card.status === "Draft";
   // Execution actions belong to FLEET; SHARD is for reviewing the breakdown.
   // Dispatch is paused while the plan is changed-but-not-re-approved (§5.1).
-  const canDispatch = fleet && !preview && !busy && !needsReplan && (card.status === "Draft" || card.status === "Failed");
+  const canDispatch = fleet && !preview && !busy && !needsReplan && (card.status === "Approved" || card.status === "Failed");
   const canResume = fleet && !preview && !busy && !needsReplan && interrupted;
   const info = interrupted
     ? { label: "Interrupted — the run stopped when the app closed. Resume to re-dispatch.", color: "var(--c-warning)", live: false }
@@ -643,6 +647,28 @@ function AgentPane({ card, preview, mode = "fleet", onBack }: { card: StoryCard;
           </span>
         )}
         <div style={{ flex: 1 }} />
+        {canApproveStory && (
+          <button
+            onClick={() => approveStory(card.epic, card.story)}
+            title="Review the breakdown, then approve this story for the fleet"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              fontSize: "var(--c-fs-xs)",
+              fontWeight: 550 as const,
+              padding: "4px 10px",
+              borderRadius: "var(--c-radius-sm)",
+              background: "var(--c-success)",
+              color: "var(--c-on-accent)",
+              border: "none",
+              cursor: "pointer",
+            }}
+          >
+            <ShieldCheck size={12} strokeWidth={2.5} />
+            Approve story
+          </button>
+        )}
         {canDispatch && (
           <button
             onClick={() => dispatchStory(card.epic, card.story)}
