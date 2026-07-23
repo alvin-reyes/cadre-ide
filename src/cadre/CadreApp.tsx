@@ -9,6 +9,7 @@ import { TerminalTabs } from "./TerminalTabs";
 import { Team } from "./Team";
 import { Settings } from "./Settings";
 import { AiLog } from "./AiLog";
+import { OrchestratorChat } from "./OrchestratorChat";
 import { Toaster } from "./Toaster";
 import { Welcome } from "./Welcome";
 import { useBmadStore } from "../stores/bmadStore";
@@ -141,6 +142,7 @@ export function CadreApp() {
       {teamOpen && <Team onClose={() => setTeamOpen(false)} />}
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
       {logOpen && <AiLog onClose={() => setLogOpen(false)} />}
+      {projectRoot && <OrchestratorChat />}
       <Toaster />
     </div>
   );
