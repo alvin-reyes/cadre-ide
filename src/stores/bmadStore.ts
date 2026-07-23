@@ -10,11 +10,22 @@ import {
 } from "../lib/engine/board";
 import type { Status } from "../lib/engine/status";
 import { scaffoldFiles } from "../lib/projectScaffold";
+import {
+  emptyBmadSlice,
+  mirrorBmad,
+  updateSlice,
+  type BmadSlice,
+} from "../lib/engine/projectSlices";
 
 /**
  * bmadStore: the live Fleet board. Opens a project, hydrates the board from the
  * committed files (§3.8 reload-from-git), and streams filesystem changes through
  * the pure `reconcile` (board.ts). The engine writes disk; this reflects it.
+ *
+ * Task 4: holds a `projects` map (many open projects) and an `activeRoot`
+ * pointer. The top-level `projectRoot / board / stories / watchError` fields
+ * are a derived mirror of the active project's slice so every existing selector
+ * keeps working unchanged.
  */
 
 type WatchEvt =
@@ -35,11 +46,16 @@ function basename(path: string): string {
 }
 
 interface BmadState {
+  // --- per-project map ---
+  projects: Record<string, BmadSlice>;
+  activeRoot: string | null;
+  // --- mirror fields (derived from projects[activeRoot]) ---
   projectRoot: string | null;
   board: BoardState;
   stories: StoryCard[];
   /** set if a directory watch failed to register — the board may be static */
   watchError: string | null;
+  // --- actions ---
   openProject: (root: string) => Promise<void>;
   /** Scaffold a fresh Cadre project (git + cadre.json + docs) at `path`, then open it. */
   newProject: (path: string) => Promise<void>;
@@ -49,51 +65,86 @@ interface BmadState {
    * write is then suppressed by `is_own_write`, leaving the watcher to surface
    * only external changes. The engine's setStatus dep should route through here.
    */
-  setStatus: (epic: number, story: number, status: Status) => Promise<void>;
+  setStatus: (epic: number, story: number, status: Status, root?: string) => Promise<void>;
+  setActiveProject: (root: string) => void;
+  closeProject: (root: string) => void;
 }
 
 export const useBmadStore = create<BmadState>((set, get) => {
-  function push(board: BoardState) {
-    set({ board, stories: boardStories(board) });
+  // Re-derive the active mirror from the projects map. Call after every slice change.
+  function syncMirror() {
+    set((s) => mirrorBmad(s.projects, s.activeRoot));
+  }
+
+  // Push a reconciled board into a SPECIFIC project's slice (by root), then mirror.
+  function pushRoot(root: string, board: BoardState) {
+    set((s) => ({
+      projects: updateSlice(s.projects, root, { board, stories: boardStories(board) }, emptyBmadSlice),
+    }));
+    syncMirror();
   }
 
   // State files are authoritative Status — always read the file (a "created"
   // event carries no content, and atomic rename can fire either kind).
-  async function reconcileState(path: string) {
+  // `root` is captured at watcher registration time — never use get().activeRoot here.
+  async function reconcileState(root: string, path: string) {
     try {
       const content = await invoke<string>("read_file", { path });
       // Write-origin suppression (§5): if this is cadre's own write, the board
       // was already updated by setStatus — don't re-process the echo. Only
       // genuine external changes fall through to reconcile.
-      if (await invoke<boolean>("is_own_write", { path, content })) return;
-      push(
-        reconcile(get().board, { kind: "state", filename: basename(path), content })
-      );
+      if (await invoke<boolean>("is_own_write", { root, path, content })) return;
+      const currentBoard = get().projects[root]?.board ?? emptyBoard();
+      pushRoot(root, reconcile(currentBoard, { kind: "state", filename: basename(path), content }));
     } catch {
       /* file vanished mid-read; ignore */
     }
   }
 
-  function reconcileStory(path: string) {
-    push(reconcile(get().board, { kind: "story", filename: basename(path) }));
+  function reconcileStory(root: string, path: string) {
+    const currentBoard = get().projects[root]?.board ?? emptyBoard();
+    pushRoot(root, reconcile(currentBoard, { kind: "story", filename: basename(path) }));
   }
 
   return {
+    // --- initial state ---
+    projects: {},
+    activeRoot: null,
     projectRoot: null,
     board: emptyBoard(),
     stories: [],
     watchError: null,
 
-    setStatus: async (epic: number, story: number, status: Status) => {
+    setActiveProject: (root: string) => {
+      set({ activeRoot: root });
+      syncMirror();
+    },
+
+    closeProject: (root: string) => {
+      set((s) => {
+        const projects = { ...s.projects };
+        delete projects[root];
+        const roots = Object.keys(projects);
+        const activeRoot =
+          s.activeRoot === root ? (roots[roots.length - 1] ?? null) : s.activeRoot;
+        return { projects, activeRoot };
+      });
+      syncMirror();
+    },
+
+    setStatus: async (epic: number, story: number, status: Status, root: string | undefined | null = get().activeRoot) => {
+      if (!root) return;
+      const slice = get().projects[root];
+      if (!slice) return;
       // Optimistic board update, then the engine writes the authoritative file.
-      const prev = get().board;
-      push(applyStatus(prev, epic, story, status));
+      const prev = slice.board;
+      pushRoot(root, applyStatus(prev, epic, story, status));
       try {
-        await invoke("story_set_status", { epic, story, status });
+        await invoke("story_set_status", { root, epic, story, status });
       } catch (e) {
         // Rejected (e.g. an illegal edge): roll back so the board doesn't drift
         // ahead of the on-disk state that never changed.
-        push(prev);
+        pushRoot(root, prev);
         throw e;
       }
     },
@@ -119,44 +170,61 @@ export const useBmadStore = create<BmadState>((set, get) => {
 
     openProject: async (root: string) => {
       await invoke("open_project", { root });
-      set({ projectRoot: root, board: emptyBoard(), stories: [], watchError: null });
+      // Seed the slice for this project and make it active, then sync the mirror.
+      set((s) => ({
+        projects: { ...s.projects, [root]: emptyBmadSlice() },
+        activeRoot: root,
+      }));
+      syncMirror();
 
       const stateDir = `${root}/.cadre/state`;
       const storyDir = `${root}/docs/stories`;
 
-      // Hydrate from what's already committed.
+      // Hydrate from what's already committed — write into THIS root's slice.
       try {
         const entries = await invoke<DirEntry[]>("list_directory", { path: storyDir });
-        for (const e of entries) if (!e.is_dir) reconcileStory(e.path);
+        for (const e of entries) if (!e.is_dir) reconcileStory(root, e.path);
       } catch {
         /* no stories yet */
       }
       try {
         const entries = await invoke<DirEntry[]>("list_directory", { path: stateDir });
-        for (const e of entries) if (!e.is_dir) await reconcileState(e.path);
+        for (const e of entries) if (!e.is_dir) await reconcileState(root, e.path);
       } catch {
         /* no state yet */
       }
 
       // Live-watch both directories.
+      // `root` is captured in the closure — background projects update their
+      // own slice, never "whatever is currently active".
       const stateChannel = new Channel<WatchEvt>();
       stateChannel.onmessage = (evt) => {
-        if (evt.type === "created" || evt.type === "changed") reconcileState(evt.path);
+        if (evt.type === "created" || evt.type === "changed") reconcileState(root, evt.path);
       };
       const storyChannel = new Channel<WatchEvt>();
       storyChannel.onmessage = (evt) => {
-        if (evt.type === "created" || evt.type === "changed") reconcileStory(evt.path);
+        if (evt.type === "created" || evt.type === "changed") reconcileStory(root, evt.path);
       };
       invoke("watch_directory", {
         dir: stateDir,
         extensions: ["json"],
         onEvent: stateChannel,
-      }).catch((e) => set({ watchError: `state watch failed: ${e}` }));
+      }).catch((e) => {
+        set((s) => ({
+          projects: updateSlice(s.projects, root, { watchError: `state watch failed: ${e}` }, emptyBmadSlice),
+        }));
+        syncMirror();
+      });
       invoke("watch_directory", {
         dir: storyDir,
         extensions: ["md"],
         onEvent: storyChannel,
-      }).catch((e) => set({ watchError: `story watch failed: ${e}` }));
+      }).catch((e) => {
+        set((s) => ({
+          projects: updateSlice(s.projects, root, { watchError: `story watch failed: ${e}` }, emptyBmadSlice),
+        }));
+        syncMirror();
+      });
     },
   };
 });

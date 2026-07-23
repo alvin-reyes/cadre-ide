@@ -121,22 +121,23 @@ function makeRunVerification(onOutput?: OutputSink) {
 }
 
 async function setStatus(
+  root: string,
   epic: number,
   story: number,
   status: Status
 ): Promise<void> {
-  await invoke("story_set_status", { epic, story, status });
+  await invoke("story_set_status", { root, epic, story, status });
 }
 
-async function getPlanApproval(): Promise<PlanApproval | null> {
-  return invoke<PlanApproval | null>("get_plan_approval");
+async function getPlanApproval(root: string): Promise<PlanApproval | null> {
+  return invoke<PlanApproval | null>("get_plan_approval", { root });
 }
 
 /** The full set of engine deps backed by Tauri. Pass `onOutput` to stream the
  * agent's PTY output and verification output to the UI. */
-export function tauriRunStoryDeps(onOutput?: OutputSink): RunStoryDeps {
+export function tauriRunStoryDeps(root: string, onOutput?: OutputSink): RunStoryDeps {
   return {
-    setStatus,
+    setStatus: (epic, story, status) => setStatus(root, epic, story, status),
     runGit,
     spawnAgent: makeSpawnAgent(onOutput),
     waitForExit,
@@ -146,8 +147,8 @@ export function tauriRunStoryDeps(onOutput?: OutputSink): RunStoryDeps {
 }
 
 /** Orchestrator deps (run-story deps + the PLAN approval reader). */
-export function tauriOrchestratorDeps(onOutput?: OutputSink): OrchestratorDeps {
-  return { ...tauriRunStoryDeps(onOutput), getPlanApproval };
+export function tauriOrchestratorDeps(root: string, onOutput?: OutputSink): OrchestratorDeps {
+  return { ...tauriRunStoryDeps(root, onOutput), getPlanApproval: () => getPlanApproval(root) };
 }
 
 /** Review-fleet deps: dispatch reviewer agent loops + read their findings markers. */
