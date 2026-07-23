@@ -51,7 +51,7 @@ export const CREATE_STORY_TOOL = {
 export const CREATE_BACKLOG_TOOL = {
   name: "create_backlog",
   description:
-    "Emit the COMPLETE backlog of stories to ship AND operate this plan. Cover every LAYER — frontend/UI, backend/API, and database (schema + migrations) — and every PHASE — project setup/scaffolding, DevOps (CI/CD, infrastructure, deployment), automated tests, integration, observability/monitoring, documentation, and ongoing support/operations. A backlog that is only backend, or is missing the frontend, database, or deployment, is INCOMPLETE and wrong. Each story must be fully specified (a Dev agent works only from it) and file-disjoint where possible for parallel builds.",
+    "Emit the COMPLETE backlog of stories to ship AND operate this plan. Cover every LAYER — frontend/UI, backend/API, and database (schema + migrations) — and every PHASE — project setup/scaffolding, DevOps (CI/CD, infrastructure, deployment), automated tests, QA (test plans, end-to-end/acceptance testing, quality gates), integration, observability/monitoring, documentation, and ongoing support/operations. A backlog that is only backend, or is missing the frontend, database, QA, or deployment, is INCOMPLETE and wrong. Each story must be fully specified (a Dev agent works only from it) and file-disjoint where possible for parallel builds.",
   input_schema: {
     type: "object",
     properties: {
@@ -63,7 +63,7 @@ export const CREATE_BACKLOG_TOOL = {
           properties: {
             phase: {
               type: "string",
-              enum: ["setup", "frontend", "backend", "database", "devops", "test", "integration", "deploy", "monitoring", "docs", "support"],
+              enum: ["setup", "frontend", "backend", "database", "devops", "test", "qa", "integration", "deploy", "monitoring", "docs", "support"],
               description: "Which layer/phase this story belongs to.",
             },
             ...CREATE_STORY_TOOL.input_schema.properties,

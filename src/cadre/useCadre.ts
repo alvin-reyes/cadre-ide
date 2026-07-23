@@ -65,7 +65,7 @@ Prefer a small, vertically-sliced, independently testable story. Populate every 
 
 Declare the exact repo-relative \`files\` this story will create or modify, and keep stories FILE-DISJOINT from one another — Cadre runs file-disjoint stories as parallel agents, and any file two stories share forces them to run sequentially. Slice the work so parallel stories don't touch the same files.
 
-Think across every LAYER (frontend/UI, backend/API, database) and the WHOLE lifecycle (setup, DevOps/CI-CD/deployment, tests, integration, monitoring, documentation, support) — not just backend features. A backlog that is backend-only, or missing the frontend, database, or deployment work, is incomplete.`;
+Think across every LAYER (frontend/UI, backend/API, database) and the WHOLE lifecycle (setup, DevOps/CI-CD/deployment, tests, QA/acceptance testing, integration, monitoring, documentation, support) — not just backend features. A backlog that is backend-only, or missing the frontend, database, QA, or deployment work, is incomplete.`;
 
 const DEV_SYSTEM_PROMPT = `You are the Dev agent. Implement the assigned story test-first: write the failing test, then the minimal code to make it pass. Follow the project's standards. Do NOT mark the story done — Cadre runs the verification command and decides.
 
@@ -359,8 +359,8 @@ export const useCadre = create<CadreState>((set, get) => ({
         userPrompt:
           "Produce the COMPLETE backlog to build AND operate the plan below. Cover every LAYER — " +
           "frontend/UI, backend/API, database (schema + migrations) — and every PHASE — setup, DevOps " +
-          "(CI/CD, infra, deployment), tests, integration, monitoring, documentation, and support. Do " +
-          "NOT return a backend-only backlog. Fully specify every story.\n\n## Plan context\n" +
+          "(CI/CD, infra, deployment), tests, QA (test plans, e2e/acceptance), integration, monitoring, " +
+          "documentation, and support. Do NOT return a backend-only backlog. Fully specify every story.\n\n## Plan context\n" +
           planContext,
         tool: CREATE_BACKLOG_TOOL,
       });
