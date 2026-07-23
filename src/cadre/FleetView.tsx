@@ -24,7 +24,7 @@ function stateInfo(status: Status): { label: string; color: string; live: boolea
     case "Failed":
       return { label: "Failed verification — bounce to fix", color: "var(--c-danger)", live: false };
     case "Blocked":
-      return { label: "Blocked", color: "var(--c-danger)", live: false };
+      return { label: "Blocked — couldn't integrate; resolve it, then re-dispatch", color: "var(--c-danger)", live: false };
     default:
       return { label: "Ready to dispatch", color: "var(--c-text-muted)", live: false };
   }
@@ -577,7 +577,9 @@ function AgentPane({ card, preview, mode = "fleet", onBack }: { card: StoryCard;
   const canApproveStory = !preview && !busy && card.status === "Draft";
   // Execution actions belong to FLEET; SHARD is for reviewing the breakdown.
   // Dispatch is paused while the plan is changed-but-not-re-approved (§5.1).
-  const canDispatch = fleet && !preview && !busy && !needsReplan && (card.status === "Approved" || card.status === "Failed");
+  // Blocked (merge conflict / review block) is re-dispatchable once the human has
+  // resolved it — Blocked → InProgress is a legal edge, and dispatch is idempotent.
+  const canDispatch = fleet && !preview && !busy && !needsReplan && (card.status === "Approved" || card.status === "Failed" || card.status === "Blocked");
   const canResume = fleet && !preview && !busy && !needsReplan && interrupted;
   const info = interrupted
     ? { label: "Interrupted — the run stopped when the app closed. Resume to re-dispatch.", color: "var(--c-warning)", live: false }

@@ -29,11 +29,18 @@ export function AiLog({ onClose }: { onClose: () => void }) {
 
   const shown = filter === "all" ? entries : entries.filter((e) => e.source === filter);
 
-  // Auto-scroll to the tail while the user is already at the bottom.
+  // Switching source resets the view to the tail.
+  useEffect(() => {
+    atBottom.current = true;
+  }, [filter]);
+
+  // Auto-scroll to the tail while the user is already at the bottom (keyed on the
+  // latest entry id, not just length, so it fires on genuine new lines).
+  const tailId = shown.length ? shown[shown.length - 1].id : 0;
   useEffect(() => {
     const el = bodyRef.current;
     if (el && atBottom.current) el.scrollTop = el.scrollHeight;
-  }, [shown.length]);
+  }, [tailId, filter]);
 
   function onScroll() {
     const el = bodyRef.current;
