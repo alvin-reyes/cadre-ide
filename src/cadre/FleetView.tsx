@@ -7,6 +7,7 @@ import { exportHtmlToPdf } from "./exportPdf";
 import { useBmadStore } from "../stores/bmadStore";
 import { useCadre, isInterrupted } from "./useCadre";
 import { aggregateReviews, type LensReview } from "../lib/engine/reviewFleet";
+import { parseEpics } from "../lib/planning/epics";
 import { PROVIDERS, getProvider } from "../lib/engine/providers";
 import { secretHas, secretSet } from "../lib/secrets";
 import type { StoryCard } from "../lib/engine/board";
@@ -36,6 +37,9 @@ export function FleetView({ mode = "fleet" }: { mode?: "shard" | "fleet" }) {
   const projectRoot = useBmadStore((s) => s.projectRoot);
   const shardNextStory = useCadre((s) => s.shardNextStory);
   const shardBacklog = useCadre((s) => s.shardBacklog);
+  const prd = useCadre((s) => s.prd);
+  const epics = parseEpics(prd);
+  const [selectedEpic, setSelectedEpic] = useState(1);
   const dispatchReady = useCadre((s) => s.dispatchReady);
   const cascadeReplan = useCadre((s) => s.cascadeReplan);
   const approvePlan = useCadre((s) => s.approvePlan);
@@ -81,8 +85,23 @@ export function FleetView({ mode = "fleet" }: { mode?: "shard" | "fleet" }) {
           flexShrink: 0,
         }}
       >
+        {shard && epics.length > 0 && (
+          <select
+            value={selectedEpic}
+            onChange={(e) => setSelectedEpic(Number(e.target.value))}
+            title="Which epic to shard the next story for"
+            aria-label="Epic"
+            style={{ background: "var(--c-surface-2)", border: "1px solid var(--c-border-strong)", borderRadius: "var(--c-radius-sm)", color: "var(--c-text)", fontSize: "var(--c-fs-xs)", padding: "4px 6px", maxWidth: 180 }}
+          >
+            {epics.map((ep) => (
+              <option key={ep.number} value={ep.number}>
+                Epic {ep.number}: {ep.title}
+              </option>
+            ))}
+          </select>
+        )}
         <button
-          onClick={() => shardNextStory(1)}
+          onClick={() => shardNextStory(shard && epics.length > 0 ? selectedEpic : 1)}
           disabled={preview || !!busy}
           title={preview ? "Open a project to shard stories" : "Run the SM to shard the next story"}
           style={{
