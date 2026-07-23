@@ -175,7 +175,7 @@ interface CadreState {
   /** Gate a sharded story for the fleet: Draft → Approved (the SM/CTO review step). */
   approveStory: (epic: number, story: number) => Promise<void>;
   /** Run the adversarial code-review fleet (diverse-lens agent loops) on a story. */
-  reviewStory: (epic: number, story: number) => Promise<void>;
+  reviewStory: (epic: number, story: number, root?: string) => Promise<void>;
   /** Brownfield onboarding: a PM/Analyst agent documents an existing project (twice). */
   documentProject: () => Promise<void>;
   /** Read a story's markdown (docs/stories/{epic}.{story}.*.md), or "" if none. */
@@ -617,7 +617,7 @@ export const useCadre = create<CadreState>((set, get) => {
         // integrating. If it blocks, quarantine the story (Blocked) and don't merge
         // — the review has real authority, not just an advisory badge. Toggleable.
         if (useSettingsStore.getState().gateOnReview) {
-          await get().reviewStory(epic, story);
+          await get().reviewStory(epic, story, root);
           const reviews = get().projects[root]?.codeReviews?.[key]?.reviews ?? [];
           if (aggregateReviews(reviews).verdict === "block") {
             await useBmadStore.getState().setStatus(epic, story, "Blocked");
@@ -719,27 +719,29 @@ export const useCadre = create<CadreState>((set, get) => {
     }
   },
 
-  reviewStory: async (epic, story) => {
+  reviewStory: async (epic, story, root?: string) => {
     const key = `${epic}.${story}`;
-    // Capture the target project once; every per-project write targets THIS root.
-    let root: string;
+    // If a captured root is provided (e.g. from dispatchStory's gate), use it so
+    // background dispatches write the correct project's slice even if the foreground
+    // has switched. Otherwise fall back to the live foreground project.
+    let target: string;
     try {
-      root = requireRoot();
+      target = root ?? requireRoot();
     } catch (e) {
       set({ error: String(e) });
       toast(`Review failed for ${key}`, "error");
       return;
     }
     set({ error: null });
-    patchRoot(root, {
-      codeReviews: { ...(get().projects[root]?.codeReviews ?? {}), [key]: { status: "reviewing" } },
+    patchRoot(target, {
+      codeReviews: { ...(get().projects[target]?.codeReviews ?? {}), [key]: { status: "reviewing" } },
     });
     const onOutput = (chunk: string) => {
       aiLog(`review ${key}`, chunk);
-      const prev = get().projects[root]?.logs?.[key] ?? "";
+      const prev = get().projects[target]?.logs?.[key] ?? "";
       const next = prev + chunk;
       const capped = next.length > 200_000 ? next.slice(next.length - 200_000) : next;
-      patchRoot(root, { logs: { ...(get().projects[root]?.logs ?? {}), [key]: capped } });
+      patchRoot(target, { logs: { ...(get().projects[target]?.logs ?? {}), [key]: capped } });
     };
     try {
       // Same provider routing as dispatch — reviewers are agents on the fleet.
@@ -748,7 +750,7 @@ export const useCadre = create<CadreState>((set, get) => {
       onOutput(`[cadre] dispatching ${CODE_REVIEW_LENSES.length} adversarial reviewers on ${provider.name}\n`);
 
       const reviews = await reviewStoryFleet(tauriReviewFleetDeps(onOutput), {
-        root,
+        root: target,
         epic,
         story,
         lenses: CODE_REVIEW_LENSES,
@@ -757,16 +759,16 @@ export const useCadre = create<CadreState>((set, get) => {
       });
       const agg = aggregateReviews(reviews);
       onOutput(`[cadre] review fleet ${agg.verdict === "block" ? "BLOCKED" : "accepted"} (${agg.findingCount} findings)\n`);
-      patchRoot(root, {
-        codeReviews: { ...(get().projects[root]?.codeReviews ?? {}), [key]: { status: "done", reviews } },
+      patchRoot(target, {
+        codeReviews: { ...(get().projects[target]?.codeReviews ?? {}), [key]: { status: "done", reviews } },
       });
       toast(
         `Review ${key}: ${agg.verdict === "block" ? `blocked (${agg.findingCount})` : "accepted"}`,
         agg.verdict === "block" ? "error" : "success"
       );
     } catch (e) {
-      patchRoot(root, {
-        codeReviews: { ...(get().projects[root]?.codeReviews ?? {}), [key]: { status: "done", reviews: [] } },
+      patchRoot(target, {
+        codeReviews: { ...(get().projects[target]?.codeReviews ?? {}), [key]: { status: "done", reviews: [] } },
       });
       set({ error: String(e) });
       toast(`Review failed for ${key}`, "error");
@@ -834,7 +836,7 @@ export const useCadre = create<CadreState>((set, get) => {
     try {
       const root = requireRoot();
       const apiKey = requireKey();
-      const prd = get().prd;
+      const prd = get().projects[root]?.prd ?? "";
 
       // 1. Architect re-derives the architecture from the amended PRD.
       const arch = await planningTurn({
