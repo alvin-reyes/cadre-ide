@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Save, FileCode2, RefreshCw, SquareTerminal, X } from "lucide-react";
+import { Save, FileCode2, RefreshCw, SquareTerminal, X, Files, Search } from "lucide-react";
 import MonacoWrapper from "../components/editor/MonacoWrapper";
 import { FileTree } from "./FileTree";
+import { SearchPanel } from "./SearchPanel";
 import { TerminalTabs } from "./TerminalTabs";
 import { useThemeStore } from "../stores/themeStore";
 import { toast } from "../stores/toastStore";
@@ -26,6 +27,10 @@ export function Workbench({ root }: { root: string }) {
   // Bumping reloadKey remounts the tree → re-lists from disk (no live watcher).
   // Manual only, so switching to the File view doesn't collapse expanded folders.
   const [reloadKey, setReloadKey] = useState(0);
+  // Left panel switches between the file tree and project-wide search/replace.
+  const [leftMode, setLeftMode] = useState<"files" | "search">("files");
+  // Bumping `nonce` re-triggers the editor's reveal-line even for the same target.
+  const [gotoLine, setGotoLine] = useState<{ line: number; col?: number; nonce: number } | null>(null);
   // Integrated terminal below the editor (IDE-style). Mounted once opened so its
   // PTY survives hide/show; resizable via the drag handle.
   const [termMounted, setTermMounted] = useState(false);
@@ -66,6 +71,13 @@ export function Workbench({ root }: { root: string }) {
     } catch (err) {
       setError(String(err));
     }
+  }
+
+  // Open a file (if not already open) and jump the editor to a line/col — used by
+  // search results. Bump the nonce each time so re-clicking the same line re-reveals.
+  async function openAt(path: string, line: number, col: number) {
+    if (path !== openPath) await openFile(path);
+    setGotoLine({ line, col, nonce: Date.now() });
   }
 
   async function save() {
@@ -139,24 +151,50 @@ export function Workbench({ root }: { root: string }) {
 
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
-        {/* Explorer tree */}
-        <div style={{ width: 240, flexShrink: 0, minHeight: 0, overflow: "auto", borderRight: "1px solid var(--c-border)", padding: "var(--c-space-2) 4px", background: "var(--c-surface-1)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 4px 8px 8px" }}>
-            <span style={{ flex: 1, fontSize: "var(--c-fs-xs)", letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--c-text-muted)", fontWeight: 600 as const, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {relTo(root, root) === "." ? root.split("/").pop() : root}
-            </span>
-            <button
-              onClick={() => setReloadKey((k) => k + 1)}
-              title="Refresh the file tree"
-              aria-label="Refresh the file tree"
-              className="cadre-hover"
-              style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, borderRadius: "var(--c-radius-sm)", background: "transparent", border: "none", color: "var(--c-text-muted)", cursor: "pointer", flexShrink: 0 }}
-            >
-              <RefreshCw size={13} strokeWidth={2} />
-            </button>
+        {/* Explorer / Search panel */}
+        <div style={{ width: 260, flexShrink: 0, minHeight: 0, display: "flex", flexDirection: "column", borderRight: "1px solid var(--c-border)", background: "var(--c-surface-1)" }}>
+          {/* Files / Search mode switch */}
+          <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "6px 6px 4px", flexShrink: 0 }}>
+            {([["files", Files, "Explorer"], ["search", Search, "Search"]] as const).map(([mode, Icon, label]) => {
+              const on = leftMode === mode;
+              return (
+                <button
+                  key={mode}
+                  onClick={() => setLeftMode(mode)}
+                  title={label}
+                  aria-pressed={on}
+                  className="cadre-hover"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: "var(--c-fs-xs)", fontWeight: 550 as const, padding: "4px 9px", borderRadius: "var(--c-radius-sm)", background: on ? "var(--c-surface-3)" : "transparent", color: on ? "var(--c-text)" : "var(--c-text-muted)", border: "none", cursor: "pointer" }}
+                >
+                  <Icon size={13} strokeWidth={2} />
+                  {label}
+                </button>
+              );
+            })}
           </div>
-          {error && <div style={{ padding: "4px 8px", fontSize: "var(--c-fs-xs)", color: "var(--c-danger)" }}>{error}</div>}
-          <FileTree key={reloadKey} root={root} onOpen={openFile} selected={openPath} />
+
+          {leftMode === "files" ? (
+            <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "0 4px 8px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 4px 8px 8px" }}>
+                <span style={{ flex: 1, fontSize: "var(--c-fs-xs)", letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--c-text-muted)", fontWeight: 600 as const, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {relTo(root, root) === "." ? root.split("/").pop() : root}
+                </span>
+                <button
+                  onClick={() => setReloadKey((k) => k + 1)}
+                  title="Refresh the file tree"
+                  aria-label="Refresh the file tree"
+                  className="cadre-hover"
+                  style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, borderRadius: "var(--c-radius-sm)", background: "transparent", border: "none", color: "var(--c-text-muted)", cursor: "pointer", flexShrink: 0 }}
+                >
+                  <RefreshCw size={13} strokeWidth={2} />
+                </button>
+              </div>
+              {error && <div style={{ padding: "4px 8px", fontSize: "var(--c-fs-xs)", color: "var(--c-danger)" }}>{error}</div>}
+              <FileTree key={reloadKey} root={root} onOpen={openFile} selected={openPath} />
+            </div>
+          ) : (
+            <SearchPanel root={root} onOpen={openAt} />
+          )}
         </div>
 
         {/* Editor */}
@@ -168,6 +206,7 @@ export function Workbench({ root }: { root: string }) {
               onChange={setContent}
               onSave={save}
               theme={theme === "light" ? "vs" : "vs-dark"}
+              gotoLine={gotoLine}
             />
           ) : (
             <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--c-text-faint)", fontSize: "var(--c-fs-sm)", textAlign: "center", padding: "var(--c-space-5)" }}>

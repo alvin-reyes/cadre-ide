@@ -1,4 +1,4 @@
-import { useRef, useCallback } from "react";
+import { useRef, useCallback, useEffect } from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
 import type { editor as monacoEditor } from "monaco-editor";
 
@@ -36,9 +36,11 @@ interface MonacoWrapperProps {
   onChange: (value: string) => void;
   onSave: () => void;
   theme?: string;
+  /** When set, scroll to and highlight this 1-based line (e.g. a search-result jump). */
+  gotoLine?: { line: number; col?: number; nonce: number } | null;
 }
 
-export default function MonacoWrapper({ filePath, content, onChange, onSave, theme = "vs-dark" }: MonacoWrapperProps) {
+export default function MonacoWrapper({ filePath, content, onChange, onSave, theme = "vs-dark", gotoLine }: MonacoWrapperProps) {
   const editorRef = useRef<monacoEditor.IStandaloneCodeEditor | null>(null);
   // onMount runs once, so its Ctrl+S action must call through a ref that always
   // points at the latest onSave — otherwise it saves a stale closure's content.
@@ -56,6 +58,19 @@ export default function MonacoWrapper({ filePath, content, onChange, onSave, the
     });
     editor.focus();
   }, []);
+
+  // Jump to a line when a search result is clicked. `nonce` forces re-run even when
+  // clicking the same line twice.
+  useEffect(() => {
+    const ed = editorRef.current;
+    if (!ed || !gotoLine) return;
+    const line = gotoLine.line;
+    const col = gotoLine.col ?? 1;
+    ed.revealLineInCenter(line);
+    ed.setPosition({ lineNumber: line, column: col });
+    ed.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gotoLine?.nonce]);
 
   // `path` gives each file its own model (clean undo history, no cursor bleed);
   // `value` stays controlled. No manual setValue — that fought the controlled prop.

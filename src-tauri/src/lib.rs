@@ -294,6 +294,188 @@ fn list_md_files(dir: String) -> Result<Vec<String>, String> {
     Ok(files)
 }
 
+// ---- Project-wide search & replace (VS Code-style "search all in folder") ----
+// Literal matching only (no regex dep). Case-insensitivity is ASCII-fold on bytes,
+// which preserves byte length and is UTF-8 safe (multibyte chars only match exactly).
+
+#[derive(serde::Serialize)]
+struct SearchMatch {
+    line: u32,    // 1-based line number
+    col: u32,     // 1-based column of the first match on the line
+    count: u32,   // matches on this line
+    preview: String,
+}
+
+#[derive(serde::Serialize)]
+struct FileMatches {
+    path: String,
+    matches: Vec<SearchMatch>,
+}
+
+#[derive(serde::Serialize)]
+struct ReplaceSummary {
+    files_changed: u32,
+    replacements: u32,
+}
+
+const SEARCH_SKIP_DIRS: &[&str] = &[
+    "node_modules", ".git", "target", "dist", ".next", ".cache",
+    "__pycache__", ".venv", "venv", "build", ".idea",
+];
+const SEARCH_MAX_DEPTH: u32 = 12;
+const SEARCH_MAX_FILE_BYTES: u64 = 2 * 1024 * 1024; // skip files > 2MB
+const SEARCH_MAX_FILE_HITS: usize = 5000; // cap files returned
+
+fn find_byte_indices(hay: &[u8], needle: &[u8], case_sensitive: bool) -> Vec<usize> {
+    let mut idxs = Vec::new();
+    if needle.is_empty() || needle.len() > hay.len() {
+        return idxs;
+    }
+    let mut i = 0;
+    while i + needle.len() <= hay.len() {
+        let window = &hay[i..i + needle.len()];
+        let hit = if case_sensitive {
+            window == needle
+        } else {
+            window.iter().zip(needle).all(|(a, b)| a.eq_ignore_ascii_case(b))
+        };
+        if hit {
+            idxs.push(i);
+            i += needle.len();
+        } else {
+            i += 1;
+        }
+    }
+    idxs
+}
+
+fn collect_search_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>, depth: u32) {
+    if depth > SEARCH_MAX_DEPTH || out.len() >= SEARCH_MAX_FILE_HITS {
+        return;
+    }
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        let meta = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if meta.is_dir() {
+            if SEARCH_SKIP_DIRS.contains(&name.as_str()) || name == ".DS_Store" {
+                continue;
+            }
+            collect_search_files(&path, out, depth + 1);
+        } else if meta.len() <= SEARCH_MAX_FILE_BYTES && name != ".DS_Store" {
+            out.push(path);
+        }
+    }
+}
+
+#[tauri::command]
+fn search_in_files(
+    root: String,
+    query: String,
+    case_sensitive: bool,
+) -> Result<Vec<FileMatches>, String> {
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut files = Vec::new();
+    collect_search_files(std::path::Path::new(&root), &mut files, 0);
+
+    let needle = query.as_bytes();
+    let mut results: Vec<FileMatches> = Vec::new();
+    for path in files {
+        // read_to_string fails on non-UTF8 (binary) files → skipped, which is what we want.
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        if find_byte_indices(content.as_bytes(), needle, case_sensitive).is_empty() {
+            continue; // fast whole-file reject before per-line work
+        }
+        let mut matches = Vec::new();
+        for (lineno, line) in content.lines().enumerate() {
+            let idxs = find_byte_indices(line.as_bytes(), needle, case_sensitive);
+            if idxs.is_empty() {
+                continue;
+            }
+            let col = line[..idxs[0]].chars().count() as u32 + 1;
+            let preview: String = if line.len() > 400 {
+                line.chars().take(400).collect()
+            } else {
+                line.to_string()
+            };
+            matches.push(SearchMatch {
+                line: lineno as u32 + 1,
+                col,
+                count: idxs.len() as u32,
+                preview,
+            });
+        }
+        if !matches.is_empty() {
+            results.push(FileMatches {
+                path: path.to_string_lossy().to_string(),
+                matches,
+            });
+        }
+    }
+    results.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(results)
+}
+
+#[tauri::command]
+fn replace_in_files(
+    root: String,
+    query: String,
+    replacement: String,
+    case_sensitive: bool,
+) -> Result<ReplaceSummary, String> {
+    if query.is_empty() {
+        return Err("Search query is empty".into());
+    }
+    let mut files = Vec::new();
+    collect_search_files(std::path::Path::new(&root), &mut files, 0);
+
+    let needle = query.as_bytes();
+    let mut files_changed = 0u32;
+    let mut replacements = 0u32;
+    for path in files {
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let idxs = find_byte_indices(content.as_bytes(), needle, case_sensitive);
+        if idxs.is_empty() {
+            continue;
+        }
+        // Rebuild the file, splicing replacement at each match boundary. Cuts land on
+        // valid UTF-8 boundaries (match edges in valid content), so the result is valid.
+        let hay = content.as_bytes();
+        let mut out: Vec<u8> = Vec::with_capacity(content.len());
+        let mut last = 0usize;
+        for &i in &idxs {
+            out.extend_from_slice(&hay[last..i]);
+            out.extend_from_slice(replacement.as_bytes());
+            last = i + needle.len();
+        }
+        out.extend_from_slice(&hay[last..]);
+        let new_content = String::from_utf8_lossy(&out).into_owned();
+        std::fs::write(&path, new_content)
+            .map_err(|e| format!("Failed to write {}: {}", path.to_string_lossy(), e))?;
+        files_changed += 1;
+        replacements += idxs.len() as u32;
+    }
+    Ok(ReplaceSummary {
+        files_changed,
+        replacements,
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -333,6 +515,8 @@ pub fn run() {
             read_file_base64,
             list_md_files,
             list_directory,
+            search_in_files,
+            replace_in_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
