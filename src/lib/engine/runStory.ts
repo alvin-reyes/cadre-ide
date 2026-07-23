@@ -67,6 +67,13 @@ export async function runStory(
     return { status: "Failed", dispatch, agentExitCode: exit.exitCode };
   }
 
+  // The agent finished cleanly. Commit its work in the worktree so a later
+  // integration merge actually carries the changes into main (otherwise the
+  // story branch equals HEAD and the merge is a no-op that discards everything).
+  const IDENT = ["-c", "user.name=Cadre", "-c", "user.email=cadre@local"];
+  await deps.runGit(["add", "-A"], dispatch.worktree);
+  await deps.runGit([...IDENT, "commit", "-m", `cadre: story ${input.epic}.${input.story}`, "--allow-empty"], dispatch.worktree);
+
   // The agent finished cleanly (whatever it claims). The engine now verifies.
   await deps.setStatus(input.epic, input.story, "InReview");
 

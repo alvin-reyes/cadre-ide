@@ -52,7 +52,7 @@ fn legal_next(from: Status) -> &'static [Status] {
         InReview => &[Done, Failed, Blocked],
         Failed => &[InProgress, Blocked],
         Blocked => &[Approved, InProgress],
-        Done => &[Approved], // re-open (scope change, human-gated)
+        Done => &[Approved, Blocked], // re-open (scope change); Blocked if it can't merge back
     }
 }
 

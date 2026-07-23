@@ -25,6 +25,7 @@ export function normalizeFile(f: string): string {
  * preserved). `cap` bounds how many agents run at once (batch size).
  */
 export function scheduleParallel(stories: SchedulableStory[], cap = 4): string[][] {
+  const limit = Math.max(1, Math.floor(cap)); // never strand every story on a bad cap
   const batches: { ids: string[]; files: Set<string>; sealed: boolean }[] = [];
 
   for (const s of stories) {
@@ -34,7 +35,7 @@ export function scheduleParallel(stories: SchedulableStory[], cap = 4): string[]
 
     if (!unknown) {
       for (const b of batches) {
-        if (b.sealed || b.ids.length >= cap) continue;
+        if (b.sealed || b.ids.length >= limit) continue;
         if (files.some((f) => b.files.has(f))) continue; // would collide
         files.forEach((f) => b.files.add(f));
         b.ids.push(s.id);

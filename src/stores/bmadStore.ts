@@ -86,8 +86,16 @@ export const useBmadStore = create<BmadState>((set, get) => {
 
     setStatus: async (epic: number, story: number, status: Status) => {
       // Optimistic board update, then the engine writes the authoritative file.
-      push(applyStatus(get().board, epic, story, status));
-      await invoke("story_set_status", { epic, story, status });
+      const prev = get().board;
+      push(applyStatus(prev, epic, story, status));
+      try {
+        await invoke("story_set_status", { epic, story, status });
+      } catch (e) {
+        // Rejected (e.g. an illegal edge): roll back so the board doesn't drift
+        // ahead of the on-disk state that never changed.
+        push(prev);
+        throw e;
+      }
     },
 
     newProject: async (path: string) => {

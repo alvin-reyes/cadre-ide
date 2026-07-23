@@ -9,6 +9,10 @@ describe("canTransition", () => {
     expect(canTransition("InReview", "Done")).toBe(true);
   });
 
+  it("allows Done → Blocked when a verified story can't merge back", () => {
+    expect(canTransition("Done", "Blocked")).toBe(true);
+  });
+
   it("forbids skipping the discipline (Draft cannot jump to Done)", () => {
     expect(canTransition("Draft", "Done")).toBe(false);
     expect(canTransition("Approved", "Done")).toBe(false);

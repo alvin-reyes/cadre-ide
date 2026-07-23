@@ -112,10 +112,12 @@ export function PlanningStudio() {
   const [thinking, setThinking] = useState(false);
   const [keyDraft, setKeyDraft] = useState("");
   const [verifyCmd, setVerifyCmd] = useState("npm test");
+  const verifyTouched = useRef(false);
   const detectedVerify = useCadre((s) => s.detectedVerify);
-  // Brownfield: pre-fill the sign-off command with the project's real test command.
+  // Brownfield: pre-fill the sign-off command with the project's real test command —
+  // but never clobber one the CTO already typed.
   useEffect(() => {
-    if (detectedVerify) setVerifyCmd(detectedVerify);
+    if (detectedVerify && !verifyTouched.current) setVerifyCmd(detectedVerify);
   }, [detectedVerify]);
   const [split, setSplit] = useState(50); // % width of the conversation pane (draggable divider)
 
@@ -1023,6 +1025,7 @@ export function PlanningStudio() {
             <input
               value={verifyCmd}
               onChange={(e) => {
+                verifyTouched.current = true;
                 setVerifyCmd(e.target.value);
                 setVerifySuggested(false);
               }}

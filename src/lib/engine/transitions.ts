@@ -12,7 +12,8 @@ const LEGAL: Record<Status, Status[]> = {
   InReview: ["Done", "Failed", "Blocked"],
   Failed: ["InProgress", "Blocked"], // bounce back to retry, or block
   Blocked: ["Approved", "InProgress"], // resume after the block clears
-  Done: ["Approved"], // re-open for a scope change ([v1], human-gated)
+  Done: ["Approved", "Blocked"], // re-open for scope change; Blocked if it can't merge back
+
 };
 
 export function canTransition(from: Status, to: Status): boolean {

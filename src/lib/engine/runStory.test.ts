@@ -50,8 +50,8 @@ describe("runStory", () => {
     expect(r.status).toBe("Done");
     expect(r.agentExitCode).toBe(0);
     // order: idempotent worktree cleanup (remove/prune/branch -D) + add, spawn
-    // agent, wait for exit, then verify
-    expect(events).toEqual(["git", "git", "git", "git", "spawn", "wait:7", "verify"]);
+    // agent, wait for exit, commit the agent's work (add + commit), then verify
+    expect(events).toEqual(["git", "git", "git", "git", "spawn", "wait:7", "git", "git", "verify"]);
   });
 
   it("ends Failed when the engine's verification fails, even if the agent exited 0", async () => {
