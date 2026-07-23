@@ -13,6 +13,10 @@ export interface ScaffoldFile {
 
 const CLAUDE_MD = (name: string) => `# CLAUDE.md — working in ${name}
 
+This file is the project **constitution** — the standing decisions and conventions
+every agent follows, so parallel and later work stays consistent. It is loaded into
+every agent automatically; read it first and don't contradict it.
+
 This is a **Cadre** project: disciplined AI development — *verified, not vibed*. Work
 flows **Plan → Shard → Fleet → Done**, and **the engine, not the agent, decides when a
 story is Done.**
@@ -42,8 +46,9 @@ story is Done.**
 - Tests are the contract. If the verification command fails, the work is not done.
 - No scope creep, no gold-plating.
 
-## Coding standards
-<!-- Add this project's standards here — the Dev agents will follow them. -->
+## Coding standards & conventions (the constitution)
+<!-- The Architect fills this in — languages, frameworks, patterns, naming, error
+handling, testing conventions. Every Dev agent follows it verbatim. -->
 `;
 
 const LLMS_TXT = (name: string) => `# ${name}
