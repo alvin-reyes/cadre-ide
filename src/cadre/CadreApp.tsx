@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { LayoutGrid, FolderTree, SquareTerminal } from "lucide-react";
 import { TopBar } from "./components/TopBar";
 import { PhaseStepper } from "./components/PhaseStepper";
@@ -12,9 +12,11 @@ import { AiLog } from "./AiLog";
 import { OrchestratorChat } from "./OrchestratorChat";
 import { Toaster } from "./Toaster";
 import { Welcome } from "./Welcome";
+import { ProjectTabs } from "./ProjectTabs";
 import { useBmadStore } from "../stores/bmadStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre } from "./useCadre";
+import { useOpenProjects } from "../stores/openProjectsStore";
 
 /** The three top-level views, switched via the dock rail. Orchestrator is default. */
 type MainView = "orchestrator" | "files" | "terminal";
@@ -37,6 +39,8 @@ export function CadreApp() {
   const [teamOpen, setTeamOpen] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
   const projectRoot = useBmadStore((s) => s.projectRoot);
+  // Guard so the restore-on-launch effect runs exactly once per app session.
+  const restoredRef = useRef(false);
 
   // Lazy-mount a view the first time it's opened.
   useEffect(() => {
@@ -62,12 +66,37 @@ export function CadreApp() {
     hydrateSecrets();
   }, [hydrateSecrets]);
 
+  // Restore all persisted open projects on launch — runs exactly once (ref guard).
+  // For each remembered root, registers its watchers in bmadStore. Then makes the
+  // previously-active project foreground across all three stores.
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const { roots, activeRoot } = useOpenProjects.getState();
+    if (roots.length === 0) return;
+    const target = activeRoot ?? roots[0];
+    // Open each project in the background (registers watchers + hydrates board).
+    Promise.all(roots.map((r) => useBmadStore.getState().openProject(r))).then(() => {
+      // After all projects are open, point the foreground at the previously-active one.
+      useBmadStore.getState().setActiveProject(target);
+      useCadre.getState().setActiveProject(target);
+      useOpenProjects.getState().setActive(target);
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (projectRoot) {
       // Point useCadre's foreground at this project (seeds/mirrors its slice), then
       // reload the plan into that slice from disk.
       setActiveProject(projectRoot);
       hydrateFromProject();
+      // Ensure the tab list always knows about this project (covers the Welcome
+      // first-open path and any other direct openProject call).
+      const { roots } = useOpenProjects.getState();
+      if (!roots.includes(projectRoot)) {
+        const name = projectRoot.split("/").filter(Boolean).pop() ?? projectRoot;
+        useOpenProjects.getState().open(projectRoot, name);
+      }
     }
   }, [projectRoot, setActiveProject, hydrateFromProject]);
 
@@ -98,6 +127,9 @@ export function CadreApp() {
   return (
     <div className="cadre-ui" style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <TopBar onOpenTeam={() => setTeamOpen(true)} onOpenSettings={() => setShowSettings(true)} onOpenLog={() => setLogOpen(true)} />
+
+      {/* Project tab strip — shows when at least one project is open. */}
+      {projectRoot && <ProjectTabs />}
 
       {/* The Orchestrator carries the discipline stepper; the other views don't. */}
       {view === "orchestrator" && (
