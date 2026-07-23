@@ -35,6 +35,7 @@ export function FleetView({ mode = "fleet" }: { mode?: "shard" | "fleet" }) {
   const stories = useBmadStore((s) => s.stories);
   const projectRoot = useBmadStore((s) => s.projectRoot);
   const shardNextStory = useCadre((s) => s.shardNextStory);
+  const dispatchReady = useCadre((s) => s.dispatchReady);
   const cascadeReplan = useCadre((s) => s.cascadeReplan);
   const approvePlan = useCadre((s) => s.approvePlan);
   const verification = useCadre((s) => s.verification);
@@ -100,6 +101,32 @@ export function FleetView({ mode = "fleet" }: { mode?: "shard" | "fleet" }) {
           <Plus size={14} strokeWidth={2.5} />
           Generate story (SM)
         </button>
+        {!shard && !preview && (() => {
+          const readyCount = stories.filter((c) => c.status === "Draft" || c.status === "Approved" || c.status === "Failed").length;
+          return (
+            <button
+              onClick={() => dispatchReady()}
+              disabled={!!busy || readyCount === 0}
+              title="Dispatch every ready story in parallel — file-disjoint stories run concurrently, sharing the Context Store"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                fontSize: "var(--c-fs-sm)",
+                fontWeight: 550 as const,
+                padding: "5px 12px",
+                borderRadius: "var(--c-radius)",
+                background: busy || readyCount === 0 ? "var(--c-surface-3)" : "var(--c-accent)",
+                color: busy || readyCount === 0 ? "var(--c-text-muted)" : "var(--c-on-accent)",
+                border: "none",
+                cursor: busy || readyCount === 0 ? "default" : "pointer",
+              }}
+            >
+              <Play size={13} strokeWidth={2.5} />
+              Dispatch ready{readyCount > 0 ? ` (${readyCount})` : ""}
+            </button>
+          );
+        })()}
         <span style={{ fontSize: "var(--c-fs-xs)", color: busy ? "var(--c-accent)" : error ? "var(--c-danger)" : "var(--c-text-muted)" }}>
           {busy ??
             error ??

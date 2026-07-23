@@ -32,8 +32,14 @@ export const CREATE_STORY_TOOL = {
         description:
           "All context the Dev agent needs (relevant architecture, source tree, standards) so it never reads other docs.",
       },
+      files: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "The repo-relative files this story is expected to create or modify. Keep stories file-DISJOINT from each other so they can build in parallel without conflicts. List the specific paths you know; be accurate — Cadre uses this to schedule parallel agents.",
+      },
     },
-    required: ["title", "role", "action", "benefit", "acceptanceCriteria", "tasks", "devNotes"],
+    required: ["title", "role", "action", "benefit", "acceptanceCriteria", "tasks", "devNotes", "files"],
   },
 } as const;
 
@@ -70,5 +76,6 @@ export function storyContentFromTool(
     acceptanceCriteria: strList(i.acceptanceCriteria, "acceptanceCriteria"),
     tasks: strList(i.tasks, "tasks"),
     devNotes: reqStr(i.devNotes, "devNotes"),
+    files: Array.isArray(i.files) ? i.files.filter((x): x is string => typeof x === "string") : [],
   };
 }

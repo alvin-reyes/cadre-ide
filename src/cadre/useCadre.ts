@@ -12,8 +12,9 @@ import { reviewStory as reviewStoryFleet, aggregateReviews, type LensReview } fr
 import { documentProject as documentProjectFleet, BROWNFIELD_DOC_PATH } from "../lib/engine/brownfield";
 import { CODE_REVIEW_LENSES } from "../lib/planning/review";
 import { tauriOrchestratorDeps, tauriReviewFleetDeps } from "../lib/engine/tauriDeps";
-import { composeDispatchPrompt } from "../lib/engine/dispatch";
-import { nextStoryNumber } from "../lib/engine/shard";
+import { composeDispatchPrompt, type AlwaysFile } from "../lib/engine/dispatch";
+import { nextStoryNumber, parseStoryFiles } from "../lib/engine/shard";
+import { scheduleParallel } from "../lib/engine/schedule";
 import { getProvider, resolveAgentEnv } from "../lib/engine/providers";
 import { secretGet } from "../lib/secrets";
 import type { Status } from "../lib/engine/status";
@@ -56,7 +57,9 @@ export function isInterrupted(status: string, active: Record<string, boolean>, e
 
 const SM_SYSTEM_PROMPT = `You are the Scrum Master (SM). Turn the approved plan into the NEXT single implementation story via the create_story tool.
 
-Prefer a small, vertically-sliced, independently testable story. Populate every field completely — the Dev agent works only from this story and reads nothing else, so put the relevant architecture, file paths, and standards into devNotes. Acceptance criteria must be concrete and testable; tasks must be TDD-first (write the failing test, then the code).`;
+Prefer a small, vertically-sliced, independently testable story. Populate every field completely — the Dev agent works only from this story and reads nothing else, so put the relevant architecture, file paths, and standards into devNotes. Acceptance criteria must be concrete and testable; tasks must be TDD-first (write the failing test, then the code).
+
+Declare the exact repo-relative \`files\` this story will create or modify, and keep stories FILE-DISJOINT from one another — Cadre runs file-disjoint stories as parallel agents, and any file two stories share forces them to run sequentially. Slice the work so parallel stories don't touch the same files.`;
 
 const DEV_SYSTEM_PROMPT = `You are the Dev agent. Implement the assigned story test-first: write the failing test, then the minimal code to make it pass. Follow the project's standards. Do NOT mark the story done — Cadre runs the verification command and decides.`;
 
@@ -127,7 +130,13 @@ interface CadreState {
   /** Run the SM to shard the next story for `epic` (default 1). */
   shardNextStory: (epic?: number) => Promise<void>;
   /** Dispatch a Dev agent for a story; Cadre verifies and writes the status. */
-  dispatchStory: (epic: number, story: number) => Promise<void>;
+  dispatchStory: (epic: number, story: number, opts?: { silent?: boolean; context?: AlwaysFile[] }) => Promise<void>;
+  /**
+   * Dispatch ALL ready stories in parallel, grouped so no two concurrent agents
+   * touch the same declared file (disjoint sharding); file-sharing stories run in
+   * later batches. Every agent gets the shared Context Store injected.
+   */
+  dispatchReady: () => Promise<void>;
   /** Run the adversarial code-review fleet (diverse-lens agent loops) on a story. */
   reviewStory: (epic: number, story: number) => Promise<void>;
   /** Brownfield onboarding: a PM/Analyst agent documents an existing project (twice). */
@@ -149,6 +158,28 @@ async function findStoryPath(root: string, epic: number, story: number): Promise
   const entries = await invoke<DirEntry[]>("list_directory", { path: `${root}/docs/stories` });
   const prefix = `${epic}.${story}.`;
   return entries.find((e) => !e.is_dir && basename(e.path).startsWith(prefix))?.path ?? null;
+}
+
+/**
+ * The shared Context Store injected into every Dev agent: the architecture (the
+ * common interfaces/decisions) plus any committed `.cadre/context/*.md`. Ensures
+ * parallel agents build against the same contract instead of diverging.
+ */
+async function loadSharedContext(root: string): Promise<AlwaysFile[]> {
+  const files: AlwaysFile[] = [];
+  const arch = await invoke<string>("read_file", { path: `${root}/docs/architecture.md` }).catch(() => "");
+  if (arch.trim()) files.push({ path: "docs/architecture.md", content: arch });
+  try {
+    const entries = await invoke<DirEntry[]>("list_directory", { path: `${root}/.cadre/context` });
+    for (const e of entries) {
+      if (e.is_dir || !e.name.endsWith(".md")) continue;
+      const c = await invoke<string>("read_file", { path: e.path }).catch(() => "");
+      if (c.trim()) files.push({ path: `.cadre/context/${e.name}`, content: c });
+    }
+  } catch {
+    /* no Context Store yet — architecture alone is the shared contract */
+  }
+  return files;
 }
 
 function requireRoot(): string {
@@ -264,12 +295,14 @@ export const useCadre = create<CadreState>((set, get) => ({
     }
   },
 
-  dispatchStory: async (epic, story) => {
+  dispatchStory: async (epic, story, opts) => {
     const key = `${epic}.${story}`;
+    const silent = opts?.silent ?? false;
     // Fresh log for this run; the sink appends streamed output (capped). Mark the
     // story active so the UI shows it as genuinely running (vs. an orphaned one).
+    // In parallel mode (silent) the caller owns the `busy` banner.
     set((s) => ({
-      busy: `Dispatching story ${epic}.${story}…`,
+      busy: silent ? s.busy : `Dispatching story ${epic}.${story}…`,
       error: null,
       logs: { ...s.logs, [key]: "" },
       active: { ...s.active, [key]: true },
@@ -289,10 +322,13 @@ export const useCadre = create<CadreState>((set, get) => ({
       if (!storyPath) throw new Error(`No story file for ${epic}.${story} — shard it first.`);
       const storyMarkdown = await invoke<string>("read_file", { path: storyPath });
 
+      // Inject the shared Context Store (architecture + .cadre/context) so every
+      // parallel agent builds against the same interfaces and decisions.
+      const alwaysFiles = opts?.context ?? (await loadSharedContext(root));
       const prompt = composeDispatchPrompt({
         systemPrompt: DEV_SYSTEM_PROMPT,
         storyMarkdown,
-        alwaysFiles: [],
+        alwaysFiles,
       });
 
       // Resolve the model + per-agent env for the selected fleet provider. The
@@ -327,13 +363,13 @@ export const useCadre = create<CadreState>((set, get) => ({
         model,
         env,
       });
-      set({ busy: null });
+      if (!silent) set({ busy: null });
       toast(
         `Story ${epic}.${story}: ${res.status}`,
         res.status === "Done" ? "success" : "error"
       );
     } catch (e) {
-      set({ error: String(e), busy: null });
+      set((s) => ({ error: String(e), busy: silent ? s.busy : null }));
       toast(`Dispatch failed for ${epic}.${story}`, "error");
     } finally {
       // No longer running this session — an InProgress/InReview status left on the
@@ -343,6 +379,55 @@ export const useCadre = create<CadreState>((set, get) => ({
         delete active[key];
         return { active };
       });
+    }
+  },
+
+  dispatchReady: async () => {
+    try {
+      const root = requireRoot();
+      // Ready = not yet building/done: Draft (sharded) / Approved / Failed (retry).
+      const ready = useBmadStore
+        .getState()
+        .stories.filter((c) => c.status === "Draft" || c.status === "Approved" || c.status === "Failed");
+      if (ready.length === 0) {
+        toast("No ready stories to dispatch", "info");
+        return;
+      }
+
+      // Read each story's declared files to schedule file-disjoint parallel batches.
+      const scheduled = await Promise.all(
+        ready.map(async (c) => {
+          const p = await findStoryPath(root, c.epic, c.story);
+          const md = p ? await invoke<string>("read_file", { path: p }).catch(() => "") : "";
+          return { id: c.id, files: parseStoryFiles(md) };
+        })
+      );
+      const batches = scheduleParallel(scheduled, 4);
+      const byId = new Map(ready.map((c) => [c.id, c]));
+
+      // Load the shared Context Store once and reuse it for every agent.
+      const context = await loadSharedContext(root);
+
+      let done = 0;
+      for (let b = 0; b < batches.length; b++) {
+        const batch = batches[b];
+        set({
+          busy: `Building ${batch.length} stor${batch.length === 1 ? "y" : "ies"} in parallel — batch ${b + 1}/${batches.length}…`,
+          error: null,
+        });
+        await Promise.all(
+          batch.map((id) => {
+            const c = byId.get(id)!;
+            return get().dispatchStory(c.epic, c.story, { silent: true, context });
+          })
+        );
+        done += batch.length;
+      }
+      set({ busy: null });
+      toast(`Dispatched ${done} stor${done === 1 ? "y" : "ies"} across ${batches.length} batch${batches.length === 1 ? "" : "es"}`, "success");
+    } catch (e) {
+      set({ error: String(e), busy: null });
+      toast("Parallel dispatch failed", "error");
     }
   },
 

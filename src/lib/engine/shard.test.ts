@@ -59,6 +59,7 @@ const sampleContent: StoryContent = {
   ],
   tasks: ["Build the login form", "Wire up the auth API"],
   devNotes: "Use the existing AuthService in src/lib/auth.",
+  files: ["src/components/Login.tsx", "src/lib/auth.ts"],
 };
 
 describe("composeStoryFile", () => {

@@ -54,6 +54,18 @@ export interface StoryContent {
   acceptanceCriteria: string[];
   tasks: string[];
   devNotes: string;
+  /** repo-relative files this story is expected to touch (parallel scheduling). */
+  files: string[];
+}
+
+/** Parse the "## Files" section of a story markdown back into a list of paths. */
+export function parseStoryFiles(markdown: string): string[] {
+  const m = markdown.match(/^##\s*Files[^\n]*\n([\s\S]*?)(?=\n##\s|\n#\s|$)/m);
+  if (!m) return [];
+  return m[1]
+    .split("\n")
+    .map((l) => l.replace(/^\s*[-*]\s*/, "").replace(/`/g, "").trim())
+    .filter((l) => l.length > 0 && !/^_none/i.test(l));
 }
 
 /**
@@ -62,7 +74,7 @@ export interface StoryContent {
  * Tasks / Subtasks, Dev Notes, then empty Dev Agent Record + QA Results.
  */
 export function composeStoryFile(input: StoryContent): string {
-  const { epic, story, title, userStory, acceptanceCriteria, tasks, devNotes } =
+  const { epic, story, title, userStory, acceptanceCriteria, tasks, devNotes, files } =
     input;
   const parts: string[] = [];
 
@@ -93,6 +105,14 @@ export function composeStoryFile(input: StoryContent): string {
   parts.push("## Dev Notes");
   parts.push("");
   parts.push(devNotes);
+  parts.push("");
+  parts.push("## Files");
+  parts.push("");
+  if (files && files.length > 0) {
+    for (const f of files) parts.push(`- \`${f}\``);
+  } else {
+    parts.push("_none declared_");
+  }
   parts.push("");
   parts.push("## Dev Agent Record");
   parts.push("");
