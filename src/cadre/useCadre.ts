@@ -191,9 +191,11 @@ async function detectProjectVerify(root: string): Promise<string> {
  * parallel agents build against the same contract instead of diverging.
  */
 async function loadSharedContext(root: string): Promise<AlwaysFile[]> {
+  // Only the (small, incremental) Context Store is inlined into every agent — the
+  // relevant architecture already lives in each story's dev notes. Inlining the
+  // whole architecture.md here bloated the `claude -p "<prompt>"` argv and could
+  // fail the spawn outright.
   const files: AlwaysFile[] = [];
-  const arch = await invoke<string>("read_file", { path: `${root}/docs/architecture.md` }).catch(() => "");
-  if (arch.trim()) files.push({ path: "docs/architecture.md", content: arch });
   try {
     const entries = await invoke<DirEntry[]>("list_directory", { path: `${root}/.cadre/context` });
     for (const e of entries) {
@@ -202,7 +204,7 @@ async function loadSharedContext(root: string): Promise<AlwaysFile[]> {
       if (c.trim()) files.push({ path: `.cadre/context/${e.name}`, content: c });
     }
   } catch {
-    /* no Context Store yet — architecture alone is the shared contract */
+    /* no Context Store yet */
   }
   return files;
 }
@@ -417,6 +419,7 @@ export const useCadre = create<CadreState>((set, get) => ({
         toast(`Story ${epic}.${story}: ${res.status}`, "error");
       }
     } catch (e) {
+      onOutput(`\n[cadre] dispatch error: ${String(e)}\n`);
       set((s) => ({ error: String(e), busy: silent ? s.busy : null }));
       toast(`Dispatch failed for ${epic}.${story}`, "error");
     } finally {
