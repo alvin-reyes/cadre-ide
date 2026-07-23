@@ -51,20 +51,20 @@ export const CREATE_STORY_TOOL = {
 export const CREATE_BACKLOG_TOOL = {
   name: "create_backlog",
   description:
-    "Emit the COMPLETE backlog of stories to ship this plan through the full software-engineering lifecycle: project setup/scaffolding, each feature, automated tests, integration, CI/CD, deployment, observability/monitoring, documentation, and ongoing support/operations. Not just features — cover every phase. Each story must be fully specified (a Dev agent works only from it) and file-disjoint where possible for parallel builds.",
+    "Emit the COMPLETE backlog of stories to ship AND operate this plan. Cover every LAYER — frontend/UI, backend/API, and database (schema + migrations) — and every PHASE — project setup/scaffolding, DevOps (CI/CD, infrastructure, deployment), automated tests, integration, observability/monitoring, documentation, and ongoing support/operations. A backlog that is only backend, or is missing the frontend, database, or deployment, is INCOMPLETE and wrong. Each story must be fully specified (a Dev agent works only from it) and file-disjoint where possible for parallel builds.",
   input_schema: {
     type: "object",
     properties: {
       stories: {
         type: "array",
-        description: "Every story needed to deliver and operate this plan, in build order.",
+        description: "Every story needed to build and operate this plan across all layers and phases, in build order.",
         items: {
           type: "object",
           properties: {
             phase: {
               type: "string",
-              enum: ["setup", "feature", "test", "integration", "deploy", "monitoring", "docs", "support"],
-              description: "Which lifecycle phase this story belongs to.",
+              enum: ["setup", "frontend", "backend", "database", "devops", "test", "integration", "deploy", "monitoring", "docs", "support"],
+              description: "Which layer/phase this story belongs to.",
             },
             ...CREATE_STORY_TOOL.input_schema.properties,
           },
