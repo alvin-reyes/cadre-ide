@@ -34,7 +34,8 @@ describe("brownfield: document-project runs as agent loops, twice", () => {
     expect(res.passes).toBe(2);
     expect(spawns).toHaveLength(2);
     for (const s of spawns) {
-      expect(s.args[0]).toBe("-p");
+      expect(s.args).toContain("-p");
+      expect(s.args[0]).toBe("--dangerously-skip-permissions");
       expect(s.cwd).toBe("/proj");
     }
     expect(res.path).toBe(BROWNFIELD_DOC_PATH);

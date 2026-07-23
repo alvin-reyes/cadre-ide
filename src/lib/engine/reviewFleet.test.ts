@@ -46,7 +46,8 @@ describe("review fleet: reviewers are dispatched agent loops", () => {
 
     expect(spawns).toHaveLength(3);
     for (const s of spawns) {
-      expect(s.args[0]).toBe("-p");
+      expect(s.args).toContain("-p");
+      expect(s.args[0]).toBe("--dangerously-skip-permissions");
       expect(s.cwd).toBe("/proj/.cadre/worktrees/1.2");
     }
   });

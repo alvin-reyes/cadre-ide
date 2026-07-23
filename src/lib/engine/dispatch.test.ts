@@ -86,7 +86,7 @@ describe("dispatchStory", () => {
     ]);
     expect(calls.spawn).toHaveLength(1);
     expect(calls.spawn[0].command).toBe("claude");
-    expect(calls.spawn[0].args).toEqual(["-p", "--dangerously-skip-permissions", "PROMPT"]);
+    expect(calls.spawn[0].args).toEqual(["--dangerously-skip-permissions", "-p", "PROMPT"]);
     expect(calls.spawn[0].cwd).toBe("/proj/.cadre/worktrees/1.2");
 
     expect(result).toEqual({
@@ -128,7 +128,7 @@ describe("dispatchStory", () => {
       model: "kimi-k2",
       env: { ANTHROPIC_BASE_URL: "https://api.moonshot.ai/anthropic" },
     });
-    expect(calls.spawn[0].args).toEqual(["-p", "--dangerously-skip-permissions", "P", "--model", "kimi-k2"]);
+    expect(calls.spawn[0].args).toEqual(["--dangerously-skip-permissions", "-p", "P", "--model", "kimi-k2"]);
     expect(calls.spawn[0].env).toEqual({
       ANTHROPIC_BASE_URL: "https://api.moonshot.ai/anthropic",
     });

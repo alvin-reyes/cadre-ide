@@ -92,8 +92,8 @@ export async function reviewStory(
       const ptyId = await deps.spawnAgent({
         command: "claude",
         args: input.model
-          ? ["-p", "--dangerously-skip-permissions", composeReviewPrompt(lens, marker), "--model", input.model]
-          : ["-p", "--dangerously-skip-permissions", composeReviewPrompt(lens, marker)],
+          ? ["--dangerously-skip-permissions", "-p", composeReviewPrompt(lens, marker), "--model", input.model]
+          : ["--dangerously-skip-permissions", "-p", composeReviewPrompt(lens, marker)],
         cwd: worktree,
         env: input.env,
       });

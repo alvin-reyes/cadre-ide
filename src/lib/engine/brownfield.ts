@@ -62,8 +62,8 @@ export async function documentProject(
     const prior = pass > 1 ? await deps.readFile(outAbs).catch(() => "") : "";
     const prompt = composeDocumentPrompt({ outPath: BROWNFIELD_DOC_PATH, pass, passes, prior });
     const args = input.model
-      ? ["-p", "--dangerously-skip-permissions", prompt, "--model", input.model]
-      : ["-p", "--dangerously-skip-permissions", prompt];
+      ? ["--dangerously-skip-permissions", "-p", prompt, "--model", input.model]
+      : ["--dangerously-skip-permissions", "-p", prompt];
     const ptyId = await deps.spawnAgent({ command: "claude", args, cwd: input.root, env: input.env });
     await deps.waitForExit(ptyId);
   }

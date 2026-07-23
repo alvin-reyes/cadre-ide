@@ -116,8 +116,9 @@ export async function dispatchStory(
 
   // --dangerously-skip-permissions lets the headless agent actually use its tools
   // (edit files, run the build) without interactive permission prompts — without it
-  // the agent can't modify code and the story always fails.
-  const args = ["-p", "--dangerously-skip-permissions", input.prompt];
+  // the agent can't modify code and the story always fails. Flag first so it can't
+  // be read as the value of -p.
+  const args = ["--dangerously-skip-permissions", "-p", input.prompt];
   if (input.model) {
     args.push("--model", input.model);
   }
