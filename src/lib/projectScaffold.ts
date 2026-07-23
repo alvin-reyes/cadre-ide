@@ -33,6 +33,9 @@ story is Done.**
 - \`docs/stories/\` — sharded stories, one file per story (the unit of work).
 - \`.cadre/\` — engine-owned state (status, worktrees, markers). **Never edit by hand.**
 - \`.cadre/agents/\` — the BMAD agent role prompts.
+- \`.cadre/context/\` — the **Context Store**: shared interfaces, types, and decisions
+  that parallel/later stories must agree on. Read it before inventing a contract; add
+  a small Markdown file when you establish one.
 
 ## Discipline
 - Small, vertically-sliced, independently testable changes.
@@ -112,7 +115,8 @@ const AGENTS: { file: string; title: string; body: string }[] = [
 
 - Work **test-first**: write the failing test, then the minimal code to pass it. Follow the project's standards.
 - Implement only the story. No scope creep.
-- **Do NOT mark the story done** — Cadre runs the frozen verification command and decides. When finished, stop.`,
+- **Do NOT mark the story done** — Cadre runs the frozen verification command and decides. When finished, stop.
+- **Shared context**: other stories build in parallel. If you establish a shared interface, type, contract, or decision, record it in \`.cadre/context/<name>.md\` (and read what's already there first) so everyone stays consistent.`,
   },
   {
     file: "qa.md",

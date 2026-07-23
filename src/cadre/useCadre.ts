@@ -16,6 +16,7 @@ import { composeDispatchPrompt, type AlwaysFile } from "../lib/engine/dispatch";
 import { nextStoryNumber, parseStoryFiles } from "../lib/engine/shard";
 import { scheduleParallel } from "../lib/engine/schedule";
 import { detectVerifyCommand } from "../lib/engine/detectVerify";
+import { integrateStory } from "../lib/engine/integrate";
 import { getProvider, resolveAgentEnv } from "../lib/engine/providers";
 import { secretGet } from "../lib/secrets";
 import type { Status } from "../lib/engine/status";
@@ -62,7 +63,9 @@ Prefer a small, vertically-sliced, independently testable story. Populate every 
 
 Declare the exact repo-relative \`files\` this story will create or modify, and keep stories FILE-DISJOINT from one another — Cadre runs file-disjoint stories as parallel agents, and any file two stories share forces them to run sequentially. Slice the work so parallel stories don't touch the same files.`;
 
-const DEV_SYSTEM_PROMPT = `You are the Dev agent. Implement the assigned story test-first: write the failing test, then the minimal code to make it pass. Follow the project's standards. Do NOT mark the story done — Cadre runs the verification command and decides.`;
+const DEV_SYSTEM_PROMPT = `You are the Dev agent. Implement the assigned story test-first: write the failing test, then the minimal code to make it pass. Follow the project's standards. Do NOT mark the story done — Cadre runs the verification command and decides.
+
+SHARED CONTEXT: other stories build in parallel with you. If you create or change something other stories must agree on — a shared interface, type, API contract, config key, or an important decision — record it in a short Markdown file under \`.cadre/context/\` (e.g. \`.cadre/context/auth-api.md\`). Keep those files small and factual. Before inventing a shared contract, check what's already in \`.cadre/context/\` and reuse it. This is how parallel and later agents stay consistent.`;
 
 interface DirEntry {
   name: string;
@@ -202,6 +205,15 @@ async function loadSharedContext(root: string): Promise<AlwaysFile[]> {
     /* no Context Store yet — architecture alone is the shared contract */
   }
   return files;
+}
+
+// Merges into main mutate the shared root worktree, so they must run one at a
+// time even when many stories finish in parallel. This chains them.
+let mergeChain: Promise<unknown> = Promise.resolve();
+function withMergeLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = mergeChain.then(fn, fn);
+  mergeChain = run.catch(() => {});
+  return run;
 }
 
 function requireRoot(): string {
@@ -387,10 +399,23 @@ export const useCadre = create<CadreState>((set, get) => ({
         env,
       });
       if (!silent) set({ busy: null });
-      toast(
-        `Story ${epic}.${story}: ${res.status}`,
-        res.status === "Done" ? "success" : "error"
-      );
+      if (res.status === "Done") {
+        // Merge the verified worktree back into main — serialized so parallel
+        // stories integrate safely. On conflict, mark Blocked for the human (A).
+        const integ = await withMergeLock(() =>
+          integrateStory({ runGit: deps.runGit }, { root, epic, story })
+        );
+        if (integ.conflict) {
+          await useBmadStore.getState().setStatus(epic, story, "Blocked");
+          onOutput(`\n[cadre] merge conflict integrating ${epic}.${story} — Blocked for manual integration\n`);
+          toast(`Story ${epic}.${story}: merge conflict — Blocked for you to integrate`, "error");
+        } else {
+          onOutput(`\n[cadre] integrated story ${epic}.${story} into main\n`);
+          toast(`Story ${epic}.${story}: Done & integrated`, "success");
+        }
+      } else {
+        toast(`Story ${epic}.${story}: ${res.status}`, "error");
+      }
     } catch (e) {
       set((s) => ({ error: String(e), busy: silent ? s.busy : null }));
       toast(`Dispatch failed for ${epic}.${story}`, "error");
