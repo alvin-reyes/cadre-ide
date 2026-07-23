@@ -588,8 +588,10 @@ export const useCadre = create<CadreState>((set, get) => {
 
       // Route engine status writes through bmadStore so the board updates
       // optimistically (its own-write echo is then suppressed by the watcher).
+      // Pass the captured root so background dispatches write to the correct
+      // project slice, never the foreground project (which may have changed).
       const setStatus = (e: number, s: number, status: Status) =>
-        useBmadStore.getState().setStatus(e, s, status);
+        useBmadStore.getState().setStatus(e, s, status, root);
       const deps = { ...tauriOrchestratorDeps(root, onOutput), setStatus };
 
       const res = await runApprovedStory(deps, {
@@ -620,7 +622,7 @@ export const useCadre = create<CadreState>((set, get) => {
           await get().reviewStory(epic, story, root);
           const reviews = get().projects[root]?.codeReviews?.[key]?.reviews ?? [];
           if (aggregateReviews(reviews).verdict === "block") {
-            await useBmadStore.getState().setStatus(epic, story, "Blocked");
+            await useBmadStore.getState().setStatus(epic, story, "Blocked", root);
             onOutput(`\n[cadre] code review BLOCKED ${epic}.${story} — not integrated; resolve the findings\n`);
             toast(`Story ${epic}.${story}: review blocked — not merged`, "error");
             await logSession(root, `story ${named} BLOCKED by code review — not integrated`);
@@ -633,7 +635,7 @@ export const useCadre = create<CadreState>((set, get) => {
           integrateStory({ runGit: deps.runGit }, { root, epic, story })
         );
         if (integ.conflict) {
-          await useBmadStore.getState().setStatus(epic, story, "Blocked");
+          await useBmadStore.getState().setStatus(epic, story, "Blocked", root);
           onOutput(`\n[cadre] merge conflict integrating ${epic}.${story} — Blocked for manual integration\n`);
           toast(`Story ${epic}.${story}: merge conflict — Blocked for you to integrate`, "error");
           await logSession(root, `story ${named} hit a merge conflict — Blocked for manual integration`);

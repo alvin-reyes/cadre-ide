@@ -65,7 +65,7 @@ interface BmadState {
    * write is then suppressed by `is_own_write`, leaving the watcher to surface
    * only external changes. The engine's setStatus dep should route through here.
    */
-  setStatus: (epic: number, story: number, status: Status) => Promise<void>;
+  setStatus: (epic: number, story: number, status: Status, root?: string) => Promise<void>;
   setActiveProject: (root: string) => void;
   closeProject: (root: string) => void;
 }
@@ -132,20 +132,19 @@ export const useBmadStore = create<BmadState>((set, get) => {
       syncMirror();
     },
 
-    setStatus: async (epic: number, story: number, status: Status) => {
-      const activeRoot = get().activeRoot;
-      if (!activeRoot) return;
-      const currentSlice = get().projects[activeRoot];
-      if (!currentSlice) return;
+    setStatus: async (epic: number, story: number, status: Status, root: string | undefined | null = get().activeRoot) => {
+      if (!root) return;
+      const slice = get().projects[root];
+      if (!slice) return;
       // Optimistic board update, then the engine writes the authoritative file.
-      const prev = currentSlice.board;
-      pushRoot(activeRoot, applyStatus(prev, epic, story, status));
+      const prev = slice.board;
+      pushRoot(root, applyStatus(prev, epic, story, status));
       try {
-        await invoke("story_set_status", { root: activeRoot, epic, story, status });
+        await invoke("story_set_status", { root, epic, story, status });
       } catch (e) {
         // Rejected (e.g. an illegal edge): roll back so the board doesn't drift
         // ahead of the on-disk state that never changed.
-        pushRoot(activeRoot, prev);
+        pushRoot(root, prev);
         throw e;
       }
     },
