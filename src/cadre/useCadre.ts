@@ -25,6 +25,12 @@ import { getProvider, resolveAgentEnv, type Provider } from "../lib/engine/provi
 import { secretGet } from "../lib/secrets";
 import type { Status } from "../lib/engine/status";
 import type { PlanApproval } from "../lib/engine/planApproval";
+import {
+  emptyCadreSlice,
+  mirrorCadre,
+  updateSlice,
+  type CadreSlice,
+} from "../lib/engine/projectSlices";
 
 /**
  * useCadre: the app-level orchestration seam. It holds the plan the Planning
@@ -94,6 +100,12 @@ const BRIEF_PATH = "docs/brief.md";
 const TECHDOCS_PATH = "docs/documentation.md";
 
 interface CadreState {
+  // --- per-project map (Task 5) ---
+  /** every open project's fleet state, keyed by root */
+  projects: Record<string, CadreSlice>;
+  /** the foreground project; the top-level fields below mirror projects[activeRoot] */
+  activeRoot: string | null;
+  // --- mirror fields (derived from projects[activeRoot]) ---
   phase: Phase;
   /** the planning artifacts, as they form in the Planning Studio */
   prd: string;
@@ -143,6 +155,8 @@ interface CadreState {
   setPoValidation: (md: string) => void;
   setFleetProvider: (id: string) => void;
   clearError: () => void;
+  /** Switch the foreground project; re-derives the mirror from that project's slice. */
+  setActiveProject: (root: string) => void;
 
   /** Freeze the verification command, write the plan to disk, unlock the fleet. */
   approvePlan: (verification: string[]) => Promise<void>;
@@ -299,7 +313,26 @@ function requireKey(): string {
   return key;
 }
 
-export const useCadre = create<CadreState>((set, get) => ({
+export const useCadre = create<CadreState>((set, get) => {
+  // Re-derive the active mirror from the projects map. Call after every slice change.
+  function syncCadreMirror() {
+    set((s) => mirrorCadre(s.projects, s.activeRoot));
+  }
+
+  // Apply a patch to a SPECIFIC root's slice, then mirror if that root is active.
+  // Long-running actions MUST pass the root they captured at the top (requireRoot),
+  // NOT get().activeRoot — the user may switch projects mid-dispatch, and a
+  // background write to "active" would corrupt the foreground project's slice.
+  function patchRoot(root: string, patch: Partial<CadreSlice>) {
+    set((s) => ({ projects: updateSlice(s.projects, root, patch, emptyCadreSlice) }));
+    if (get().activeRoot === root) syncCadreMirror();
+  }
+
+  return {
+  // --- per-project map ---
+  projects: {},
+  activeRoot: null,
+  // --- mirror (initial = empty slice defaults) ---
   phase: "PLAN",
   prd: "",
   architecture: "",
@@ -316,20 +349,53 @@ export const useCadre = create<CadreState>((set, get) => ({
   logs: {},
   codeReviews: {},
   active: {},
+  // --- global (not per-project) ---
   fleetProvider: "claude",
   busy: null,
   error: null,
 
-  setPhase: (phase) => set({ phase }),
+  setActiveProject: (root) => {
+    // Seed an empty slice on first activation so the mirror is stable.
+    set((s) => ({
+      projects: s.projects[root] ? s.projects : { ...s.projects, [root]: emptyCadreSlice() },
+      activeRoot: root,
+    }));
+    syncCadreMirror();
+  },
+
+  setPhase: (phase) => {
+    const root = get().activeRoot;
+    if (root) patchRoot(root, { phase });
+  },
   // Editing a plan artifact after approval marks the plan as needing re-approval.
-  setPrd: (prd) => set((s) => ({ prd, needsReplan: s.verification.length > 0 ? true : s.needsReplan })),
-  setArchitecture: (architecture) =>
-    set((s) => ({ architecture, needsReplan: s.verification.length > 0 ? true : s.needsReplan })),
-  setUxSpec: (uxSpec) => set((s) => ({ uxSpec, needsReplan: s.verification.length > 0 ? true : s.needsReplan })),
-  setAnalystBrief: (analystBrief) => set({ analystBrief }),
-  setTechDocs: (techDocs) => set({ techDocs }),
-  setMockupHtml: (mockupHtml) => set({ mockupHtml }),
-  setPoValidation: (poValidation) => set({ poValidation }),
+  setPrd: (prd) => {
+    const root = get().activeRoot;
+    if (root) patchRoot(root, { prd, needsReplan: get().verification.length > 0 ? true : get().needsReplan });
+  },
+  setArchitecture: (architecture) => {
+    const root = get().activeRoot;
+    if (root) patchRoot(root, { architecture, needsReplan: get().verification.length > 0 ? true : get().needsReplan });
+  },
+  setUxSpec: (uxSpec) => {
+    const root = get().activeRoot;
+    if (root) patchRoot(root, { uxSpec, needsReplan: get().verification.length > 0 ? true : get().needsReplan });
+  },
+  setAnalystBrief: (analystBrief) => {
+    const root = get().activeRoot;
+    if (root) patchRoot(root, { analystBrief });
+  },
+  setTechDocs: (techDocs) => {
+    const root = get().activeRoot;
+    if (root) patchRoot(root, { techDocs });
+  },
+  setMockupHtml: (mockupHtml) => {
+    const root = get().activeRoot;
+    if (root) patchRoot(root, { mockupHtml });
+  },
+  setPoValidation: (poValidation) => {
+    const root = get().activeRoot;
+    if (root) patchRoot(root, { poValidation });
+  },
   setFleetProvider: (fleetProvider) => set({ fleetProvider }),
   clearError: () => set({ error: null }),
 
@@ -369,7 +435,8 @@ export const useCadre = create<CadreState>((set, get) => ({
       await invoke("approve_plan", { root, verification: cmds });
       // Land on SHARD — the next step is breaking the plan into stories (the board
       // is empty until the SM shards), not the (empty) execution board.
-      set({ verification: cmds, phase: "SHARD", busy: null, needsReplan: false });
+      patchRoot(root, { verification: cmds, phase: "SHARD", needsReplan: false });
+      set({ busy: null });
       toast("Plan signed off — shard it into stories", "success");
       await logSession(root, `plan approved (PRD + architecture) — verified by: ${cmds.join(", ")}`);
     } catch (e) {
@@ -447,26 +514,34 @@ export const useCadre = create<CadreState>((set, get) => ({
   dispatchStory: async (epic, story, opts) => {
     const key = `${epic}.${story}`;
     const silent = opts?.silent ?? false;
+    // Capture the target project ONCE at the top. Every per-project write in this
+    // action (logs, active, codeReviews) targets THIS root — never get().activeRoot
+    // — so a background dispatch never corrupts whatever project is in the foreground.
+    let root: string;
+    try {
+      root = requireRoot();
+    } catch (e) {
+      set({ error: String(e), busy: silent ? get().busy : null });
+      toast(`Dispatch failed for ${epic}.${story}`, "error");
+      return;
+    }
     // Fresh log for this run; the sink appends streamed output (capped). Mark the
     // story active so the UI shows it as genuinely running (vs. an orphaned one).
     // In parallel mode (silent) the caller owns the `busy` banner.
-    set((s) => ({
-      busy: silent ? s.busy : `Dispatching story ${epic}.${story}…`,
-      error: null,
-      logs: { ...s.logs, [key]: "" },
-      active: { ...s.active, [key]: true },
-    }));
+    if (!silent) set({ busy: `Dispatching story ${epic}.${story}…` });
+    set({ error: null });
+    patchRoot(root, {
+      logs: { ...(get().projects[root]?.logs ?? {}), [key]: "" },
+      active: { ...(get().projects[root]?.active ?? {}), [key]: true },
+    });
     const onOutput = (chunk: string) => {
       aiLog(`story ${key}`, chunk);
-      set((s) => {
-        const next = (s.logs[key] ?? "") + chunk;
-        const capped = next.length > 200_000 ? next.slice(next.length - 200_000) : next;
-        return { logs: { ...s.logs, [key]: capped } };
-      });
+      const prev = get().projects[root]?.logs?.[key] ?? "";
+      const next = prev + chunk;
+      const capped = next.length > 200_000 ? next.slice(next.length - 200_000) : next;
+      patchRoot(root, { logs: { ...(get().projects[root]?.logs ?? {}), [key]: capped } });
     };
     try {
-      const root = requireRoot();
-
       // Find the story file (docs/stories/{epic}.{story}.{slug}.md) and read it.
       const storyPath = await findStoryPath(root, epic, story);
       if (!storyPath) throw new Error(`No story file for ${epic}.${story} — shard it first.`);
@@ -543,7 +618,7 @@ export const useCadre = create<CadreState>((set, get) => ({
         // — the review has real authority, not just an advisory badge. Toggleable.
         if (useSettingsStore.getState().gateOnReview) {
           await get().reviewStory(epic, story);
-          const reviews = get().codeReviews[key]?.reviews ?? [];
+          const reviews = get().projects[root]?.codeReviews?.[key]?.reviews ?? [];
           if (aggregateReviews(reviews).verdict === "block") {
             await useBmadStore.getState().setStatus(epic, story, "Blocked");
             onOutput(`\n[cadre] code review BLOCKED ${epic}.${story} — not integrated; resolve the findings\n`);
@@ -577,12 +652,10 @@ export const useCadre = create<CadreState>((set, get) => ({
       toast(`Dispatch failed for ${epic}.${story}`, "error");
     } finally {
       // No longer running this session — an InProgress/InReview status left on the
-      // board now reads as interrupted (see isInterrupted).
-      set((s) => {
-        const active = { ...s.active };
-        delete active[key];
-        return { active };
-      });
+      // board now reads as interrupted (see isInterrupted). Target the CAPTURED root.
+      const active = { ...(get().projects[root]?.active ?? {}) };
+      delete active[key];
+      patchRoot(root, { active });
     }
   },
 
@@ -648,17 +721,27 @@ export const useCadre = create<CadreState>((set, get) => ({
 
   reviewStory: async (epic, story) => {
     const key = `${epic}.${story}`;
-    set((s) => ({ codeReviews: { ...s.codeReviews, [key]: { status: "reviewing" } }, error: null }));
+    // Capture the target project once; every per-project write targets THIS root.
+    let root: string;
+    try {
+      root = requireRoot();
+    } catch (e) {
+      set({ error: String(e) });
+      toast(`Review failed for ${key}`, "error");
+      return;
+    }
+    set({ error: null });
+    patchRoot(root, {
+      codeReviews: { ...(get().projects[root]?.codeReviews ?? {}), [key]: { status: "reviewing" } },
+    });
     const onOutput = (chunk: string) => {
       aiLog(`review ${key}`, chunk);
-      set((s) => {
-        const next = (s.logs[key] ?? "") + chunk;
-        const capped = next.length > 200_000 ? next.slice(next.length - 200_000) : next;
-        return { logs: { ...s.logs, [key]: capped } };
-      });
+      const prev = get().projects[root]?.logs?.[key] ?? "";
+      const next = prev + chunk;
+      const capped = next.length > 200_000 ? next.slice(next.length - 200_000) : next;
+      patchRoot(root, { logs: { ...(get().projects[root]?.logs ?? {}), [key]: capped } });
     };
     try {
-      const root = requireRoot();
       // Same provider routing as dispatch — reviewers are agents on the fleet.
       const provider = getProvider(get().fleetProvider);
       const { env, model } = await resolveFleetAuth(provider);
@@ -674,29 +757,41 @@ export const useCadre = create<CadreState>((set, get) => ({
       });
       const agg = aggregateReviews(reviews);
       onOutput(`[cadre] review fleet ${agg.verdict === "block" ? "BLOCKED" : "accepted"} (${agg.findingCount} findings)\n`);
-      set((s) => ({ codeReviews: { ...s.codeReviews, [key]: { status: "done", reviews } } }));
+      patchRoot(root, {
+        codeReviews: { ...(get().projects[root]?.codeReviews ?? {}), [key]: { status: "done", reviews } },
+      });
       toast(
         `Review ${key}: ${agg.verdict === "block" ? `blocked (${agg.findingCount})` : "accepted"}`,
         agg.verdict === "block" ? "error" : "success"
       );
     } catch (e) {
-      set((s) => ({ codeReviews: { ...s.codeReviews, [key]: { status: "done", reviews: [] } }, error: String(e) }));
+      patchRoot(root, {
+        codeReviews: { ...(get().projects[root]?.codeReviews ?? {}), [key]: { status: "done", reviews: [] } },
+      });
+      set({ error: String(e) });
       toast(`Review failed for ${key}`, "error");
     }
   },
 
   documentProject: async () => {
+    // Capture the target project once; every per-project write targets THIS root.
+    let root: string;
+    try {
+      root = requireRoot();
+    } catch (e) {
+      set({ error: String(e) });
+      toast("Project analysis failed", "error");
+      return;
+    }
     set({ busy: "Analyzing the existing project (2 passes)…", error: null });
     const onOutput = (chunk: string) => {
       aiLog("analysis", chunk);
-      set((s) => {
-        const next = (s.logs["brownfield"] ?? "") + chunk;
-        const capped = next.length > 200_000 ? next.slice(next.length - 200_000) : next;
-        return { logs: { ...s.logs, brownfield: capped } };
-      });
+      const prev = get().projects[root]?.logs?.["brownfield"] ?? "";
+      const next = prev + chunk;
+      const capped = next.length > 200_000 ? next.slice(next.length - 200_000) : next;
+      patchRoot(root, { logs: { ...(get().projects[root]?.logs ?? {}), brownfield: capped } });
     };
     try {
-      const root = requireRoot();
       const provider = getProvider(get().fleetProvider);
       const { env, model } = await resolveFleetAuth(provider);
 
@@ -712,7 +807,8 @@ export const useCadre = create<CadreState>((set, get) => ({
         (await invoke<string>("read_file", { path: `${root}/${BROWNFIELD_DOC_PATH}` }).catch(() => ""));
       // Auto-detect the project's real test command to pre-fill sign-off later.
       const detectedVerify = await detectProjectVerify(root).catch(() => "");
-      set({ projectContext: content, isBrownfield: false, detectedVerify, busy: null });
+      patchRoot(root, { projectContext: content, isBrownfield: false, detectedVerify });
+      set({ busy: null });
       toast("Project analyzed — the PM now has context", "success");
     } catch (e) {
       set({ error: String(e), busy: null });
@@ -753,10 +849,10 @@ export const useCadre = create<CadreState>((set, get) => ({
           },
         ],
       });
-      if (arch.document) set({ architecture: arch.document });
+      if (arch.document) patchRoot(root, { architecture: arch.document });
 
       // 2. If a UX spec exists, the Designer updates the spec + mockup.
-      if (get().uxSpec.trim()) {
+      if (get().projects[root]?.uxSpec.trim()) {
         set({ busy: "Updating the UX…" });
         const ux = await planningTurn({
           apiKey,
@@ -771,13 +867,14 @@ export const useCadre = create<CadreState>((set, get) => ({
           ],
           allowMockup: true,
         });
-        if (ux.document) set({ uxSpec: ux.document });
-        if (ux.mockup) set({ mockupHtml: ux.mockup });
+        if (ux.document) patchRoot(root, { uxSpec: ux.document });
+        if (ux.mockup) patchRoot(root, { mockupHtml: ux.mockup });
       }
 
       // 3. Persist the refreshed plan to disk.
       set({ busy: "Writing the updated plan…" });
-      const { architecture, uxSpec, mockupHtml } = get();
+      const slice = get().projects[root] ?? emptyCadreSlice();
+      const { architecture, uxSpec, mockupHtml } = slice;
       await invoke("write_text_file", { path: `${root}/${PRD_PATH}`, content: prd });
       await invoke("write_text_file", { path: `${root}/${ARCH_PATH}`, content: architecture });
       if (uxSpec.trim()) await invoke("write_text_file", { path: `${root}/${UX_PATH}`, content: uxSpec });
@@ -831,24 +928,27 @@ export const useCadre = create<CadreState>((set, get) => ({
       }
     }
 
-    set((s) => ({
-      prd: prd || s.prd,
-      architecture: architecture || s.architecture,
-      analystBrief: analystBrief || s.analystBrief,
-      techDocs: techDocs || s.techDocs,
-      uxSpec: uxSpec || s.uxSpec,
-      mockupHtml: mockupHtml || s.mockupHtml,
-      poValidation: poValidation || s.poValidation,
-      projectContext: projectContext || s.projectContext,
+    // Write into THIS root's slice, reading prior values from the slice (not the mirror).
+    const prior = get().projects[root] ?? emptyCadreSlice();
+    patchRoot(root, {
+      prd: prd || prior.prd,
+      architecture: architecture || prior.architecture,
+      analystBrief: analystBrief || prior.analystBrief,
+      techDocs: techDocs || prior.techDocs,
+      uxSpec: uxSpec || prior.uxSpec,
+      mockupHtml: mockupHtml || prior.mockupHtml,
+      poValidation: poValidation || prior.poValidation,
+      projectContext: projectContext || prior.projectContext,
       isBrownfield,
-      verification: approval?.verification ?? s.verification,
+      verification: approval?.verification ?? prior.verification,
       // Approved on reload: go to FLEET if stories already exist (mid-execution),
       // else SHARD (break the plan down) — matching approvePlan's landing.
       phase: approved
         ? useBmadStore.getState().stories.length > 0
           ? "FLEET"
           : "SHARD"
-        : s.phase,
-    }));
+        : prior.phase,
+    });
   },
-}));
+  };
+});

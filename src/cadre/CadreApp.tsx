@@ -24,6 +24,7 @@ export function CadreApp() {
   const phase = useCadre((s) => s.phase);
   const setPhase = useCadre((s) => s.setPhase);
   const hydrateFromProject = useCadre((s) => s.hydrateFromProject);
+  const setActiveProject = useCadre((s) => s.setActiveProject);
   const hydrateSecrets = useSettingsStore((s) => s.hydrateSecrets);
   const showSettings = useSettingsStore((s) => s.showSettings);
   const setShowSettings = useSettingsStore((s) => s.setShowSettings);
@@ -62,8 +63,13 @@ export function CadreApp() {
   }, [hydrateSecrets]);
 
   useEffect(() => {
-    if (projectRoot) hydrateFromProject();
-  }, [projectRoot, hydrateFromProject]);
+    if (projectRoot) {
+      // Point useCadre's foreground at this project (seeds/mirrors its slice), then
+      // reload the plan into that slice from disk.
+      setActiveProject(projectRoot);
+      hydrateFromProject();
+    }
+  }, [projectRoot, setActiveProject, hydrateFromProject]);
 
   // Terminal shortcuts: Ctrl/Cmd+` toggles the Terminal view; Ctrl/Cmd+T opens it
   // and adds a session (dispatched to the mounted TerminalTabs).
