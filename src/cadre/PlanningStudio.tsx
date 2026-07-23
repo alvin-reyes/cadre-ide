@@ -89,8 +89,8 @@ const PERSONA_IDS: PersonaId[] = ["pm", "analyst", "architect", "design", "techw
 
 const paneHead: CSSProperties = {
   display: "flex",
-  alignItems: "center",
-  gap: "var(--c-space-2)",
+  flexDirection: "column",
+  gap: 5,
   padding: "var(--c-space-2) var(--c-space-4)",
   borderBottom: "1px solid var(--c-border)",
   flexShrink: 0,
@@ -505,6 +505,7 @@ export function PlanningStudio() {
         {/* Conversation */}
         <div style={{ width: `${split}%`, flexShrink: 0, display: "flex", flexDirection: "column", minWidth: 0 }}>
           <div style={paneHead}>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--c-space-2)", flexWrap: "wrap" }}>
             {PERSONA_IDS.map((id) => {
               const P = PERSONAS[id];
               const active = id === persona;
@@ -551,7 +552,9 @@ export function PlanningStudio() {
                 </button>
               );
             })}
-            <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)" }}>{meta.sub}</span>
+            </div>
+            {/* Active role's description, under the role names. */}
+            <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)", paddingLeft: 2 }}>{meta.sub}</span>
           </div>
 
           {!apiKey && (
