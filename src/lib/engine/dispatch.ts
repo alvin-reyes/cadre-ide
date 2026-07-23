@@ -114,7 +114,10 @@ export async function dispatchStory(
   // Isolate the story in its own worktree on a per-story branch.
   await deps.runGit(["worktree", "add", "-b", branch, worktree, "HEAD"], input.root);
 
-  const args = ["-p", input.prompt];
+  // --dangerously-skip-permissions lets the headless agent actually use its tools
+  // (edit files, run the build) without interactive permission prompts — without it
+  // the agent can't modify code and the story always fails.
+  const args = ["-p", "--dangerously-skip-permissions", input.prompt];
   if (input.model) {
     args.push("--model", input.model);
   }
