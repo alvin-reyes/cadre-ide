@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Bot, X, ArrowUp, Plus, ScrollText, Play, PanelRight, Maximize2, Minimize2 } from "lucide-react";
 import { planningTurn, type ChatMessage } from "../lib/planning/planningChat";
 import { ORCHESTRATOR_SYSTEM_PROMPT } from "../lib/planning/personas";
+import { SESSION_LOG_PATH, tailSessionLog } from "../lib/engine/sessionLog";
 import { Markdown } from "./components/Markdown";
 import { useCadre, MODEL } from "./useCadre";
 import { useBmadStore } from "../stores/bmadStore";
@@ -13,7 +15,7 @@ import type { StoryCard } from "../lib/engine/board";
  * with LIVE context of the whole fleet (plan + every story + status) injected into
  * each turn. The CTO chats to steer; quick actions add/dispatch work.
  */
-function buildContext(phase: string, prd: string, architecture: string, stories: StoryCard[]): string {
+function buildContext(phase: string, prd: string, architecture: string, stories: StoryCard[], journal: string): string {
   const lines: string[] = [];
   lines.push(`Current phase: ${phase}`);
   lines.push(`PRD: ${prd.trim() ? "written" : "not written"} · Architecture: ${architecture.trim() ? "written" : "not written"}`);
@@ -22,6 +24,11 @@ function buildContext(phase: string, prd: string, architecture: string, stories:
   } else {
     lines.push(`Stories (${stories.length}):`);
     for (const s of stories) lines.push(`- ${s.id} ${s.title ?? "(untitled)"} [${s.status}]`);
+  }
+  if (journal.trim()) {
+    lines.push("");
+    lines.push("## Session journal (what's been planned, built, shipped)");
+    lines.push(tailSessionLog(journal, 40).trim());
   }
   return lines.join("\n");
 }
@@ -69,7 +76,12 @@ export function OrchestratorChat() {
     setMessages([...base, { role: "assistant", content: "" }]);
     setDraft("");
     setThinking(true);
-    const ctx = buildContext(phase, prd, architecture, stories);
+    // Pull the persisted session journal so the Orchestrator knows what's been built.
+    const root = useBmadStore.getState().projectRoot;
+    const journal = root
+      ? await invoke<string>("read_file", { path: `${root}/${SESSION_LOG_PATH}` }).catch(() => "")
+      : "";
+    const ctx = buildContext(phase, prd, architecture, stories, journal);
     let acc = "";
     const setLast = (content: string) =>
       setMessages((m) => {

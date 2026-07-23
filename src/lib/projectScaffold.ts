@@ -40,6 +40,8 @@ story is Done.**
 - \`.cadre/context/\` — the **Context Store**: shared interfaces, types, and decisions
   that parallel/later stories must agree on. Read it before inventing a contract; add
   a small Markdown file when you establish one.
+- \`.cadre/session.md\` — the **session journal**: an append-only record of what's been
+  planned, built, and shipped. Read it first to know the current state of the project.
 
 ## Discipline
 - Small, vertically-sliced, independently testable changes.

@@ -14,6 +14,7 @@ import { documentProject as documentProjectFleet, BROWNFIELD_DOC_PATH } from "..
 import { CODE_REVIEW_LENSES } from "../lib/planning/review";
 import { tauriOrchestratorDeps, tauriReviewFleetDeps } from "../lib/engine/tauriDeps";
 import { composeDispatchPrompt, type AlwaysFile } from "../lib/engine/dispatch";
+import { appendSessionEntry, SESSION_LOG_PATH } from "../lib/engine/sessionLog";
 import { nextStoryNumber, parseStoryFiles, shardStory } from "../lib/engine/shard";
 import { CREATE_BACKLOG_TOOL, backlogFromTool } from "../lib/planning/storyTool";
 import { scheduleParallel } from "../lib/engine/schedule";
@@ -235,6 +236,10 @@ async function loadSharedContext(root: string): Promise<AlwaysFile[]> {
   // whole architecture.md here bloated the `claude -p "<prompt>"` argv and could
   // fail the spawn outright.
   const files: AlwaysFile[] = [];
+  // The session journal — what's already been planned/built/shipped — so a fresh
+  // subagent knows what's happening across the fleet, not just its own story.
+  const journal = await invoke<string>("read_file", { path: `${root}/${SESSION_LOG_PATH}` }).catch(() => "");
+  if (journal.trim()) files.push({ path: SESSION_LOG_PATH, content: journal });
   try {
     const entries = await invoke<DirEntry[]>("list_directory", { path: `${root}/.cadre/context` });
     for (const e of entries) {
@@ -246,6 +251,28 @@ async function loadSharedContext(root: string): Promise<AlwaysFile[]> {
     /* no Context Store yet */
   }
   return files;
+}
+
+/**
+ * Append one event to the persisted session journal (`.cadre/session.md`). Best-effort:
+ * journaling must never break a dispatch, so failures are swallowed. Also mirrored to
+ * the in-memory AI log so it shows live.
+ */
+async function logSession(root: string, event: string): Promise<void> {
+  try {
+    await appendSessionEntry(
+      {
+        readFile: (p) => invoke<string>("read_file", { path: p }),
+        writeFile: (p, c) => invoke("write_text_file", { path: p, content: c }).then(() => {}),
+      },
+      root,
+      Date.now(),
+      event
+    );
+    aiLog("session", event);
+  } catch {
+    /* journaling is best-effort */
+  }
 }
 
 // Merges into main mutate the shared root worktree, so they must run one at a
@@ -343,6 +370,7 @@ export const useCadre = create<CadreState>((set, get) => ({
       // is empty until the SM shards), not the (empty) execution board.
       set({ verification: cmds, phase: "SHARD", busy: null, needsReplan: false });
       toast("Plan signed off — shard it into stories", "success");
+      await logSession(root, `plan approved (PRD + architecture) — verified by: ${cmds.join(", ")}`);
     } catch (e) {
       set({ error: String(e), busy: null });
       toast("Sign-off failed", "error");
@@ -457,6 +485,10 @@ export const useCadre = create<CadreState>((set, get) => ({
       const { env, model } = await resolveFleetAuth(provider);
       onOutput(`[cadre] dispatching on ${provider.name} (${model ?? "CLI default model"})\n`);
 
+      const storyLabel = useBmadStore.getState().stories.find((c) => c.id === key)?.title;
+      const named = storyLabel ? `${key} "${storyLabel}"` : key;
+      await logSession(root, `dispatched story ${named} on ${provider.name}`);
+
       // Route engine status writes through bmadStore so the board updates
       // optimistically (its own-write echo is then suppressed by the watcher).
       const setStatus = (e: number, s: number, status: Status) =>
@@ -492,6 +524,7 @@ export const useCadre = create<CadreState>((set, get) => ({
             await useBmadStore.getState().setStatus(epic, story, "Blocked");
             onOutput(`\n[cadre] code review BLOCKED ${epic}.${story} — not integrated; resolve the findings\n`);
             toast(`Story ${epic}.${story}: review blocked — not merged`, "error");
+            await logSession(root, `story ${named} BLOCKED by code review — not integrated`);
             return;
           }
         }
@@ -504,12 +537,15 @@ export const useCadre = create<CadreState>((set, get) => ({
           await useBmadStore.getState().setStatus(epic, story, "Blocked");
           onOutput(`\n[cadre] merge conflict integrating ${epic}.${story} — Blocked for manual integration\n`);
           toast(`Story ${epic}.${story}: merge conflict — Blocked for you to integrate`, "error");
+          await logSession(root, `story ${named} hit a merge conflict — Blocked for manual integration`);
         } else {
           onOutput(`\n[cadre] integrated story ${epic}.${story} into main\n`);
           toast(`Story ${epic}.${story}: Done & integrated`, "success");
+          await logSession(root, `completed & integrated story ${named} into main`);
         }
       } else {
         toast(`Story ${epic}.${story}: ${res.status}`, "error");
+        await logSession(root, `story ${named} ended ${res.status}${res.timedOut ? " (timed out)" : ""}`);
       }
     } catch (e) {
       onOutput(`\n[cadre] dispatch error: ${String(e)}\n`);
