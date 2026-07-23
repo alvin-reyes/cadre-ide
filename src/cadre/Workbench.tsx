@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Save, FileCode2, RefreshCw } from "lucide-react";
+import { Save, FileCode2, RefreshCw, SquareTerminal, X } from "lucide-react";
 import MonacoWrapper from "../components/editor/MonacoWrapper";
 import { FileTree } from "./FileTree";
+import { TerminalTabs } from "./TerminalTabs";
 import { useThemeStore } from "../stores/themeStore";
 import { toast } from "../stores/toastStore";
 
@@ -25,7 +26,32 @@ export function Workbench({ root }: { root: string }) {
   // Bumping reloadKey remounts the tree → re-lists from disk (no live watcher).
   // Manual only, so switching to the File view doesn't collapse expanded folders.
   const [reloadKey, setReloadKey] = useState(0);
+  // Integrated terminal below the editor (IDE-style). Mounted once opened so its
+  // PTY survives hide/show; resizable via the drag handle.
+  const [termMounted, setTermMounted] = useState(false);
+  const [termOpen, setTermOpen] = useState(false);
+  const [termHeight, setTermHeight] = useState(240);
   const dirty = openPath != null && content !== saved;
+
+  function toggleTerm() {
+    setTermMounted(true);
+    setTermOpen((v) => !v);
+  }
+  function onTermDrag(e: React.MouseEvent) {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = termHeight;
+    const onMove = (ev: MouseEvent) => {
+      const next = startH - (ev.clientY - startY);
+      setTermHeight(Math.max(100, Math.min(window.innerHeight * 0.75, next)));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
 
   async function openFile(path: string) {
     if (path === openPath) return;
@@ -65,6 +91,29 @@ export function Workbench({ root }: { root: string }) {
         {dirty && <span title="Unsaved changes" style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--c-accent)", flexShrink: 0 }} />}
         <div style={{ flex: 1 }} />
         <button
+          onClick={toggleTerm}
+          title="Toggle the integrated terminal"
+          aria-label="Toggle terminal"
+          aria-pressed={termOpen}
+          className="cadre-hover"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            fontSize: "var(--c-fs-xs)",
+            fontWeight: 550 as const,
+            padding: "4px 10px",
+            borderRadius: "var(--c-radius-sm)",
+            background: termOpen ? "var(--c-surface-3)" : "transparent",
+            color: termOpen ? "var(--c-accent)" : "var(--c-text-muted)",
+            border: "1px solid var(--c-border)",
+            cursor: "pointer",
+          }}
+        >
+          <SquareTerminal size={13} strokeWidth={2} />
+          Terminal
+        </button>
+        <button
           onClick={save}
           disabled={!dirty}
           title="Save (Ctrl/Cmd+S)"
@@ -88,6 +137,7 @@ export function Workbench({ root }: { root: string }) {
         </button>
       </div>
 
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
         {/* Explorer tree */}
         <div style={{ width: 240, flexShrink: 0, minHeight: 0, overflow: "auto", borderRight: "1px solid var(--c-border)", padding: "var(--c-space-2) 4px", background: "var(--c-surface-1)" }}>
@@ -125,6 +175,38 @@ export function Workbench({ root }: { root: string }) {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Integrated terminal (IDE-style), below the editor. */}
+      {termMounted && (
+        <div style={{ display: termOpen ? "flex" : "none", flexDirection: "column", height: termHeight, flexShrink: 0, borderTop: "1px solid var(--c-border-strong)" }}>
+          <div
+            onMouseDown={onTermDrag}
+            className="cadre-divider"
+            title="Drag to resize"
+            style={{ height: 6, cursor: "row-resize", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--c-surface-1)" }}
+          >
+            <div className="cadre-divider-line" style={{ width: 34, height: 2, borderRadius: 2, background: "var(--c-border-strong)" }} />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px var(--c-space-3)", borderBottom: "1px solid var(--c-border)", background: "var(--c-surface-1)", flexShrink: 0 }}>
+            <SquareTerminal size={13} strokeWidth={2} style={{ color: "var(--c-text-muted)" }} />
+            <span style={{ fontSize: "var(--c-fs-xs)", fontWeight: 600 as const, color: "var(--c-text-secondary)" }}>Terminal</span>
+            <div style={{ flex: 1 }} />
+            <button
+              onClick={() => setTermOpen(false)}
+              title="Hide terminal"
+              aria-label="Hide terminal"
+              className="cadre-hover"
+              style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: "var(--c-radius-sm)", background: "transparent", border: "none", color: "var(--c-text-muted)", cursor: "pointer" }}
+            >
+              <X size={13} strokeWidth={2} />
+            </button>
+          </div>
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <TerminalTabs cwd={root} />
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );
