@@ -8,6 +8,7 @@ import { Workbench } from "./Workbench";
 import { TerminalTabs } from "./TerminalTabs";
 import { Team } from "./Team";
 import { Settings } from "./Settings";
+import { AiLog } from "./AiLog";
 import { Toaster } from "./Toaster";
 import { Welcome } from "./Welcome";
 import { useBmadStore } from "../stores/bmadStore";
@@ -32,6 +33,7 @@ export function CadreApp() {
   const [filesMounted, setFilesMounted] = useState(false);
   const [termMounted, setTermMounted] = useState(false);
   const [teamOpen, setTeamOpen] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
   const projectRoot = useBmadStore((s) => s.projectRoot);
 
   // Lazy-mount a view the first time it's opened.
@@ -88,7 +90,7 @@ export function CadreApp() {
 
   return (
     <div className="cadre-ui" style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      <TopBar onOpenTeam={() => setTeamOpen(true)} onOpenSettings={() => setShowSettings(true)} />
+      <TopBar onOpenTeam={() => setTeamOpen(true)} onOpenSettings={() => setShowSettings(true)} onOpenLog={() => setLogOpen(true)} />
 
       {/* The Orchestrator carries the discipline stepper; the other views don't. */}
       {view === "orchestrator" && (
@@ -138,6 +140,7 @@ export function CadreApp() {
 
       {teamOpen && <Team onClose={() => setTeamOpen(false)} />}
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
+      {logOpen && <AiLog onClose={() => setLogOpen(false)} />}
       <Toaster />
     </div>
   );

@@ -1,4 +1,4 @@
-import { Hexagon, ArrowUp, ArrowDown, PanelRight, Users, Sun, Moon, SunMoon, Settings as SettingsIcon } from "lucide-react";
+import { Hexagon, ArrowUp, ArrowDown, PanelRight, Users, Sun, Moon, SunMoon, Settings as SettingsIcon, ScrollText } from "lucide-react";
 import { useUsageStore } from "../../stores/usageStore";
 import { useThemeStore } from "../../stores/themeStore";
 
@@ -13,11 +13,13 @@ export function TopBar({
   workbenchOpen,
   onOpenTeam,
   onOpenSettings,
+  onOpenLog,
 }: {
   onToggleWorkbench?: () => void;
   workbenchOpen?: boolean;
   onOpenTeam?: () => void;
   onOpenSettings?: () => void;
+  onOpenLog?: () => void;
 }) {
   const input = useUsageStore((s) => s.input);
   const output = useUsageStore((s) => s.output);
@@ -75,6 +77,28 @@ export function TopBar({
         >
           <Users size={14} strokeWidth={2} />
           Team
+        </button>
+      )}
+
+      {onOpenLog && (
+        <button
+          onClick={onOpenLog}
+          title="AI activity log"
+          aria-label="AI activity log"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 28,
+            height: 24,
+            borderRadius: "var(--c-radius-sm)",
+            background: "transparent",
+            border: "1px solid var(--c-border)",
+            color: "var(--c-text-secondary)",
+            cursor: "pointer",
+          }}
+        >
+          <ScrollText size={15} strokeWidth={2} />
         </button>
       )}
 

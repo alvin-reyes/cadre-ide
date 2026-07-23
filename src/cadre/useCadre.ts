@@ -4,6 +4,7 @@ import type { Phase } from "./components/PhaseStepper";
 import { useBmadStore } from "../stores/bmadStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { toast } from "../stores/toastStore";
+import { aiLog } from "../stores/aiLogStore";
 import { callTool, planningTurn } from "../lib/planning/planningChat";
 import { ARCHITECT_SYSTEM_PROMPT, DESIGN_SYSTEM_PROMPT } from "../lib/planning/personas";
 import { generateStory } from "../lib/planning/generateStory";
@@ -345,6 +346,7 @@ export const useCadre = create<CadreState>((set, get) => ({
       active: { ...s.active, [key]: true },
     }));
     const onOutput = (chunk: string) => {
+      aiLog(`story ${key}`, chunk);
       set((s) => {
         const next = (s.logs[key] ?? "") + chunk;
         const capped = next.length > 200_000 ? next.slice(next.length - 200_000) : next;
@@ -486,6 +488,7 @@ export const useCadre = create<CadreState>((set, get) => ({
     const key = `${epic}.${story}`;
     set((s) => ({ codeReviews: { ...s.codeReviews, [key]: { status: "reviewing" } }, error: null }));
     const onOutput = (chunk: string) => {
+      aiLog(`review ${key}`, chunk);
       set((s) => {
         const next = (s.logs[key] ?? "") + chunk;
         const capped = next.length > 200_000 ? next.slice(next.length - 200_000) : next;
@@ -530,6 +533,7 @@ export const useCadre = create<CadreState>((set, get) => ({
   documentProject: async () => {
     set({ busy: "Analyzing the existing project (2 passes)…", error: null });
     const onOutput = (chunk: string) => {
+      aiLog("analysis", chunk);
       set((s) => {
         const next = (s.logs["brownfield"] ?? "") + chunk;
         const capped = next.length > 200_000 ? next.slice(next.length - 200_000) : next;
