@@ -309,7 +309,7 @@ export const useCadre = create<CadreState>((set, get) => ({
       const { env, model: providerModel } = resolveAgentEnv(provider, token, fleetModelOverride() || provider.defaultModel);
       // Native Claude CLI: let it use its own default model (an unknown --model id can fail).
       const model = provider.id === "claude" ? undefined : providerModel;
-      onOutput(`[cadre] dispatching on ${provider.name} (${model})\n`);
+      onOutput(`[cadre] dispatching on ${provider.name} (${model ?? "CLI default model"})\n`);
 
       // Route engine status writes through bmadStore so the board updates
       // optimistically (its own-write echo is then suppressed by the watcher).
