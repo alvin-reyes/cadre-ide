@@ -224,7 +224,7 @@ pub fn story_get_status(
 /// Write-origin suppression bridge (§5): true if `content` at `path` matches
 /// what the engine last wrote there. The reconciler consults this to drop the
 /// watcher event caused by cadre's own write, so the watcher only surfaces
-/// genuine *external* changes. Returns false if no project is open.
+/// genuine *external* changes. Returns `Err` if no project is open for `root`.
 #[tauri::command]
 pub fn is_own_write(
     engine: tauri::State<'_, CadreEngine>,
