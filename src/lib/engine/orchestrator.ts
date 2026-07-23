@@ -22,6 +22,8 @@ export interface RunApprovedStoryInput {
   model?: string;
   env?: Record<string, string>;
   retriesOnNonZero?: number;
+  sessionId?: string;
+  resumeSession?: boolean;
 }
 
 export async function runApprovedStory(
@@ -48,5 +50,7 @@ export async function runApprovedStory(
     model: input.model,
     env: input.env,
     retriesOnNonZero: input.retriesOnNonZero,
+    sessionId: input.sessionId,
+    resumeSession: input.resumeSession,
   });
 }

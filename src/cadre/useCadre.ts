@@ -15,6 +15,7 @@ import { CODE_REVIEW_LENSES } from "../lib/planning/review";
 import { tauriOrchestratorDeps, tauriReviewFleetDeps } from "../lib/engine/tauriDeps";
 import { composeDispatchPrompt, type AlwaysFile } from "../lib/engine/dispatch";
 import { appendSessionEntry, SESSION_LOG_PATH } from "../lib/engine/sessionLog";
+import { resolveStorySession } from "../lib/engine/agentSessions";
 import { nextStoryNumber, parseStoryFiles, shardStory } from "../lib/engine/shard";
 import { CREATE_BACKLOG_TOOL, backlogFromTool } from "../lib/planning/storyTool";
 import { scheduleParallel } from "../lib/engine/schedule";
@@ -487,7 +488,28 @@ export const useCadre = create<CadreState>((set, get) => ({
 
       const storyLabel = useBmadStore.getState().stories.find((c) => c.id === key)?.title;
       const named = storyLabel ? `${key} "${storyLabel}"` : key;
-      await logSession(root, `dispatched story ${named} on ${provider.name}`);
+
+      // Resolve this story's Claude session: mint one on first dispatch, resume it on a
+      // re-dispatch so the retry keeps the prior attempt's context. Opt-out via settings.
+      let sessionId: string | undefined;
+      let resumeSession = false;
+      if (useSettingsStore.getState().resumeSessions) {
+        const sess = await resolveStorySession(
+          {
+            readFile: (p) => invoke<string>("read_file", { path: p }),
+            writeFile: (p, c) => invoke("write_text_file", { path: p, content: c }).then(() => {}),
+          },
+          root,
+          key,
+          () => crypto.randomUUID()
+        ).catch(() => null);
+        if (sess) {
+          sessionId = sess.sessionId;
+          resumeSession = sess.resume;
+          if (sess.resume) onOutput(`[cadre] resuming prior session for ${key} to keep its context\n`);
+        }
+      }
+      await logSession(root, `dispatched story ${named} on ${provider.name}${resumeSession ? " (resumed session)" : ""}`);
 
       // Route engine status writes through bmadStore so the board updates
       // optimistically (its own-write echo is then suppressed by the watcher).
@@ -505,6 +527,8 @@ export const useCadre = create<CadreState>((set, get) => ({
         retriesOnNonZero: 0,
         model,
         env,
+        sessionId,
+        resumeSession,
       });
       if (res.timedOut) {
         onOutput(

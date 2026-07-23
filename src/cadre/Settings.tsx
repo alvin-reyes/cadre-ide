@@ -35,6 +35,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
   const setAgentTimeoutMins = useSettingsStore((s) => s.setAgentTimeoutMins);
   const dispatchUseLogin = useSettingsStore((s) => s.dispatchUseLogin);
   const setDispatchUseLogin = useSettingsStore((s) => s.setDispatchUseLogin);
+  const resumeSessions = useSettingsStore((s) => s.resumeSessions);
+  const setResumeSessions = useSettingsStore((s) => s.setResumeSessions);
   const fleetProvider = useCadre((s) => s.fleetProvider);
   const setFleetProvider = useCadre((s) => s.setFleetProvider);
 
@@ -129,6 +131,21 @@ export function Settings({ onClose }: { onClose: () => void }) {
               <span style={{ fontSize: "var(--c-fs-sm)", fontWeight: 550 as const, color: "var(--c-text-secondary)" }}>Dispatch on my Claude login (not the API key)</span>
               <span style={{ display: "block", fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)" }}>
                 Native-Claude fleet agents use your <code>claude</code> CLI login (e.g. Max plan) instead of the API key. Planning still uses the key.
+              </span>
+            </span>
+          </label>
+
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 9, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={resumeSessions}
+              onChange={(e) => setResumeSessions(e.target.checked)}
+              style={{ marginTop: 3, accentColor: "var(--c-accent)", cursor: "pointer", flexShrink: 0 }}
+            />
+            <span>
+              <span style={{ fontSize: "var(--c-fs-sm)", fontWeight: 550 as const, color: "var(--c-text-secondary)" }}>Resume sessions on retry</span>
+              <span style={{ display: "block", fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)" }}>
+                Re-dispatching a Failed/Blocked story resumes its prior <code>claude</code> session, so the retry keeps what it already tried instead of starting cold.
               </span>
             </span>
           </label>

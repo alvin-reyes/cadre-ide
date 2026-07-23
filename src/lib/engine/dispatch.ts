@@ -79,6 +79,10 @@ export interface DispatchInput {
   model?: string;
   /** per-agent env (ModelRouter: ANTHROPIC_BASE_URL/AUTH_TOKEN/MODEL) */
   env?: Record<string, string>;
+  /** Claude session id for this story — enables --resume on retry to keep context */
+  sessionId?: string;
+  /** when true, resume the existing session (retry) instead of creating a new one */
+  resumeSession?: boolean;
 }
 
 export interface DispatchResult {
@@ -116,12 +120,19 @@ export async function dispatchStory(
 
   // --dangerously-skip-permissions lets the headless agent actually use its tools
   // (edit files, run the build) without interactive permission prompts — without it
-  // the agent can't modify code and the story always fails. Flag first so it can't
-  // be read as the value of -p.
-  const args = ["--dangerously-skip-permissions", "-p", input.prompt];
+  // the agent can't modify code and the story always fails.
+  //
+  // All option flags go BEFORE the `-p <prompt>` positional so none can be misread as
+  // the prompt value. Session handling: a fresh story mints its id (--session-id); a
+  // re-dispatch resumes it (--resume) so the retry keeps the prior attempt's context.
+  const args = ["--dangerously-skip-permissions"];
+  if (input.sessionId) {
+    args.push(input.resumeSession ? "--resume" : "--session-id", input.sessionId);
+  }
   if (input.model) {
     args.push("--model", input.model);
   }
+  args.push("-p", input.prompt);
 
   const ptyId = await deps.spawnAgent({
     command: "claude",

@@ -34,6 +34,10 @@ export interface RunStoryInput {
   model?: string;
   env?: Record<string, string>;
   retriesOnNonZero?: number;
+  /** Claude session id for this story (enables --resume on retry) */
+  sessionId?: string;
+  /** true → resume the existing session instead of creating it */
+  resumeSession?: boolean;
 }
 
 export interface RunStoryResult {
@@ -59,6 +63,8 @@ export async function runStory(
       prompt: input.prompt,
       model: input.model,
       env: input.env,
+      sessionId: input.sessionId,
+      resumeSession: input.resumeSession,
     }
   );
 

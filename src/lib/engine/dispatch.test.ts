@@ -128,9 +128,19 @@ describe("dispatchStory", () => {
       model: "kimi-k2",
       env: { ANTHROPIC_BASE_URL: "https://api.moonshot.ai/anthropic" },
     });
-    expect(calls.spawn[0].args).toEqual(["--dangerously-skip-permissions", "-p", "P", "--model", "kimi-k2"]);
+    expect(calls.spawn[0].args).toEqual(["--dangerously-skip-permissions", "--model", "kimi-k2", "-p", "P"]);
     expect(calls.spawn[0].env).toEqual({
       ANTHROPIC_BASE_URL: "https://api.moonshot.ai/anthropic",
     });
+  });
+
+  it("passes --session-id for a fresh session and --resume for a retry (before the -p prompt)", async () => {
+    const fresh = recordingDeps();
+    await dispatchStory(fresh.deps, { root: "/proj", epic: 1, story: 2, prompt: "P", sessionId: "sess-1" });
+    expect(fresh.calls.spawn[0].args).toEqual(["--dangerously-skip-permissions", "--session-id", "sess-1", "-p", "P"]);
+
+    const retry = recordingDeps();
+    await dispatchStory(retry.deps, { root: "/proj", epic: 1, story: 2, prompt: "P", sessionId: "sess-1", resumeSession: true });
+    expect(retry.calls.spawn[0].args).toEqual(["--dangerously-skip-permissions", "--resume", "sess-1", "-p", "P"]);
   });
 });
