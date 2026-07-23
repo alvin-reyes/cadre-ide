@@ -57,7 +57,9 @@ fn legal_next(from: Status) -> &'static [Status] {
 }
 
 pub fn can_transition(from: Status, to: Status) -> bool {
-    legal_next(from).contains(&to)
+    // A same-status write is an idempotent no-op (e.g. resuming an already
+    // InProgress story re-dispatches it), never an illegal jump.
+    from == to || legal_next(from).contains(&to)
 }
 
 /// The engine-owned state store: the **sole writer** of everything under

@@ -13,6 +13,11 @@ describe("canTransition", () => {
     expect(canTransition("Done", "Blocked")).toBe(true);
   });
 
+  it("allows a same-status no-op (resume re-dispatches an InProgress story)", () => {
+    expect(canTransition("InProgress", "InProgress")).toBe(true);
+    expect(canTransition("Done", "Done")).toBe(true);
+  });
+
   it("forbids skipping the discipline (Draft cannot jump to Done)", () => {
     expect(canTransition("Draft", "Done")).toBe(false);
     expect(canTransition("Approved", "Done")).toBe(false);
@@ -24,10 +29,10 @@ describe("canTransition", () => {
     expect(canTransition("Failed", "InProgress")).toBe(true);
   });
 
-  it("makes re-open the only path out of Done (human-gated)", () => {
+  it("makes re-open the only forward path out of Done (human-gated)", () => {
     expect(canTransition("Done", "Approved")).toBe(true);
-    expect(canTransition("Done", "InProgress")).toBe(false);
-    expect(canTransition("Done", "Done")).toBe(false);
+    expect(canTransition("Done", "InProgress")).toBe(false); // can't jump back into work
+    // Done → Done is a no-op (allowed), not a forward move — see the same-status test.
   });
 
   it("allows blocking from any active state and resuming", () => {

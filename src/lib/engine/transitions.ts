@@ -17,7 +17,9 @@ const LEGAL: Record<Status, Status[]> = {
 };
 
 export function canTransition(from: Status, to: Status): boolean {
-  return LEGAL[from].includes(to);
+  // A same-status write is an idempotent no-op (e.g. re-dispatching an already
+  // InProgress story on resume), not an illegal jump.
+  return from === to || LEGAL[from].includes(to);
 }
 
 export function assertTransition(from: Status, to: Status): void {
