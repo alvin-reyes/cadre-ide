@@ -65,7 +65,7 @@ export const useBmadStore = create<BmadState>((set, get) => {
       // Write-origin suppression (§5): if this is cadre's own write, the board
       // was already updated by setStatus — don't re-process the echo. Only
       // genuine external changes fall through to reconcile.
-      if (await invoke<boolean>("is_own_write", { path, content })) return;
+      if (await invoke<boolean>("is_own_write", { root: get().projectRoot, path, content })) return;
       push(
         reconcile(get().board, { kind: "state", filename: basename(path), content })
       );
@@ -89,7 +89,7 @@ export const useBmadStore = create<BmadState>((set, get) => {
       const prev = get().board;
       push(applyStatus(prev, epic, story, status));
       try {
-        await invoke("story_set_status", { epic, story, status });
+        await invoke("story_set_status", { root: get().projectRoot, epic, story, status });
       } catch (e) {
         // Rejected (e.g. an illegal edge): roll back so the board doesn't drift
         // ahead of the on-disk state that never changed.

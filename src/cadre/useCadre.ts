@@ -366,7 +366,7 @@ export const useCadre = create<CadreState>((set, get) => ({
         await invoke("write_text_file", { path: `${root}/${PO_PATH}`, content: poValidation });
       }
       // Freeze the verification command in engine-owned state (agents can't forge it).
-      await invoke("approve_plan", { verification: cmds });
+      await invoke("approve_plan", { root, verification: cmds });
       // Land on SHARD — the next step is breaking the plan into stories (the board
       // is empty until the SM shards), not the (empty) execution board.
       set({ verification: cmds, phase: "SHARD", busy: null, needsReplan: false });
@@ -515,7 +515,7 @@ export const useCadre = create<CadreState>((set, get) => ({
       // optimistically (its own-write echo is then suppressed by the watcher).
       const setStatus = (e: number, s: number, status: Status) =>
         useBmadStore.getState().setStatus(e, s, status);
-      const deps = { ...tauriOrchestratorDeps(onOutput), setStatus };
+      const deps = { ...tauriOrchestratorDeps(root, onOutput), setStatus };
 
       const res = await runApprovedStory(deps, {
         root,
@@ -816,7 +816,7 @@ export const useCadre = create<CadreState>((set, get) => ({
       readOr(BRIEF_PATH),
       readOr(TECHDOCS_PATH),
     ]);
-    const approval = await invoke<PlanApproval | null>("get_plan_approval").catch(() => null);
+    const approval = await invoke<PlanApproval | null>("get_plan_approval", { root }).catch(() => null);
     const approved = !!approval?.approved && (approval?.verification?.length ?? 0) > 0;
 
     // Brownfield: existing code present, but no Cadre plan (PRD) and no analysis yet.
