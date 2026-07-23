@@ -63,12 +63,15 @@ export function resolveAgentEnv(
   token: string,
   modelOverride?: string
 ): AgentEnv {
+  // Trim the token — a pasted key with a trailing newline/space is invalid, and
+  // `claude -p` HANGS silently on a bad key rather than erroring.
+  const key = token.trim();
   const env: Record<string, string> = {};
   if (provider.baseUrl) {
     env.ANTHROPIC_BASE_URL = provider.baseUrl;
-    env.ANTHROPIC_AUTH_TOKEN = token;
+    env.ANTHROPIC_AUTH_TOKEN = key;
   } else {
-    env.ANTHROPIC_API_KEY = token;
+    env.ANTHROPIC_API_KEY = key;
   }
   return { env, model: modelOverride ?? provider.defaultModel };
 }

@@ -455,10 +455,13 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   },
 
   setAnthropicApiKey: (key) => {
-    set({ anthropicApiKey: key });
+    // Trim on the way in — a stray newline/space makes the key invalid, and the
+    // claude CLI hangs silently on a bad key.
+    const trimmed = key.trim();
+    set({ anthropicApiKey: trimmed });
     persistSettings(get());
     // Mirror into the OS keychain on desktop (no-op in the browser preview).
-    void secretSet("anthropic_api_key", key);
+    void secretSet("anthropic_api_key", trimmed);
   },
 
   setPlanningModel: (planningModel) => {
@@ -478,7 +481,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
   hydrateSecrets: async () => {
     const key = await secretGet("anthropic_api_key");
-    if (key) set({ anthropicApiKey: key });
+    if (key) set({ anthropicApiKey: key.trim() });
   },
   setOrchestratorModel: (model) => {
     set({ orchestratorModel: model });
