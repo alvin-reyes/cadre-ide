@@ -1,10 +1,10 @@
-import { useRef } from "react";
 import { Plus, X } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useBmadStore } from "../stores/bmadStore";
 import { useOpenProjects } from "../stores/openProjectsStore";
 import { useCadre } from "./useCadre";
 import { isTauri } from "../lib/secrets";
+import { toast } from "../stores/toastStore";
 
 function basename(path: string): string {
   const i = path.lastIndexOf("/");
@@ -45,7 +45,6 @@ export function ProjectTabs() {
   const activeRoot = useOpenProjects((s) => s.activeRoot);
   const names = useOpenProjects((s) => s.names);
   const openProject = useBmadStore((s) => s.openProject);
-  const errorRef = useRef<string | null>(null);
 
   async function addProject() {
     if (!isTauri()) return;
@@ -59,8 +58,9 @@ export function ProjectTabs() {
       const name = basename(dir);
       await openProject(dir);
       useOpenProjects.getState().open(dir, name);
+      selectProject(dir);
     } catch (e) {
-      errorRef.current = String(e);
+      toast(`Couldn't open project: ${e}`, "error");
     }
   }
 
