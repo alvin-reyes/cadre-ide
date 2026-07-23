@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Circle, Plus, Play, Cpu, MessageSquarePlus, AlertTriangle, RefreshCw, ShieldCheck, ShieldAlert, Gavel, FileDown, ArrowRight, ArrowLeft, Loader2 } from "lucide-react";
+import { Circle, Plus, Play, Cpu, MessageSquarePlus, AlertTriangle, RefreshCw, ShieldCheck, ShieldAlert, Gavel, FileDown, ArrowRight, ArrowLeft, Loader2, ScrollText } from "lucide-react";
 import { FleetBoard } from "./components/FleetBoard";
 import { StatusPill } from "./components/StatusPill";
 import { Markdown } from "./components/Markdown";
@@ -35,6 +35,7 @@ export function FleetView({ mode = "fleet" }: { mode?: "shard" | "fleet" }) {
   const stories = useBmadStore((s) => s.stories);
   const projectRoot = useBmadStore((s) => s.projectRoot);
   const shardNextStory = useCadre((s) => s.shardNextStory);
+  const shardBacklog = useCadre((s) => s.shardBacklog);
   const dispatchReady = useCadre((s) => s.dispatchReady);
   const cascadeReplan = useCadre((s) => s.cascadeReplan);
   const approvePlan = useCadre((s) => s.approvePlan);
@@ -101,6 +102,29 @@ export function FleetView({ mode = "fleet" }: { mode?: "shard" | "fleet" }) {
           <Plus size={14} strokeWidth={2.5} />
           Generate story (SM)
         </button>
+        {shard && (
+          <button
+            onClick={() => shardBacklog(1)}
+            disabled={preview || !!busy}
+            title="Generate the COMPLETE lifecycle backlog — features, tests, deploy, monitoring, docs, support"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              fontSize: "var(--c-fs-sm)",
+              fontWeight: 550 as const,
+              padding: "5px 12px",
+              borderRadius: "var(--c-radius)",
+              background: "transparent",
+              color: preview || busy ? "var(--c-text-muted)" : "var(--c-text)",
+              border: "1px solid var(--c-border-strong)",
+              cursor: preview || busy ? "default" : "pointer",
+            }}
+          >
+            <ScrollText size={14} strokeWidth={2} />
+            Generate full backlog
+          </button>
+        )}
         {!shard && !preview && (() => {
           const readyCount = stories.filter((c) => c.status === "Approved" || c.status === "Failed").length;
           return (

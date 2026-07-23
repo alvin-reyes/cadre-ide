@@ -14,7 +14,8 @@ import { documentProject as documentProjectFleet, BROWNFIELD_DOC_PATH } from "..
 import { CODE_REVIEW_LENSES } from "../lib/planning/review";
 import { tauriOrchestratorDeps, tauriReviewFleetDeps } from "../lib/engine/tauriDeps";
 import { composeDispatchPrompt, type AlwaysFile } from "../lib/engine/dispatch";
-import { nextStoryNumber, parseStoryFiles } from "../lib/engine/shard";
+import { nextStoryNumber, parseStoryFiles, shardStory } from "../lib/engine/shard";
+import { CREATE_BACKLOG_TOOL, backlogFromTool } from "../lib/planning/storyTool";
 import { scheduleParallel } from "../lib/engine/schedule";
 import { detectVerifyCommand } from "../lib/engine/detectVerify";
 import { integrateStory } from "../lib/engine/integrate";
@@ -62,7 +63,9 @@ const SM_SYSTEM_PROMPT = `You are the Scrum Master (SM). Turn the approved plan 
 
 Prefer a small, vertically-sliced, independently testable story. Populate every field completely — the Dev agent works only from this story and reads nothing else, so put the relevant architecture, file paths, and standards into devNotes. Acceptance criteria must be concrete and testable; tasks must be TDD-first (write the failing test, then the code).
 
-Declare the exact repo-relative \`files\` this story will create or modify, and keep stories FILE-DISJOINT from one another — Cadre runs file-disjoint stories as parallel agents, and any file two stories share forces them to run sequentially. Slice the work so parallel stories don't touch the same files.`;
+Declare the exact repo-relative \`files\` this story will create or modify, and keep stories FILE-DISJOINT from one another — Cadre runs file-disjoint stories as parallel agents, and any file two stories share forces them to run sequentially. Slice the work so parallel stories don't touch the same files.
+
+Think across the WHOLE software-engineering lifecycle, not just features: project setup/scaffolding, automated tests, integration, CI/CD, deployment, observability/monitoring, documentation, and ongoing support/operations all need stories too. A backlog that only has feature work is incomplete.`;
 
 const DEV_SYSTEM_PROMPT = `You are the Dev agent. Implement the assigned story test-first: write the failing test, then the minimal code to make it pass. Follow the project's standards. Do NOT mark the story done — Cadre runs the verification command and decides.
 
@@ -136,6 +139,8 @@ interface CadreState {
   approvePlan: (verification: string[]) => Promise<void>;
   /** Run the SM to shard the next story for `epic` (default 1). */
   shardNextStory: (epic?: number) => Promise<void>;
+  /** Run the SM to shard the COMPLETE lifecycle backlog (features + tests + deploy + support…). */
+  shardBacklog: (epic?: number) => Promise<void>;
   /** Dispatch a Dev agent for a story; Cadre verifies and writes the status. */
   dispatchStory: (epic: number, story: number, opts?: { silent?: boolean; context?: AlwaysFile[] }) => Promise<void>;
   /**
@@ -332,6 +337,41 @@ export const useCadre = create<CadreState>((set, get) => ({
     } catch (e) {
       set({ error: String(e), busy: null });
       toast("Sharding failed", "error");
+    }
+  },
+
+  shardBacklog: async (epic = 1) => {
+    set({ busy: "Sharding the full lifecycle backlog (SM)…", error: null });
+    try {
+      const root = requireRoot();
+      const apiKey = requireKey();
+      const { prd, architecture, uxSpec } = get();
+      const ids = useBmadStore.getState().stories.map((s) => s.id);
+      const start = nextStoryNumber(epic, ids);
+      const planContext =
+        `# PRD\n\n${prd}\n\n---\n\n# Architecture\n\n${architecture}` +
+        (uxSpec.trim() ? `\n\n---\n\n# UX / Design Spec\n\n${uxSpec}` : "");
+
+      const toolInput = await callTool({
+        apiKey,
+        model: planningModel(),
+        systemPrompt: SM_SYSTEM_PROMPT,
+        userPrompt:
+          "Produce the COMPLETE backlog to deliver AND operate the plan below across the full " +
+          "software-engineering lifecycle — setup, features, tests, integration, CI/CD, deployment, " +
+          "monitoring, documentation, and support. Fully specify every story.\n\n## Plan context\n" +
+          planContext,
+        tool: CREATE_BACKLOG_TOOL,
+      });
+      const stories = backlogFromTool(toolInput, epic, start);
+      for (const content of stories) {
+        await shardStory({ writeFile: (relPath, c) => invoke("write_text_file", { path: `${root}/${relPath}`, content: c }) }, content);
+      }
+      set({ busy: null });
+      toast(`Sharded ${stories.length} stories across the lifecycle`, "success");
+    } catch (e) {
+      set({ error: String(e), busy: null });
+      toast("Backlog sharding failed", "error");
     }
   },
 
