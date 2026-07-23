@@ -3,6 +3,7 @@ import { marked } from "marked";
 import { ArrowUp, ArrowRight, Lock, RefreshCw, AlertTriangle, FileText, FileDown, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, ShieldAlert, Gavel, Paperclip, X, Check, Copy, Eye, Code2, Wrench, Loader2, Workflow } from "lucide-react";
 import { exportHtmlToPdf } from "./exportPdf";
 import { DiagramEditor } from "./DiagramEditor";
+import { BrownfieldOnboard } from "./BrownfieldOnboard";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre, MODEL } from "./useCadre";
 import { Markdown } from "./components/Markdown";
@@ -91,6 +92,7 @@ export function PlanningStudio() {
   const projectContext = useCadre((s) => s.projectContext);
   const documentProject = useCadre((s) => s.documentProject);
   const isBrownfield = useCadre((s) => s.isBrownfield);
+  const brownfieldLog = useCadre((s) => s.logs["brownfield"] ?? "");
   const setPrd = useCadre((s) => s.setPrd);
   const setArchitecture = useCadre((s) => s.setArchitecture);
   const setUxSpec = useCadre((s) => s.setUxSpec);
@@ -110,6 +112,11 @@ export function PlanningStudio() {
   const [thinking, setThinking] = useState(false);
   const [keyDraft, setKeyDraft] = useState("");
   const [verifyCmd, setVerifyCmd] = useState("npm test");
+  const detectedVerify = useCadre((s) => s.detectedVerify);
+  // Brownfield: pre-fill the sign-off command with the project's real test command.
+  useEffect(() => {
+    if (detectedVerify) setVerifyCmd(detectedVerify);
+  }, [detectedVerify]);
   const [split, setSplit] = useState(50); // % width of the conversation pane (draggable divider)
 
   function onDividerDown(e: MouseEvent) {
@@ -245,6 +252,8 @@ export function PlanningStudio() {
   // append it into the current document.
   const [diagramOpen, setDiagramOpen] = useState(false);
   const diagramDocLabel = persona === "pm" ? "PRD" : persona === "architect" ? "architecture" : "UX spec";
+  // Brownfield: guide the PM through analyzing the existing code before planning.
+  const brownfieldOnboarding = persona === "pm" && isBrownfield && !projectContext.trim();
   function addDiagramToChat(src: string) {
     addAttachments([{ name: "app-flow.mmd", content: "```mermaid\n" + src + "\n```" }]);
   }
@@ -504,53 +513,6 @@ export function PlanningStudio() {
             <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)" }}>{meta.sub}</span>
           </div>
 
-          {persona === "pm" && isBrownfield && !projectContext.trim() && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--c-space-2)",
-                margin: "var(--c-space-3)",
-                padding: "9px 12px",
-                background: "var(--c-accent-subtle)",
-                border: "1px solid var(--c-accent-ring)",
-                borderRadius: "var(--c-radius)",
-              }}
-            >
-              <ClipboardCheck size={15} strokeWidth={2} style={{ color: "var(--c-accent)", flexShrink: 0 }} />
-              <span style={{ flex: 1, fontSize: "var(--c-fs-sm)", color: "var(--c-text-secondary)" }}>
-                Existing project detected — have the PM read the whole codebase (2 passes) so it plans with full context.
-              </span>
-              <button
-                onClick={() => documentProject()}
-                disabled={!!busy || !apiKey}
-                title={!apiKey ? "Add your API key first" : "The PM analyzes the project in two passes"}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 5,
-                  fontSize: "var(--c-fs-sm)",
-                  fontWeight: 550 as const,
-                  padding: "5px 12px",
-                  borderRadius: "var(--c-radius)",
-                  background: busy || !apiKey ? "var(--c-surface-3)" : "var(--c-accent)",
-                  color: busy || !apiKey ? "var(--c-text-muted)" : "var(--c-on-accent)",
-                  border: "none",
-                  cursor: busy || !apiKey ? "default" : "pointer",
-                  flexShrink: 0,
-                }}
-              >
-                {busy ? (
-                  <>
-                    <Loader2 size={13} strokeWidth={2.5} className="cadre-spin" /> Analyzing…
-                  </>
-                ) : (
-                  "Analyze project"
-                )}
-              </button>
-            </div>
-          )}
-
           {!apiKey && (
             <div
               style={{
@@ -587,7 +549,14 @@ export function PlanningStudio() {
           )}
 
           <div ref={scrollRef} style={{ flex: 1, overflow: "auto", padding: "var(--c-space-4)", display: "flex", flexDirection: "column" }}>
-            {messages.length === 0 ? (
+            {brownfieldOnboarding ? (
+              <BrownfieldOnboard
+                analyzing={!!busy}
+                output={brownfieldLog}
+                onAnalyze={() => documentProject()}
+                disabled={!apiKey || !!busy}
+              />
+            ) : messages.length === 0 ? (
               <div style={{ margin: "auto 0" }}>
                 {persona !== "pm" && prd.trim() && (
                   <div
@@ -608,17 +577,38 @@ export function PlanningStudio() {
                     <Check size={12} strokeWidth={3} /> PRD ready — working from it
                   </div>
                 )}
+                {persona === "pm" && projectContext.trim() && (
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      marginBottom: "var(--c-space-3)",
+                      fontSize: "var(--c-fs-xs)",
+                      fontWeight: 550 as const,
+                      color: "var(--c-success)",
+                      background: "var(--c-success-subtle)",
+                      border: "1px solid var(--c-border)",
+                      borderRadius: "var(--c-radius-full)",
+                      padding: "3px 10px",
+                    }}
+                  >
+                    <Check size={12} strokeWidth={3} /> Codebase analyzed — brief in context
+                  </div>
+                )}
                 <p style={{ fontSize: "var(--c-fs-md)", lineHeight: 1.6, color: "var(--c-text-secondary)", maxWidth: 380 }}>
-                  {persona !== "pm" && prd.trim()
-                    ? persona === "architect"
-                      ? "I've read the PRD — let's design the build."
-                      : persona === "design"
-                        ? "I've read the PRD — let's shape the UX and mock up the screens."
-                        : meta.intro
-                    : meta.intro}
+                  {persona === "pm" && projectContext.trim()
+                    ? "I've read your codebase and written a project brief. Tell me what you want to change or add — I'll plan it against what's already there."
+                    : persona !== "pm" && prd.trim()
+                      ? persona === "architect"
+                        ? "I've read the PRD — let's design the build."
+                        : persona === "design"
+                          ? "I've read the PRD — let's shape the UX and mock up the screens."
+                          : meta.intro
+                      : meta.intro}
                 </p>
                 <div style={{ fontSize: "var(--c-fs-xl)", fontWeight: 600 as const, marginTop: "var(--c-space-4)" }}>
-                  {meta.opener}
+                  {persona === "pm" && projectContext.trim() ? "What do you want to change or add?" : meta.opener}
                 </div>
               </div>
             ) : (

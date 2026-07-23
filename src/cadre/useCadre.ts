@@ -15,6 +15,7 @@ import { tauriOrchestratorDeps, tauriReviewFleetDeps } from "../lib/engine/tauri
 import { composeDispatchPrompt, type AlwaysFile } from "../lib/engine/dispatch";
 import { nextStoryNumber, parseStoryFiles } from "../lib/engine/shard";
 import { scheduleParallel } from "../lib/engine/schedule";
+import { detectVerifyCommand } from "../lib/engine/detectVerify";
 import { getProvider, resolveAgentEnv } from "../lib/engine/providers";
 import { secretGet } from "../lib/secrets";
 import type { Status } from "../lib/engine/status";
@@ -95,6 +96,8 @@ interface CadreState {
   projectContext: string;
   /** true when the opened project has existing code but no Cadre plan yet */
   isBrownfield: boolean;
+  /** verify command auto-detected from the project's manifests ("" = none) */
+  detectedVerify: string;
   /** the frozen verification command(s) once the plan is approved */
   verification: string[];
   /** true when the PRD/plan changed after approval — the fleet must re-approve (§5.1) */
@@ -160,6 +163,25 @@ async function findStoryPath(root: string, epic: number, story: number): Promise
   return entries.find((e) => !e.is_dir && basename(e.path).startsWith(prefix))?.path ?? null;
 }
 
+/** Read the project's manifests to auto-detect its test/verify command ("" if none). */
+async function detectProjectVerify(root: string): Promise<string> {
+  const read = (rel: string) =>
+    invoke<string>("read_file", { path: `${root}/${rel}` }).then((c) => c, () => undefined);
+  const has = (rel: string) =>
+    invoke<string>("read_file", { path: `${root}/${rel}` }).then(() => true, () => false);
+  const [packageJson, cargoToml, goMod, pyproject, makefile, pnpmLock, yarnLock, bunLock] = await Promise.all([
+    read("package.json"),
+    read("Cargo.toml"),
+    read("go.mod"),
+    read("pyproject.toml"),
+    read("Makefile"),
+    has("pnpm-lock.yaml"),
+    has("yarn.lock"),
+    has("bun.lockb"),
+  ]);
+  return detectVerifyCommand({ packageJson, cargoToml, goMod, pyproject, makefile, pnpmLock, yarnLock, bunLock }) ?? "";
+}
+
 /**
  * The shared Context Store injected into every Dev agent: the architecture (the
  * common interfaces/decisions) plus any committed `.cadre/context/*.md`. Ensures
@@ -205,6 +227,7 @@ export const useCadre = create<CadreState>((set, get) => ({
   poValidation: "",
   projectContext: "",
   isBrownfield: false,
+  detectedVerify: "",
   verification: [],
   needsReplan: false,
   logs: {},
@@ -507,7 +530,9 @@ export const useCadre = create<CadreState>((set, get) => ({
       const content =
         res.content ||
         (await invoke<string>("read_file", { path: `${root}/${BROWNFIELD_DOC_PATH}` }).catch(() => ""));
-      set({ projectContext: content, isBrownfield: false, busy: null });
+      // Auto-detect the project's real test command to pre-fill sign-off later.
+      const detectedVerify = await detectProjectVerify(root).catch(() => "");
+      set({ projectContext: content, isBrownfield: false, detectedVerify, busy: null });
       toast("Project analyzed — the PM now has context", "success");
     } catch (e) {
       set({ error: String(e), busy: null });
