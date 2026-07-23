@@ -88,12 +88,17 @@ const ARCH_PATH = "docs/architecture.md";
 const UX_PATH = "docs/ux-spec.md";
 const MOCKUP_PATH = "docs/mockup.html";
 const PO_PATH = "docs/po-validation.md";
+const BRIEF_PATH = "docs/brief.md";
+const TECHDOCS_PATH = "docs/documentation.md";
 
 interface CadreState {
   phase: Phase;
   /** the planning artifacts, as they form in the Planning Studio */
   prd: string;
   architecture: string;
+  /** optional Analyst brief (discovery) and Technical Writer documentation */
+  analystBrief: string;
+  techDocs: string;
   /** optional UX/design artifacts (Design tab) — spec + a live HTML mockup */
   uxSpec: string;
   mockupHtml: string;
@@ -130,6 +135,8 @@ interface CadreState {
   setPrd: (md: string) => void;
   setArchitecture: (md: string) => void;
   setUxSpec: (md: string) => void;
+  setAnalystBrief: (md: string) => void;
+  setTechDocs: (md: string) => void;
   setMockupHtml: (html: string) => void;
   setPoValidation: (md: string) => void;
   setFleetProvider: (id: string) => void;
@@ -245,6 +252,8 @@ export const useCadre = create<CadreState>((set, get) => ({
   prd: "",
   architecture: "",
   uxSpec: "",
+  analystBrief: "",
+  techDocs: "",
   mockupHtml: "",
   poValidation: "",
   projectContext: "",
@@ -265,6 +274,8 @@ export const useCadre = create<CadreState>((set, get) => ({
   setArchitecture: (architecture) =>
     set((s) => ({ architecture, needsReplan: s.verification.length > 0 ? true : s.needsReplan })),
   setUxSpec: (uxSpec) => set((s) => ({ uxSpec, needsReplan: s.verification.length > 0 ? true : s.needsReplan })),
+  setAnalystBrief: (analystBrief) => set({ analystBrief }),
+  setTechDocs: (techDocs) => set({ techDocs }),
   setMockupHtml: (mockupHtml) => set({ mockupHtml }),
   setPoValidation: (poValidation) => set({ poValidation }),
   setFleetProvider: (fleetProvider) => set({ fleetProvider }),
@@ -287,6 +298,10 @@ export const useCadre = create<CadreState>((set, get) => ({
       // Persist the plan so it reloads from git (§3.8) and the Dev agents can read it.
       await invoke("write_text_file", { path: `${root}/${PRD_PATH}`, content: prd });
       await invoke("write_text_file", { path: `${root}/${ARCH_PATH}`, content: architecture });
+      // Optional Analyst brief + Technical Writer docs, when present.
+      const { analystBrief, techDocs } = get();
+      if (analystBrief.trim()) await invoke("write_text_file", { path: `${root}/${BRIEF_PATH}`, content: analystBrief });
+      if (techDocs.trim()) await invoke("write_text_file", { path: `${root}/${TECHDOCS_PATH}`, content: techDocs });
       // Optional UX/design + PO artifacts, when present.
       const { uxSpec, mockupHtml, poValidation } = get();
       if (uxSpec.trim()) {
@@ -725,13 +740,15 @@ export const useCadre = create<CadreState>((set, get) => ({
         return "";
       }
     };
-    const [prd, architecture, uxSpec, mockupHtml, poValidation, projectContext] = await Promise.all([
+    const [prd, architecture, uxSpec, mockupHtml, poValidation, projectContext, analystBrief, techDocs] = await Promise.all([
       readOr(PRD_PATH),
       readOr(ARCH_PATH),
       readOr(UX_PATH),
       readOr(MOCKUP_PATH),
       readOr(PO_PATH),
       readOr(BROWNFIELD_DOC_PATH),
+      readOr(BRIEF_PATH),
+      readOr(TECHDOCS_PATH),
     ]);
     const approval = await invoke<PlanApproval | null>("get_plan_approval").catch(() => null);
     const approved = !!approval?.approved && (approval?.verification?.length ?? 0) > 0;
@@ -751,6 +768,8 @@ export const useCadre = create<CadreState>((set, get) => ({
     set((s) => ({
       prd: prd || s.prd,
       architecture: architecture || s.architecture,
+      analystBrief: analystBrief || s.analystBrief,
+      techDocs: techDocs || s.techDocs,
       uxSpec: uxSpec || s.uxSpec,
       mockupHtml: mockupHtml || s.mockupHtml,
       poValidation: poValidation || s.poValidation,

@@ -87,13 +87,13 @@ export const SUGGEST_VERIFICATION_TOOL = {
 export const HANDOFF_TOOL = {
   name: "handoff" as const,
   description:
-    "Bring in the next specialist once the requirements are captured. Call this to hand off — e.g. to the Architect when the PRD is solid and it's time to design the build, or the Designer for UX.",
+    "Bring in the next specialist. Call this to hand off — the Analyst for discovery/research, the Architect when the PRD is solid and it's time to design the build, the Designer for UX, or the Technical Writer for documentation.",
   input_schema: {
     type: "object" as const,
     properties: {
       role: {
         type: "string" as const,
-        enum: ["architect", "design"],
+        enum: ["analyst", "architect", "design", "techwriter"],
         description: "which specialist to bring in",
       },
       note: { type: "string" as const, description: "one short line on what they should focus on" },

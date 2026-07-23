@@ -10,6 +10,8 @@ import {
   ShieldAlert,
   FlaskConical,
   Rocket,
+  Search,
+  BookText,
 } from "lucide-react";
 import { Modal } from "./components/Modal";
 import { useCadre } from "./useCadre";
@@ -31,9 +33,11 @@ interface Member {
 }
 
 const PLANNING: Member[] = [
+  { name: "Analyst", role: "Discovery & research — the project brief", icon: Search, tier: "Opus" },
   { name: "PM", role: "Requirements lead & orchestrator — owns the PRD", icon: PencilRuler, tier: "Opus" },
   { name: "Architect", role: "System design + the verification command", icon: Ruler, tier: "Opus" },
   { name: "Designer", role: "UX spec + live HTML mockup", icon: Palette, tier: "Opus" },
+  { name: "Technical Writer", role: "Plans & drafts the documentation", icon: BookText, tier: "Opus" },
 ];
 
 const REVIEW: Member[] = [
@@ -106,13 +110,17 @@ export function Team({ onClose }: { onClose: () => void }) {
   const prd = useCadre((s) => s.prd);
   const architecture = useCadre((s) => s.architecture);
   const uxSpec = useCadre((s) => s.uxSpec);
+  const analystBrief = useCadre((s) => s.analystBrief);
+  const techDocs = useCadre((s) => s.techDocs);
   const stories = useBmadStore((s) => s.stories);
 
   const planningLive = (name: string): Live | undefined => {
     const ready = (has: boolean): Live => (has ? { label: "ready", kind: "done" } : { label: "idle", kind: "idle" });
     if (name === "PM") return prd.trim() ? { label: "PRD ready", kind: "done" } : { label: "idle", kind: "idle" };
+    if (name === "Analyst") return ready(!!analystBrief.trim());
     if (name === "Architect") return ready(!!architecture.trim());
     if (name === "Designer") return ready(!!uxSpec.trim());
+    if (name === "Technical Writer") return ready(!!techDocs.trim());
     return undefined;
   };
 
