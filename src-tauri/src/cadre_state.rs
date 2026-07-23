@@ -175,17 +175,15 @@ impl CadreState {
     }
 }
 
-/// Managed engine state: holds the `CadreState` for the currently-open project.
-/// `None` until a project is opened.
+/// Managed engine state: one `CadreState` per open project root, so multiple
+/// projects are live at once. Empty until the first project is opened.
 pub struct CadreEngine {
-    state: Mutex<Option<CadreState>>,
+    states: Mutex<HashMap<PathBuf, CadreState>>,
 }
 
 impl CadreEngine {
     pub fn new() -> Self {
-        Self {
-            state: Mutex::new(None),
-        }
+        Self { states: Mutex::new(HashMap::new()) }
     }
 }
 
@@ -193,30 +191,33 @@ impl CadreEngine {
 
 #[tauri::command]
 pub fn open_project(engine: tauri::State<'_, CadreEngine>, root: String) -> Result<(), String> {
-    *engine.state.lock().unwrap() = Some(CadreState::new(root));
+    let key = PathBuf::from(&root);
+    engine.states.lock().unwrap().insert(key, CadreState::new(root));
     Ok(())
 }
 
 #[tauri::command]
 pub fn story_set_status(
     engine: tauri::State<'_, CadreEngine>,
+    root: String,
     epic: u32,
     story: u32,
     status: Status,
 ) -> Result<(), String> {
-    let guard = engine.state.lock().unwrap();
-    let state = guard.as_ref().ok_or("no project open")?;
+    let guard = engine.states.lock().unwrap();
+    let state = guard.get(&PathBuf::from(&root)).ok_or("project not open")?;
     state.set_status(epic, story, status)
 }
 
 #[tauri::command]
 pub fn story_get_status(
     engine: tauri::State<'_, CadreEngine>,
+    root: String,
     epic: u32,
     story: u32,
 ) -> Result<Option<StoryState>, String> {
-    let guard = engine.state.lock().unwrap();
-    let state = guard.as_ref().ok_or("no project open")?;
+    let guard = engine.states.lock().unwrap();
+    let state = guard.get(&PathBuf::from(&root)).ok_or("project not open")?;
     state.get_status(epic, story)
 }
 
@@ -227,32 +228,33 @@ pub fn story_get_status(
 #[tauri::command]
 pub fn is_own_write(
     engine: tauri::State<'_, CadreEngine>,
+    root: String,
     path: String,
     content: String,
 ) -> Result<bool, String> {
-    let guard = engine.state.lock().unwrap();
-    Ok(match guard.as_ref() {
-        Some(state) => state.is_own_write(std::path::Path::new(&path), &content),
-        None => false,
-    })
+    let guard = engine.states.lock().unwrap();
+    let state = guard.get(&PathBuf::from(&root)).ok_or("project not open")?;
+    Ok(state.is_own_write(std::path::Path::new(&path), &content))
 }
 
 #[tauri::command]
 pub fn approve_plan(
     engine: tauri::State<'_, CadreEngine>,
+    root: String,
     verification: Vec<String>,
 ) -> Result<(), String> {
-    let guard = engine.state.lock().unwrap();
-    let state = guard.as_ref().ok_or("no project open")?;
+    let guard = engine.states.lock().unwrap();
+    let state = guard.get(&PathBuf::from(&root)).ok_or("project not open")?;
     state.approve_plan(verification)
 }
 
 #[tauri::command]
 pub fn get_plan_approval(
     engine: tauri::State<'_, CadreEngine>,
+    root: String,
 ) -> Result<Option<PlanApproval>, String> {
-    let guard = engine.state.lock().unwrap();
-    let state = guard.as_ref().ok_or("no project open")?;
+    let guard = engine.states.lock().unwrap();
+    let state = guard.get(&PathBuf::from(&root)).ok_or("project not open")?;
     state.get_plan_approval()
 }
 
