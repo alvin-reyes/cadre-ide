@@ -31,6 +31,10 @@ export function Settings({ onClose }: { onClose: () => void }) {
   const setFleetModel = useSettingsStore((s) => s.setFleetModel);
   const gateOnReview = useSettingsStore((s) => s.gateOnReview);
   const setGateOnReview = useSettingsStore((s) => s.setGateOnReview);
+  const agentTimeoutMins = useSettingsStore((s) => s.agentTimeoutMins);
+  const setAgentTimeoutMins = useSettingsStore((s) => s.setAgentTimeoutMins);
+  const dispatchUseLogin = useSettingsStore((s) => s.dispatchUseLogin);
+  const setDispatchUseLogin = useSettingsStore((s) => s.setDispatchUseLogin);
   const fleetProvider = useCadre((s) => s.fleetProvider);
   const setFleetProvider = useCadre((s) => s.setFleetProvider);
 
@@ -113,6 +117,31 @@ export function Settings({ onClose }: { onClose: () => void }) {
               </span>
             </span>
           </label>
+
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 9, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={dispatchUseLogin}
+              onChange={(e) => setDispatchUseLogin(e.target.checked)}
+              style={{ marginTop: 3, accentColor: "var(--c-accent)", cursor: "pointer", flexShrink: 0 }}
+            />
+            <span>
+              <span style={{ fontSize: "var(--c-fs-sm)", fontWeight: 550 as const, color: "var(--c-text-secondary)" }}>Dispatch on my Claude login (not the API key)</span>
+              <span style={{ display: "block", fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)" }}>
+                Native-Claude fleet agents use your <code>claude</code> CLI login (e.g. Max plan) instead of the API key. Planning still uses the key.
+              </span>
+            </span>
+          </label>
+
+          <Field label="Agent timeout" hint="Kill a Dev agent that hasn't finished in this many minutes (0 = no cap). A silent stall is usually a bad key.">
+            <input
+              type="number"
+              min={0}
+              value={agentTimeoutMins}
+              onChange={(e) => setAgentTimeoutMins(Number(e.target.value))}
+              style={{ ...inputStyle, width: 120 }}
+            />
+          </Field>
         </Section>
 
         <div style={{ height: "var(--c-space-4)" }} />

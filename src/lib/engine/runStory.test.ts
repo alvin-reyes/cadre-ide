@@ -54,6 +54,26 @@ describe("runStory", () => {
     expect(events).toEqual(["git", "git", "git", "git", "spawn", "wait:7", "git", "git", "verify"]);
   });
 
+  it("kills a hung agent after the timeout and ends Failed (timedOut)", async () => {
+    const killed: number[] = [];
+    const deps: RunStoryDeps = {
+      setStatus: async () => {},
+      runGit: async () => {},
+      spawnAgent: async () => 7,
+      // The agent never exits (hung on a bad key).
+      waitForExit: () => new Promise(() => {}),
+      runVerification: async () => ({ exitCode: 0, timedOut: false }),
+      killAgent: async (id) => {
+        killed.push(id);
+      },
+    };
+    const r = await runStory(deps, { ...input, agentTimeoutSecs: 0.05 });
+    expect(r.status).toBe("Failed");
+    expect(r.timedOut).toBe(true);
+    expect(r.agentExitCode).toBeNull();
+    expect(killed).toEqual([7]); // the hung PTY was killed
+  });
+
   it("ends Failed when the engine's verification fails, even if the agent exited 0", async () => {
     // agent claims success (exit 0) but the real tests fail (exit 1)
     const { deps, statuses } = makeDeps({ agentExit: 0, verifyExit: 1 });

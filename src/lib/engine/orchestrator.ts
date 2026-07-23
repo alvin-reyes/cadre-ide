@@ -18,6 +18,7 @@ export interface RunApprovedStoryInput {
   /** composed agent prompt (see composeDispatchPrompt) */
   prompt: string;
   timeoutSecs: number;
+  agentTimeoutSecs?: number;
   model?: string;
   env?: Record<string, string>;
   retriesOnNonZero?: number;
@@ -43,6 +44,7 @@ export async function runApprovedStory(
     // caller cannot substitute it, and an agent cannot forge it.
     commands: approval.verification,
     timeoutSecs: input.timeoutSecs,
+    agentTimeoutSecs: input.agentTimeoutSecs,
     model: input.model,
     env: input.env,
     retriesOnNonZero: input.retriesOnNonZero,

@@ -19,7 +19,7 @@ import { CREATE_BACKLOG_TOOL, backlogFromTool } from "../lib/planning/storyTool"
 import { scheduleParallel } from "../lib/engine/schedule";
 import { detectVerifyCommand } from "../lib/engine/detectVerify";
 import { integrateStory } from "../lib/engine/integrate";
-import { getProvider, resolveAgentEnv } from "../lib/engine/providers";
+import { getProvider, resolveAgentEnv, type Provider } from "../lib/engine/providers";
 import { secretGet } from "../lib/secrets";
 import type { Status } from "../lib/engine/status";
 import type { PlanApproval } from "../lib/engine/planApproval";
@@ -179,6 +179,30 @@ async function findStoryPath(root: string, epic: number, story: number): Promise
   const entries = await invoke<DirEntry[]>("list_directory", { path: `${root}/docs/stories` });
   const prefix = `${epic}.${story}.`;
   return entries.find((e) => !e.is_dir && basename(e.path).startsWith(prefix))?.path ?? null;
+}
+
+/**
+ * Resolve the per-agent env + model for the fleet provider. Native Claude can run
+ * on the user's claude.ai CLI login (no API key in env) when dispatchUseLogin is on;
+ * otherwise it needs a key. Centralized so dispatch/review/brownfield agree.
+ */
+async function resolveFleetAuth(provider: Provider): Promise<{ env: Record<string, string>; model: string | undefined }> {
+  if (provider.id === "claude" && useSettingsStore.getState().dispatchUseLogin) {
+    return { env: {}, model: undefined };
+  }
+  let token = await secretGet(provider.secretKey);
+  if (!token && provider.id === "claude") {
+    token = useSettingsStore.getState().anthropicApiKey || null;
+  }
+  if (!token) throw new Error(`No API key for ${provider.name} — add it in Settings.`);
+  const { env, model: providerModel } = resolveAgentEnv(provider, token, fleetModelOverride() || provider.defaultModel);
+  // Native Claude CLI uses its own default model (an unknown --model id can fail).
+  return { env, model: provider.id === "claude" ? undefined : providerModel };
+}
+
+/** The agent timeout (seconds) from settings; 0 = no cap. */
+function agentTimeoutSecs(): number {
+  return Math.max(0, (useSettingsStore.getState().agentTimeoutMins || 0) * 60);
 }
 
 /** Read the project's manifests to auto-detect its test/verify command ("" if none). */
@@ -428,20 +452,9 @@ export const useCadre = create<CadreState>((set, get) => ({
         alwaysFiles,
       });
 
-      // Resolve the model + per-agent env for the selected fleet provider. The
-      // claude CLI runs every model; non-Claude providers just point it at their
-      // Anthropic-compatible endpoint via env (§3.3).
+      // Resolve the model + per-agent env for the selected fleet provider.
       const provider = getProvider(get().fleetProvider);
-      let token = await secretGet(provider.secretKey);
-      if (!token && provider.id === "claude") {
-        token = useSettingsStore.getState().anthropicApiKey || null;
-      }
-      if (!token) {
-        throw new Error(`No API key for ${provider.name} — add it in the fleet model picker.`);
-      }
-      const { env, model: providerModel } = resolveAgentEnv(provider, token, fleetModelOverride() || provider.defaultModel);
-      // Native Claude CLI: let it use its own default model (an unknown --model id can fail).
-      const model = provider.id === "claude" ? undefined : providerModel;
+      const { env, model } = await resolveFleetAuth(provider);
       onOutput(`[cadre] dispatching on ${provider.name} (${model ?? "CLI default model"})\n`);
 
       // Route engine status writes through bmadStore so the board updates
@@ -456,10 +469,17 @@ export const useCadre = create<CadreState>((set, get) => ({
         story,
         prompt,
         timeoutSecs: 1800,
+        agentTimeoutSecs: agentTimeoutSecs(),
         retriesOnNonZero: 0,
         model,
         env,
       });
+      if (res.timedOut) {
+        onOutput(
+          `\n[cadre] agent timed out after ${useSettingsStore.getState().agentTimeoutMins}m and was stopped — Failed. ` +
+            `A silent stall is usually a bad/expired API key or a stuck task. Check the key in Settings, or raise the timeout.\n`
+        );
+      }
       if (!silent) set({ busy: null });
       if (res.status === "Done") {
         // QA gate: run the adversarial code-review fleet on the worktree BEFORE
@@ -581,14 +601,7 @@ export const useCadre = create<CadreState>((set, get) => ({
       const root = requireRoot();
       // Same provider routing as dispatch — reviewers are agents on the fleet.
       const provider = getProvider(get().fleetProvider);
-      let token = await secretGet(provider.secretKey);
-      if (!token && provider.id === "claude") {
-        token = useSettingsStore.getState().anthropicApiKey || null;
-      }
-      if (!token) throw new Error(`No API key for ${provider.name} — add it in the fleet model picker.`);
-      const { env, model: providerModel } = resolveAgentEnv(provider, token, fleetModelOverride() || provider.defaultModel);
-      // Native Claude CLI: let it use its own default model (an unknown --model id can fail).
-      const model = provider.id === "claude" ? undefined : providerModel;
+      const { env, model } = await resolveFleetAuth(provider);
       onOutput(`[cadre] dispatching ${CODE_REVIEW_LENSES.length} adversarial reviewers on ${provider.name}\n`);
 
       const reviews = await reviewStoryFleet(tauriReviewFleetDeps(onOutput), {
@@ -625,14 +638,7 @@ export const useCadre = create<CadreState>((set, get) => ({
     try {
       const root = requireRoot();
       const provider = getProvider(get().fleetProvider);
-      let token = await secretGet(provider.secretKey);
-      if (!token && provider.id === "claude") {
-        token = useSettingsStore.getState().anthropicApiKey || null;
-      }
-      if (!token) throw new Error(`No API key for ${provider.name} — add it in the fleet model picker.`);
-      const { env, model: providerModel } = resolveAgentEnv(provider, token, fleetModelOverride() || provider.defaultModel);
-      // Native Claude CLI: let it use its own default model (an unknown --model id can fail).
-      const model = provider.id === "claude" ? undefined : providerModel;
+      const { env, model } = await resolveFleetAuth(provider);
 
       const res = await documentProjectFleet(tauriReviewFleetDeps(onOutput), {
         root,

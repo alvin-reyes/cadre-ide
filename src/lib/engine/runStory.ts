@@ -16,6 +16,8 @@ export interface RunStoryDeps {
   /** resolve when the agent PTY exits, with its exit code */
   waitForExit: (ptyId: number) => Promise<{ exitCode: number | null }>;
   runVerification: VerifyDeps["runVerification"];
+  /** kill a hung agent PTY (used by the agent timeout); optional for tests */
+  killAgent?: (ptyId: number) => Promise<void>;
 }
 
 export interface RunStoryInput {
@@ -27,6 +29,8 @@ export interface RunStoryInput {
   /** verification steps: project command + any pack checks (composeVerification) */
   commands: string[];
   timeoutSecs: number;
+  /** kill the agent if it hasn't exited after this many seconds (0/undefined = no cap) */
+  agentTimeoutSecs?: number;
   model?: string;
   env?: Record<string, string>;
   retriesOnNonZero?: number;
@@ -36,6 +40,8 @@ export interface RunStoryResult {
   status: Status; // Done or Failed
   dispatch: DispatchResult;
   agentExitCode: number | null;
+  /** true when the agent was killed for exceeding agentTimeoutSecs */
+  timedOut?: boolean;
 }
 
 export async function runStory(
@@ -56,15 +62,32 @@ export async function runStory(
     }
   );
 
-  const exit = await deps.waitForExit(dispatch.ptyId);
+  // Wait for the agent, but cap it: a hung agent (bad key, network stall) would
+  // otherwise sit InProgress forever. On timeout, kill the PTY and treat as Failed.
+  let timedOut = false;
+  const exit = await (async () => {
+    const secs = input.agentTimeoutSecs ?? 0;
+    if (secs <= 0) return deps.waitForExit(dispatch.ptyId);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<{ exitCode: number | null }>((resolve) => {
+      timer = setTimeout(() => {
+        timedOut = true;
+        void deps.killAgent?.(dispatch.ptyId);
+        resolve({ exitCode: null });
+      }, secs * 1000);
+    });
+    const result = await Promise.race([deps.waitForExit(dispatch.ptyId), timeout]);
+    if (timer) clearTimeout(timer);
+    return result;
+  })();
 
-  // If the agent crashed, was killed, or exited non-zero, it did not finish the
-  // work — verifying now would run against stale/HEAD code and give a misleading
-  // result. Go straight to Failed (InProgress → Failed is a legal edge) and skip
-  // verification. Only a clean exit 0 proceeds to the QA gate.
+  // If the agent crashed, was killed, timed out, or exited non-zero, it did not
+  // finish the work — verifying now would run against stale/HEAD code and give a
+  // misleading result. Go straight to Failed (InProgress → Failed is a legal edge)
+  // and skip verification. Only a clean exit 0 proceeds to the QA gate.
   if (exit.exitCode !== 0) {
     await deps.setStatus(input.epic, input.story, "Failed");
-    return { status: "Failed", dispatch, agentExitCode: exit.exitCode };
+    return { status: "Failed", dispatch, agentExitCode: exit.exitCode, timedOut };
   }
 
   // The agent finished cleanly. Commit its work in the worktree so a later

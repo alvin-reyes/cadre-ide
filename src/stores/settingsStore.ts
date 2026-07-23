@@ -297,6 +297,10 @@ interface Settings {
   fleetModel: string;
   /** When true, the adversarial code review must pass before a story merges to main. */
   gateOnReview: boolean;
+  /** Kill a Dev agent that hasn't finished after this many minutes (0 = no cap). */
+  agentTimeoutMins: number;
+  /** When true, native-Claude dispatch uses the claude CLI login (no API key in env). */
+  dispatchUseLogin: boolean;
   orchestratorModel: string;
   ollamaEndpoint: string;
   ollamaModel: string;
@@ -324,6 +328,8 @@ interface SettingsStore extends Settings {
   setPlanningModel: (model: string) => void;
   setFleetModel: (model: string) => void;
   setGateOnReview: (on: boolean) => void;
+  setAgentTimeoutMins: (mins: number) => void;
+  setDispatchUseLogin: (on: boolean) => void;
   /** Load secrets (API key) from the OS keychain into the store (desktop only). */
   hydrateSecrets: () => Promise<void>;
   setOrchestratorModel: (model: string) => void;
@@ -378,6 +384,8 @@ const defaults: Settings = {
   planningModel: "claude-opus-4-8",
   fleetModel: "",
   gateOnReview: true,
+  agentTimeoutMins: 20,
+  dispatchUseLogin: false,
   orchestratorModel: "claude-opus-4-20250514",
   ollamaEndpoint: "http://localhost:11434",
   ollamaModel: "deepseek-r1",
@@ -476,6 +484,16 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
   setGateOnReview: (gateOnReview) => {
     set({ gateOnReview });
+    persistSettings(get());
+  },
+
+  setAgentTimeoutMins: (agentTimeoutMins) => {
+    set({ agentTimeoutMins: Math.max(0, Math.floor(agentTimeoutMins) || 0) });
+    persistSettings(get());
+  },
+
+  setDispatchUseLogin: (dispatchUseLogin) => {
+    set({ dispatchUseLogin });
     persistSettings(get());
   },
 

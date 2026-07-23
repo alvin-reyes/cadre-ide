@@ -142,6 +142,7 @@ export function tauriRunStoryDeps(onOutput?: OutputSink): RunStoryDeps {
     spawnAgent: makeSpawnAgent(onOutput),
     waitForExit,
     runVerification: makeRunVerification(onOutput),
+    killAgent: (ptyId: number) => invoke("kill_pty", { id: ptyId }).then(() => {}),
   };
 }
 
