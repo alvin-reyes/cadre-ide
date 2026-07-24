@@ -90,7 +90,10 @@ export interface ResolveDeps {
 }
 
 export interface ResolveInput {
-  root: string;
+  root: string;              // the Cadre project root — where the resolver worktree lives
+  /** the code repo the story targets (multi-repo). Worktree-management git (add/prune/
+   *  branch -D) and the final ff-only run here; === root for a single-repo project. */
+  repoPath: string;
   epic: number;
   story: number;
   storyBranch: string;       // the story's branch to merge in
@@ -118,15 +121,16 @@ export async function resolveMergeConflict(
   deps: ResolveDeps,
   input: ResolveInput
 ): Promise<ResolveResult> {
-  const { root, epic, story } = input;
+  const { root, repoPath, epic, story } = input;
   const rBranch = resolverBranch(epic, story);
   const rw = resolverWorktreePath(root, epic, story);
 
-  // Tolerant cleanup helper — used both at the start (idempotent) and on every
-  // failure path, and at the very end after a successful integration.
+  // Worktree-management git runs in the CODE REPO (repoPath) — the worktree is
+  // registered in that repo's git graph, and main to fast-forward lives there too.
+  // The worktree DIRECTORY (rw) still lives under the Cadre project root.
   const tryGit = async (args: string[]) => {
     try {
-      await deps.runGit(args, root);
+      await deps.runGit(args, repoPath);
     } catch {
       /* tolerant */
     }
@@ -142,7 +146,7 @@ export async function resolveMergeConflict(
   await cleanup();
 
   // ── Step 2: create worktree + branch off HEAD ───────────────────────────
-  await deps.runGit(["worktree", "add", "-b", rBranch, rw, "HEAD"], root);
+  await deps.runGit(["worktree", "add", "-b", rBranch, rw, "HEAD"], repoPath);
 
   // ── Step 3: attempt merge (expect conflicts — non-throwing) ────────────
   // runGitQuery never throws; a non-zero exit from a conflicting merge is
@@ -221,7 +225,7 @@ export async function resolveMergeConflict(
   // This is the ONLY place main is touched — and only after clean resolution
   // AND green verification. The caller holds the merge lock so main hasn't moved.
   try {
-    await deps.runGit(["merge", "--ff-only", rBranch], root);
+    await deps.runGit(["merge", "--ff-only", rBranch], repoPath);
   } catch {
     await cleanup();
     return { resolved: false, reason: "integrate-failed" };

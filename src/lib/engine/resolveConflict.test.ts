@@ -8,13 +8,14 @@ function fakeDeps(script: {
   ffThrows?: boolean;
 }) {
   const git: string[][] = [];
+  const calls: { args: string[]; cwd: string }[] = [];
   const deps = {
-    runGit: async (args: string[]) => {
-      git.push(args);
+    runGit: async (args: string[], cwd: string) => {
+      git.push(args); calls.push({ args, cwd });
       if (script.ffThrows && args.includes("--ff-only")) throw new Error("not fast-forward");
     },
-    runGitQuery: async (args: string[]) => {
-      git.push(args);
+    runGitQuery: async (args: string[], cwd: string) => {
+      git.push(args); calls.push({ args, cwd });
       if (args.includes("--diff-filter=U")) return { exitCode: 0, stdout: script.unmergedAfterAgent ?? "" };
       return { exitCode: 0, stdout: "" }; // merge leaves conflict, non-throwing
     },
@@ -22,10 +23,11 @@ function fakeDeps(script: {
     waitForExit: async () => ({ exitCode: script.agentExit ?? 0 }),
     runVerification: async () => ({ exitCode: script.verifyExit ?? 0, timedOut: false }),
   };
-  return { deps, git };
+  return { deps, git, calls };
 }
 
-const base = { root: "/proj", epic: 1, story: 2, storyBranch: "story/1.2", prompt: "P", commands: ["npm test"], timeoutSecs: 60 };
+// repoPath differs from root to prove worktree-management git routes to the CODE REPO.
+const base = { root: "/proj", repoPath: "/code/api", epic: 1, story: 2, storyBranch: "story/1.2", prompt: "P", commands: ["npm test"], timeoutSecs: 60 };
 
 describe("resolveMergeConflict", () => {
   it("resolves, verifies, and fast-forwards into main → resolved:true", async () => {
@@ -66,5 +68,14 @@ describe("resolveMergeConflict", () => {
   it("path helpers", () => {
     expect(resolverBranch(1,2)).toBe("resolve/1.2");
     expect(resolverWorktreePath("/proj",1,2)).toBe("/proj/.cadre/worktrees/resolve-1.2");
+  });
+  it("routes worktree-management + ff-only to the code repo (repoPath), worktree dir under root", async () => {
+    const { deps, calls } = fakeDeps({ unmergedAfterAgent: "", agentExit: 0, verifyExit: 0 });
+    await resolveMergeConflict(deps, base); // repoPath "/code/api", root "/proj"
+    const add = calls.find((c) => c.args[0] === "worktree" && c.args[1] === "add")!;
+    expect(add.cwd).toBe("/code/api");                                   // git runs in the code repo
+    expect(add.args).toContain("/proj/.cadre/worktrees/resolve-1.2");    // worktree dir under the Cadre project
+    const ff = calls.find((c) => c.args.includes("--ff-only"))!;
+    expect(ff.cwd).toBe("/code/api");                                    // fast-forward lands in the code repo
   });
 });

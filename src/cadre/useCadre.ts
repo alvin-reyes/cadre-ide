@@ -691,7 +691,7 @@ export const useCadre = create<CadreState>((set, get) => {
               const commands = approval?.verification ?? [];
               const res = await withMergeLock(() => resolveMergeConflict(
                 tauriResolveConflictDeps(onOutput),
-                { root, epic, story, storyBranch: storyBranch(epic, story), prompt,
+                { root, repoPath, epic, story, storyBranch: storyBranch(epic, story), prompt,
                   commands, timeoutSecs: 1800, agentTimeoutSecs: agentTimeoutSecs(), model, env }
               ));
               resolved = res.resolved;
