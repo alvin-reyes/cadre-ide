@@ -23,16 +23,16 @@
   --c-border: #1e1e2c;
   --c-border-strong: #2a2a3c;
 
-  /* Accent — Mint green (Cadre brand primary) */
-  --c-accent: #3ecf8e;
-  --c-accent-hover: #5bd9a0;
-  --c-accent-subtle: rgba(62, 207, 142, 0.15);
-  --c-accent-ring: rgba(62, 207, 142, 0.4);
-  --c-on-accent: #06231a;
+  /* Accent — Signal Violet (Cadre brand primary) */
+  --c-accent: #6d5ef8;
+  --c-accent-hover: #8375f5;
+  --c-accent-subtle: rgba(109, 94, 248, 0.15);
+  --c-accent-ring: rgba(109, 94, 248, 0.4);
+  --c-on-accent: #ffffff;
 
   /* Brand gradient + glow — primary buttons, brand surfaces */
-  --c-grad-brand: linear-gradient(150deg, #3ecf8e, #1a9e6c);
-  --c-shadow-brand: 0 8px 24px rgba(62, 207, 142, 0.35);
+  --c-grad-brand: linear-gradient(150deg, #6d5ef8, #3a2ed0);
+  --c-shadow-brand: 0 8px 24px rgba(109, 94, 248, 0.35);
 
   /* Status — brand semantic (Mint success, amber warning, coral danger) */
   --c-success: #8ce0c0;
@@ -41,7 +41,7 @@
   --c-warning-subtle: rgba(254, 188, 46, 0.15);
   --c-danger: #ff5f57;
   --c-danger-subtle: rgba(255, 95, 87, 0.15);
-  --c-info: #3ecf8e;
+  --c-info: #6d5ef8;
 
   /* Typography — Anthropic-style: Newsreader (~Tiempos) display, Inter (~Styrene) body */
   /* Cadre brand type: Space Grotesk display, Inter UI, JetBrains Mono code/labels */
@@ -121,14 +121,9 @@
   --c-border: rgba(11, 11, 18, 0.1);
   --c-border-strong: rgba(11, 11, 18, 0.18);
 
-  /* Accent — deeper emerald on the light ground for contrast; white text on it */
-  --c-accent: #10b981;
-  --c-accent-hover: #0ea371;
-  --c-on-accent: #ffffff;
-  --c-accent-subtle: rgba(16, 185, 129, 0.14);
-  --c-accent-ring: rgba(16, 185, 129, 0.45);
-  --c-info: #10b981;
-  --c-grad-brand: linear-gradient(150deg, #10b981, #0a7d55);
+  /* Accent stays Signal Violet — reads well on Cloud; tint the subtles for the light ground */
+  --c-accent-subtle: rgba(109, 94, 248, 0.14);
+  --c-accent-ring: rgba(109, 94, 248, 0.45);
 
   /* Status — deepened for contrast on a light ground */
   --c-success: #1fa971;
