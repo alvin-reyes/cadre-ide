@@ -195,18 +195,16 @@ export async function resolveMergeConflict(
     return { resolved: false, reason: "unresolved" };
   }
 
-  // If the agent didn't commit (working tree dirty / MERGE_HEAD still present),
-  // commit the resolution for it.
-  await deps.runGitQuery(["diff", "--cached", "--name-only"], rw);
-  try {
-    await deps.runGit(["add", "-A"], rw);
+  // Commit the resolution ONLY if the agent left it uncommitted (working tree dirty
+  // / MERGE_HEAD still present). If the agent already committed, `add -A` stages
+  // nothing and we skip — no junk empty commit lands in history.
+  await deps.runGit(["add", "-A"], rw);
+  const staged = await deps.runGitQuery(["diff", "--cached", "--name-only"], rw);
+  if (staged.stdout.trim() !== "") {
     await deps.runGit(
-      [...IDENT, "commit", "-m", `cadre: resolve merge for ${epic}.${story}`, "--allow-empty"],
+      [...IDENT, "commit", "-m", `cadre: resolve merge for ${epic}.${story}`],
       rw
     );
-  } catch {
-    // If commit fails (e.g. nothing to commit and --allow-empty somehow errors),
-    // we continue — the resolution may already be committed by the agent.
   }
 
   // ── Step 6: re-verify with frozen commands ──────────────────────────────
