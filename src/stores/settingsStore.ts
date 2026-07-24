@@ -301,6 +301,8 @@ interface Settings {
   agentTimeoutMins: number;
   /** When true, native-Claude dispatch uses the claude CLI login (no API key in env). */
   dispatchUseLogin: boolean;
+  /** Provider used for planning (PM/Architect/Designer chat, sharding, validation). Default "claude". */
+  authProvider: string;
   /** When true, re-dispatching a story resumes its prior Claude session to keep context. */
   resumeSessions: boolean;
   orchestratorModel: string;
@@ -332,6 +334,7 @@ interface SettingsStore extends Settings {
   setGateOnReview: (on: boolean) => void;
   setAgentTimeoutMins: (mins: number) => void;
   setDispatchUseLogin: (on: boolean) => void;
+  setAuthProvider: (id: string) => void;
   setResumeSessions: (on: boolean) => void;
   /** Load secrets (API key) from the OS keychain into the store (desktop only). */
   hydrateSecrets: () => Promise<void>;
@@ -389,6 +392,7 @@ const defaults: Settings = {
   gateOnReview: true,
   agentTimeoutMins: 20,
   dispatchUseLogin: false,
+  authProvider: "claude",
   resumeSessions: true,
   orchestratorModel: "claude-opus-4-20250514",
   ollamaEndpoint: "http://localhost:11434",
@@ -498,6 +502,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
   setDispatchUseLogin: (dispatchUseLogin) => {
     set({ dispatchUseLogin });
+    persistSettings(get());
+  },
+
+  setAuthProvider: (authProvider) => {
+    set({ authProvider });
     persistSettings(get());
   },
 
