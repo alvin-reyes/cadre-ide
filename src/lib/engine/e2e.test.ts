@@ -228,6 +228,7 @@ describe("e2e: SM sharding → board", () => {
       acceptanceCriteria: ["rejects a bad password", "issues a session on success"],
       tasks: ["write the failing auth test", "implement sign-in"],
       devNotes: "Use the existing users table; hash with argon2.",
+      definitionOfDone: ["All ACs pass with automated tests", "No regressions", "Verification command green"],
     };
     const { path, content } = await generateStory(
       {
@@ -272,6 +273,7 @@ describe("e2e: full pipeline — shard, dispatch, watch the board go Done", () =
           acceptanceCriteria: ["returns 200"],
           tasks: ["test /healthz", "add the route"],
           devNotes: "Express app in src/server.ts.",
+          definitionOfDone: ["Returns 200 on /healthz", "Test passes", "Verification command green"],
         }),
         writeFile: async (p, c) => {
           files.set(p, c);

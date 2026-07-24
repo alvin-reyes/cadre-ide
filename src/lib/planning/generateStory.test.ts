@@ -9,6 +9,7 @@ const toolResult = {
   acceptanceCriteria: ["session survives reload"],
   tasks: ["write failing test", "implement store"],
   devNotes: "Use redis per architecture/tech-stack.",
+  definitionOfDone: ["Session survives reload with test coverage", "No regressions", "Verification command green"],
 };
 
 function makeDeps() {

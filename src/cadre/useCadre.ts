@@ -79,7 +79,9 @@ Prefer a small, vertically-sliced, independently testable story. Populate every 
 
 Declare the exact repo-relative \`files\` this story will create or modify, and keep stories FILE-DISJOINT from one another — Cadre runs file-disjoint stories as parallel agents, and any file two stories share forces them to run sequentially. Slice the work so parallel stories don't touch the same files.
 
-Think across every LAYER (frontend/UI, backend/API, database) and the WHOLE lifecycle (setup, DevOps/CI-CD/deployment, tests, QA/acceptance testing, integration, monitoring, documentation, support) — not just backend features. A backlog that is backend-only, or missing the frontend, database, QA, or deployment work, is incomplete.`;
+Think across every LAYER (frontend/UI, backend/API, database) and the WHOLE lifecycle (setup, DevOps/CI-CD/deployment, tests, QA/acceptance testing, integration, monitoring, documentation, support) — not just backend features. A backlog that is backend-only, or missing the frontend, database, QA, or deployment work, is incomplete.
+
+Every story MUST include an extensive Definition of Done — a thorough, checkable list (acceptance criteria met and test-covered, edge cases, no regressions, docs, and the frozen verification command green). A story without a real DoD is incomplete.`;
 
 const DEV_SYSTEM_PROMPT = `You are the Dev agent. Implement the assigned story test-first: write the failing test, then the minimal code to make it pass. Follow the project's standards. Do NOT mark the story done — Cadre runs the verification command and decides.
 
@@ -539,9 +541,8 @@ export const useCadre = create<CadreState>((set, get) => {
       const repoVerification: Record<string, string[]> = {};
       for (const r of repos) if (r.verify?.trim()) repoVerification[r.id] = [r.verify.trim()];
       await invoke("approve_plan", { root, verification: cmds, repoVerification });
-      // Land on SHARD — the next step is breaking the plan into stories (the board
-      // is empty until the SM shards), not the (empty) execution board.
-      patchRoot(root, { verification: cmds, phase: "SHARD", needsReplan: false, busy: null });
+      // Land on EXECUTE — the next step is breaking the plan into stories and dispatching agents.
+      patchRoot(root, { verification: cmds, phase: "EXECUTE", needsReplan: false, busy: null });
       toast("Plan signed off — shard it into stories", "success");
       await logSession(root, `plan approved (PRD + architecture) — verified by: ${cmds.join(", ")}`);
     } catch (e) {
@@ -1172,13 +1173,8 @@ export const useCadre = create<CadreState>((set, get) => {
       projectContext: projectContext || prior.projectContext,
       isBrownfield,
       verification: approval?.verification ?? prior.verification,
-      // Approved on reload: go to FLEET if stories already exist (mid-execution),
-      // else SHARD (break the plan down) — matching approvePlan's landing.
-      phase: approved
-        ? useBmadStore.getState().stories.length > 0
-          ? "FLEET"
-          : "SHARD"
-        : prior.phase,
+      // Approved on reload: always land on EXECUTE (the combined shard + fleet view).
+      phase: approved ? "EXECUTE" : prior.phase,
     });
   },
   };
