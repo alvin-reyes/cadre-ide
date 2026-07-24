@@ -9,6 +9,8 @@ import { useCadre, MODEL } from "./useCadre";
 import { useBmadStore } from "../stores/bmadStore";
 import { reportError } from "../lib/reportError";
 import { useSettingsStore } from "../stores/settingsStore";
+import { resolvePlanningAuth } from "../lib/planning/planningAuth";
+import { secretGet } from "../lib/secrets";
 import type { StoryCard } from "../lib/engine/board";
 
 /**
@@ -44,8 +46,18 @@ export function OrchestratorChat() {
   const [draft, setDraft] = useState("");
   const [thinking, setThinking] = useState(false);
 
-  const apiKey = useSettingsStore((s) => s.anthropicApiKey);
+  const anthropicKey = useSettingsStore((s) => s.anthropicApiKey);
+  const authProvider = useSettingsStore((s) => s.authProvider);
+  const dispatchUseLogin = useSettingsStore((s) => s.dispatchUseLogin);
   const model = useSettingsStore((s) => s.planningModel) || MODEL;
+
+  // Resolved planning auth — drives the send gate and shows the not-ready reason.
+  const [planAuth, setPlanAuth] = useState<{ ready: boolean; apiKey: string; baseUrl?: string; reason?: string }>({ ready: false, apiKey: "" });
+  useEffect(() => {
+    resolvePlanningAuth(authProvider, dispatchUseLogin, secretGet).then((a) =>
+      setPlanAuth({ ready: a.ready, apiKey: a.apiKey, baseUrl: a.baseUrl, reason: a.reason })
+    );
+  }, [authProvider, dispatchUseLogin, anthropicKey]);
   const phase = useCadre((s) => s.phase);
   const prd = useCadre((s) => s.prd);
   const architecture = useCadre((s) => s.architecture);
@@ -72,7 +84,9 @@ export function OrchestratorChat() {
 
   async function send(text: string) {
     const t = text.trim();
-    if (!t || thinking || !apiKey) return;
+    if (!t || thinking || !planAuth.ready) return;
+    const auth = await resolvePlanningAuth(authProvider, dispatchUseLogin, secretGet);
+    if (!auth.ready) { reportError("orchestrator", new Error(auth.reason ?? "planning credential missing")); return; }
     const base: ChatMessage[] = [...messages, { role: "user", content: t }];
     setMessages([...base, { role: "assistant", content: "" }]);
     setDraft("");
@@ -92,7 +106,8 @@ export function OrchestratorChat() {
       });
     try {
       const res = await planningTurn({
-        apiKey,
+        apiKey: auth.apiKey,
+        baseUrl: auth.baseUrl,
         model,
         systemPrompt: `${ORCHESTRATOR_SYSTEM_PROMPT}\n\n## Live project state\n${ctx}`,
         messages: base,
@@ -152,19 +167,19 @@ export function OrchestratorChat() {
   const action = (fn: () => void, label: string, Icon: typeof Plus) => (
     <button
       onClick={fn}
-      disabled={!!busy || !apiKey}
+      disabled={!!busy || !planAuth.ready}
       className="cadre-chip"
       style={{
         display: "inline-flex",
         alignItems: "center",
         gap: 4,
         fontSize: "var(--c-fs-xs)",
-        color: busy || !apiKey ? "var(--c-text-muted)" : "var(--c-accent)",
+        color: busy || !planAuth.ready ? "var(--c-text-muted)" : "var(--c-accent)",
         background: "var(--c-accent-subtle)",
         border: "1px solid var(--c-accent-ring)",
         borderRadius: "var(--c-radius-full)",
         padding: "3px 9px",
-        cursor: busy || !apiKey ? "default" : "pointer",
+        cursor: busy || !planAuth.ready ? "default" : "pointer",
       }}
     >
       <Icon size={11} strokeWidth={2} />
@@ -267,13 +282,13 @@ export function OrchestratorChat() {
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={onKey}
             rows={1}
-            placeholder={apiKey ? "Ask the Orchestrator…" : "Add your API key first"}
-            disabled={!apiKey}
+            placeholder={planAuth.ready ? "Ask the Orchestrator…" : (planAuth.reason ?? "Add your API key first")}
+            disabled={!planAuth.ready}
             style={{ flex: 1, resize: "none", maxHeight: 90, background: "transparent", border: "none", outline: "none", color: "var(--c-text)", fontSize: "var(--c-fs-sm)", fontFamily: "var(--c-font-ui)", lineHeight: 1.5, padding: "3px 0" }}
           />
           <button
             onClick={() => send(draft)}
-            disabled={!draft.trim() || thinking || !apiKey}
+            disabled={!draft.trim() || thinking || !planAuth.ready}
             aria-label="Send"
             style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: "var(--c-radius-sm)", background: draft.trim() && !thinking ? "var(--c-accent)" : "var(--c-surface-3)", color: draft.trim() && !thinking ? "var(--c-on-accent)" : "var(--c-text-muted)", border: "none", cursor: draft.trim() && !thinking ? "pointer" : "default", flexShrink: 0 }}
           >

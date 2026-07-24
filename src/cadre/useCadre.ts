@@ -24,6 +24,7 @@ import { detectVerifyCommand } from "../lib/engine/detectVerify";
 import { integrateStory } from "../lib/engine/integrate";
 import { getProvider, resolveAgentEnv, type Provider } from "../lib/engine/providers";
 import { secretGet } from "../lib/secrets";
+import { resolvePlanningAuth } from "../lib/planning/planningAuth";
 import type { Status } from "../lib/engine/status";
 import type { PlanApproval } from "../lib/engine/planApproval";
 import {
@@ -308,10 +309,14 @@ function requireRoot(): string {
   return root;
 }
 
-function requireKey(): string {
-  const key = useSettingsStore.getState().anthropicApiKey;
-  if (!key) throw new Error("Add your Anthropic API key in the Planning Studio first.");
-  return key;
+/**
+ * Resolve the planning credential from the settings-selected provider.
+ * Non-Anthropic keys live only in the keychain, so we always read via secretGet.
+ * Returns a PlanningAuth with { apiKey, baseUrl, ready, reason }.
+ */
+async function getPlanningAuth() {
+  const s = useSettingsStore.getState();
+  return resolvePlanningAuth(s.authProvider, s.dispatchUseLogin, secretGet);
 }
 
 export const useCadre = create<CadreState>((set, get) => {
@@ -450,7 +455,12 @@ export const useCadre = create<CadreState>((set, get) => {
     set({ busy: "Sharding the next story (SM)…", error: null });
     try {
       const root = requireRoot();
-      const apiKey = requireKey();
+      const auth = await getPlanningAuth();
+      if (!auth.ready) {
+        reportError("planning", new Error(auth.reason ?? "planning credential missing"));
+        set({ busy: null });
+        return;
+      }
       const { prd, architecture, uxSpec } = get();
       const ids = useBmadStore.getState().stories.map((s) => s.id);
       const story = nextStoryNumber(epic, ids);
@@ -461,7 +471,7 @@ export const useCadre = create<CadreState>((set, get) => {
       await generateStory(
         {
           callWithTool: (systemPrompt, userPrompt, tool) =>
-            callTool({ apiKey, model: planningModel(), systemPrompt, userPrompt, tool }),
+            callTool({ apiKey: auth.apiKey, baseUrl: auth.baseUrl, model: planningModel(), systemPrompt, userPrompt, tool }),
           writeFile: (relPath, content) =>
             invoke("write_text_file", { path: `${root}/${relPath}`, content }),
         },
@@ -480,7 +490,12 @@ export const useCadre = create<CadreState>((set, get) => {
     set({ busy: "Sharding the full lifecycle backlog (SM)…", error: null });
     try {
       const root = requireRoot();
-      const apiKey = requireKey();
+      const auth = await getPlanningAuth();
+      if (!auth.ready) {
+        reportError("planning", new Error(auth.reason ?? "planning credential missing"));
+        set({ busy: null });
+        return;
+      }
       const { prd, architecture, uxSpec } = get();
       const ids = useBmadStore.getState().stories.map((s) => s.id);
       const start = nextStoryNumber(epic, ids);
@@ -489,7 +504,8 @@ export const useCadre = create<CadreState>((set, get) => {
         (uxSpec.trim() ? `\n\n---\n\n# UX / Design Spec\n\n${uxSpec}` : "");
 
       const toolInput = await callTool({
-        apiKey,
+        apiKey: auth.apiKey,
+        baseUrl: auth.baseUrl,
         model: planningModel(),
         systemPrompt: SM_SYSTEM_PROMPT,
         userPrompt:
@@ -838,12 +854,18 @@ export const useCadre = create<CadreState>((set, get) => {
     set({ busy: "Updating the architecture…", error: null });
     try {
       const root = requireRoot();
-      const apiKey = requireKey();
+      const auth = await getPlanningAuth();
+      if (!auth.ready) {
+        reportError("planning", new Error(auth.reason ?? "planning credential missing"));
+        set({ busy: null });
+        return;
+      }
       const prd = get().projects[root]?.prd ?? "";
 
       // 1. Architect re-derives the architecture from the amended PRD.
       const arch = await planningTurn({
-        apiKey,
+        apiKey: auth.apiKey,
+        baseUrl: auth.baseUrl,
         model: planningModel(),
         systemPrompt: `${ARCHITECT_SYSTEM_PROMPT}\n\n## Current PRD\n${prd}`,
         messages: [
@@ -860,7 +882,8 @@ export const useCadre = create<CadreState>((set, get) => {
       if (get().projects[root]?.uxSpec.trim()) {
         set({ busy: "Updating the UX…" });
         const ux = await planningTurn({
-          apiKey,
+          apiKey: auth.apiKey,
+          baseUrl: auth.baseUrl,
           model: planningModel(),
           systemPrompt: `${DESIGN_SYSTEM_PROMPT}\n\n## Current PRD\n${prd}`,
           messages: [

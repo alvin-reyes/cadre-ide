@@ -23,4 +23,9 @@ describe("resolvePlanningAuth", () => {
     expect(a.ready).toBe(false);
     expect(a.reason).toMatch(/login/i);
   });
+  it("claude + login WITH an anthropic key → ready", async () => {
+    const a = await resolvePlanningAuth("claude", true, secrets({ anthropic_api_key: "sk-ant-with-login" }));
+    expect(a).toMatchObject({ apiKey: "sk-ant-with-login", ready: true });
+    expect(a.baseUrl).toBeUndefined();
+  });
 });
