@@ -13,11 +13,10 @@
 import { Play, Network } from "lucide-react";
 import { useBmadStore } from "../stores/bmadStore";
 import { useCadre } from "./useCadre";
-import { stateInfo, LiveTerminal } from "./agentShared";
-import { rollupCounts, selectRunningAgents, storyRole } from "../lib/engine/kanban";
-import { FleetBoard } from "./components/FleetBoard";
+import { LiveTerminal } from "./agentShared";
+import { rollupCounts } from "../lib/engine/kanban";
 import { useSettingsStore } from "../stores/settingsStore";
-import { agentLabel, reconcileSlots } from "../lib/engine/agentSlots";
+import { agentLabel, composeRoster } from "../lib/engine/agentSlots";
 import type { StoryCard } from "../lib/engine/board";
 import type { AgentSlot } from "../lib/engine/projectSlices";
 
@@ -97,205 +96,6 @@ function OrchestratorNode({
   );
 }
 
-// ── AgentNode — one running agent ─────────────────────────────────────────────
-function AgentNode({ card }: { card: StoryCard }) {
-  const log = useCadre((s) => s.logs[card.id] ?? "");
-  const codeReview = useCadre((s) => s.codeReviews[card.id]);
-
-  const info = stateInfo(card.status);
-  const isInReview = card.status === "InReview";
-  // Role reflects the STORY type (from its [phase] tag): Dev / QA / DevOps / Docs —
-  // so DevOps and Docs agents are visible as distinct fleet roles. The verifying
-  // state (InReview) is conveyed by the status color + activity line, not the role.
-  const roleLabel = `${storyRole(card.title ?? "").label} agent`;
-
-  // Parse [phase] chip from title
-  const phaseMatch = card.title?.match(/^\[([^\]]+)\]\s*(.*)/);
-  const phaseChip = phaseMatch?.[1];
-  const displayTitle = phaseMatch ? phaseMatch[2] : (card.title || "(untitled)");
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 0,
-      }}
-    >
-      {/* Vertical line up from node to the horizontal bar */}
-      <div
-        style={{
-          width: 1,
-          height: 24,
-          background: "var(--c-border-strong)",
-          flexShrink: 0,
-        }}
-      />
-
-      {/* The agent card — cadre-generating applied when actively working */}
-      <div
-        className={card.status === "InProgress" ? "cadre-generating" : undefined}
-        style={{
-          background: "var(--c-surface-1)",
-          border: `1.5px solid ${isInReview ? "color-mix(in srgb, var(--c-warning) 60%, var(--c-border))" : "var(--c-border-strong)"}`,
-          borderRadius: "var(--c-radius)",
-          width: 280,
-          overflow: "hidden",
-          boxShadow: info.live
-            ? `0 0 0 2px color-mix(in srgb, ${isInReview ? "var(--c-warning)" : "var(--c-accent)"} 18%, transparent)`
-            : undefined,
-        }}
-      >
-        {/* Node header */}
-        <div
-          style={{
-            padding: "var(--c-space-2) var(--c-space-3)",
-            background: isInReview
-              ? "color-mix(in srgb, var(--c-warning) 8%, var(--c-surface-2))"
-              : "color-mix(in srgb, var(--c-accent) 6%, var(--c-surface-2))",
-            borderBottom: "1px solid var(--c-border)",
-            display: "flex",
-            flexDirection: "column",
-            gap: "var(--c-space-1)",
-          }}
-        >
-          {/* Role badge — mono uppercase §5 */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span
-              className="cadre-label-mono"
-              style={{
-                fontSize: "9px",
-                fontWeight: 700 as const,
-                color: isInReview ? "var(--c-warning)" : "var(--c-accent)",
-                background: isInReview
-                  ? "color-mix(in srgb, var(--c-warning) 15%, transparent)"
-                  : "color-mix(in srgb, var(--c-accent) 15%, transparent)",
-                border: `1px solid ${isInReview ? "color-mix(in srgb, var(--c-warning) 35%, transparent)" : "color-mix(in srgb, var(--c-accent) 35%, transparent)"}`,
-                borderRadius: "var(--c-radius-full)",
-                padding: "1px 7px",
-              }}
-            >
-              {roleLabel}
-            </span>
-
-            {/* Live pulse — brand status dot §5 */}
-            {info.live && (
-              <span
-                className={isInReview ? "cadre-dot cadre-dot-warning" : "cadre-dot cadre-dot-progress"}
-              />
-            )}
-
-            {/* Status label */}
-            <span
-              style={{
-                fontSize: "var(--c-fs-xs)",
-                color: info.color,
-                fontWeight: 500 as const,
-              }}
-            >
-              {info.label}
-            </span>
-          </div>
-
-          {/* Story id + title */}
-          <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
-            <span
-              style={{
-                fontSize: "var(--c-fs-xs)",
-                fontFamily: "var(--c-font-mono)",
-                color: "var(--c-text-muted)",
-                flexShrink: 0,
-              }}
-            >
-              {card.id}
-            </span>
-            {phaseChip && (
-              <span
-                className="cadre-label-mono"
-                style={{
-                  fontSize: "9px",
-                  fontWeight: 600 as const,
-                  padding: "1px 5px",
-                  borderRadius: "var(--c-radius-sm)",
-                  background: "var(--c-surface-3)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {phaseChip}
-              </span>
-            )}
-            <span
-              style={{
-                fontSize: "var(--c-fs-xs)",
-                color: "var(--c-text-secondary)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                flex: 1,
-                minWidth: 0,
-              }}
-            >
-              {displayTitle}
-            </span>
-          </div>
-        </div>
-
-        {/* Live terminal output */}
-        <div style={{ padding: "var(--c-space-2) var(--c-space-3)" }}>
-          <LiveTerminal log={log} empty="Waiting for the agent…" />
-        </div>
-      </div>
-
-      {/* For InReview agents — render the FleetBoard review panel as a child sub-node */}
-      {isInReview && codeReview && (
-        <>
-          {/* Connector from agent card to review sub-node */}
-          <div
-            style={{
-              width: 1,
-              height: 20,
-              background: "var(--c-border-strong)",
-              flexShrink: 0,
-            }}
-          />
-          <div
-            style={{
-              background: "var(--c-surface-1)",
-              border: "1px solid color-mix(in srgb, var(--c-warning) 40%, var(--c-border))",
-              borderRadius: "var(--c-radius)",
-              overflow: "hidden",
-              maxWidth: 280,
-              width: "100%",
-            }}
-          >
-            <div
-              style={{
-                fontSize: "9px",
-                fontWeight: 700 as const,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                color: "var(--c-text-muted)",
-                padding: "var(--c-space-1) var(--c-space-3)",
-                background: "var(--c-surface-2)",
-                borderBottom: "1px solid var(--c-border)",
-              }}
-            >
-              Review findings
-            </div>
-            <div style={{ overflow: "hidden" }}>
-              <FleetBoard
-                stories={[card]}
-                selectedId={card.id}
-                onSelect={() => {}}
-              />
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
 
 // ── PoolAgentNode — one stable team-pool slot ─────────────────────────────────
 function slotStatusInfo(status: AgentSlot["status"]): { label: string; color: string; live: boolean } {
@@ -466,17 +266,12 @@ export function AgentOrgChart() {
   const stories = useBmadStore((s) => s.stories);
   const dispatchReady = useCadre((s) => s.dispatchReady);
   const busy = useCadre((s) => s.busy);
-  const active = useCadre((s) => s.active);
   const preview = !useBmadStore((s) => s.projectRoot);
 
-  // Team-pool state
-  const useTeamPool = useSettingsStore((s) => s.useTeamPool);
-  const teamSize = useSettingsStore((s) => s.teamSize);
+  // Role fleet state — the pool is always on
+  const maxDevAgents = useSettingsStore((s) => s.maxDevAgents);
   const agentSlots = useCadre((s) => s.agentSlots);
   const agentLogs = useCadre((s) => s.agentLogs);
-
-  const running = selectRunningAgents(stories, active);
-  const counts = rollupCounts(stories);
 
   // Determine how many stories are ready-to-dispatch (Approved or Failed)
   const readyCount = stories.filter(
@@ -484,8 +279,33 @@ export function AgentOrgChart() {
   ).length;
   const canAutoExecute = !preview && !busy && readyCount > 0;
 
-  // Idle: no running agents
-  const idle = running.length === 0;
+  // Always render the role roster: use live agentSlots when populated,
+  // fall back to a placeholder roster (composeRoster with no existing slots)
+  // so QA + DevOps + Dev slots are visible even before the first dispatch.
+  const slotsToRender: AgentSlot[] =
+    agentSlots.length > 0
+      ? agentSlots
+      : composeRoster(maxDevAgents, []);
+
+  // Tally for the Orchestrator node caption
+  const qaSlot = slotsToRender.find((s) => s.role === "qa");
+  const devopsSlot = slotsToRender.find((s) => s.role === "devops");
+  const devSlots = slotsToRender.filter((s) => s.role === "dev");
+  const workingDevCount = devSlots.filter(
+    (s) => s.status === "working" || s.status === "verifying"
+  ).length;
+
+  const parts: string[] = [];
+  if (qaSlot) parts.push("QA");
+  if (devopsSlot) parts.push("DevOps");
+  if (devSlots.length > 0) {
+    parts.push(`${workingDevCount} Dev working`);
+  }
+  const poolSummary = parts.join(" · ") || "Fleet idle";
+
+  const workingTotal = slotsToRender.filter(
+    (s) => s.status === "working" || s.status === "verifying"
+  ).length;
 
   return (
     <div
@@ -583,164 +403,11 @@ export function AgentOrgChart() {
           minHeight: 0,
         }}
       >
-        {useTeamPool ? (
-          /* ── Team-pool mode: stable agent slot nodes ── */
-          (() => {
-            // Derive displayed slots from teamSize via reconcileSlots so the
-            // displayed pool matches teamSize immediately after the user changes
-            // it, without waiting for the next dispatch.
-            const slotsToRender = reconcileSlots(teamSize, agentSlots);
-            const workingCount = slotsToRender.filter((s) => s.status === "working" || s.status === "verifying").length;
-            const poolSummary = `${slotsToRender.length} agent${slotsToRender.length === 1 ? "" : "s"} · ${workingCount} working · ${slotsToRender.length - workingCount} idle`;
+        {/* ── Role roster: QA · DevOps · Dev×N (always rendered) ── */}
+        <>
+          {/* Orchestrator root node */}
+          <OrchestratorNode stories={stories} agentCount={workingTotal} poolSummary={poolSummary} />
 
-            return (
-              <>
-                {/* Orchestrator root node */}
-                <OrchestratorNode stories={stories} agentCount={workingCount} poolSummary={poolSummary} />
-
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    width: "100%",
-                  }}
-                >
-                  {/* Vertical stem */}
-                  <div
-                    style={{
-                      width: 1,
-                      height: 24,
-                      background: "var(--c-border-strong)",
-                      flexShrink: 0,
-                    }}
-                  />
-
-                  {/* Horizontal bar spanning all children */}
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "flex-start",
-                      position: "relative",
-                      width: "100%",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        flexWrap: "wrap",
-                        justifyContent: "center",
-                        gap: "var(--c-space-4)",
-                        position: "relative",
-                      }}
-                    >
-                      {/* Horizontal bar above the nodes */}
-                      {slotsToRender.length > 1 && (
-                        <div
-                          aria-hidden
-                          style={{
-                            position: "absolute",
-                            top: 0,
-                            left: "calc(280px / 2)",
-                            right: "calc(280px / 2)",
-                            height: 1,
-                            background: "var(--c-border-strong)",
-                            pointerEvents: "none",
-                          }}
-                        />
-                      )}
-
-                      {slotsToRender.map((slot) => (
-                        <PoolAgentNode
-                          key={slot.agentId}
-                          slot={slot}
-                          log={slot.status === "idle" ? "" : (agentLogs[slot.agentId] ?? "")}
-                          stories={stories}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {readyCount > 0 && agentSlots.length === 0 && (
-                  <div
-                    style={{
-                      marginTop: "var(--c-space-4)",
-                      fontSize: "var(--c-fs-xs)",
-                      color: "var(--c-text-muted)",
-                      textAlign: "center",
-                    }}
-                  >
-                    {readyCount} stor{readyCount === 1 ? "y" : "ies"} ready — hit Auto-execute to start the pool.
-                  </div>
-                )}
-              </>
-            );
-          })()
-        ) : (
-          <>
-            {/* Orchestrator root node (classic mode) */}
-            <OrchestratorNode stories={stories} agentCount={running.length} />
-
-            {idle ? (
-          /* ── Idle state — no running agents ── */
-          <div
-            style={{
-              marginTop: "var(--c-space-5)",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: "var(--c-space-2)",
-            }}
-          >
-            {/* Short connector */}
-            <div
-              style={{
-                width: 1,
-                height: 32,
-                background: "var(--c-border)",
-              }}
-            />
-            <div
-              style={{
-                background: "var(--c-surface-2)",
-                border: "1px dashed var(--c-border-strong)",
-                borderRadius: "var(--c-radius)",
-                padding: "var(--c-space-4) var(--c-space-5)",
-                textAlign: "center",
-                maxWidth: 340,
-              }}
-            >
-              <div
-                style={{
-                  fontSize: "var(--c-fs-sm)",
-                  color: "var(--c-text-secondary)",
-                  fontWeight: 500 as const,
-                  marginBottom: "var(--c-space-2)",
-                }}
-              >
-                No agents running
-              </div>
-              <div
-                style={{
-                  fontSize: "var(--c-fs-xs)",
-                  color: "var(--c-text-muted)",
-                  lineHeight: 1.6,
-                }}
-              >
-                {preview
-                  ? "Open a project to see the agent org-chart."
-                  : counts.backlog > 0
-                    ? `${counts.backlog} stor${counts.backlog === 1 ? "y" : "ies"} waiting in the backlog${counts.completed > 0 ? ` · ${counts.completed} done` : ""}. Dispatch from the Shard tab or hit Auto-execute.`
-                    : counts.completed > 0
-                      ? `All ${counts.completed} stor${counts.completed === 1 ? "y" : "ies"} done — nothing left to run.`
-                      : "No stories yet. Shard the backlog to get started."}
-              </div>
-            </div>
-          </div>
-        ) : (
-          /* ── Org-chart: connector + agent nodes ── */
           <div
             style={{
               display: "flex",
@@ -749,7 +416,7 @@ export function AgentOrgChart() {
               width: "100%",
             }}
           >
-            {/* Vertical stem from root down to horizontal bar */}
+            {/* Vertical stem */}
             <div
               style={{
                 width: 1,
@@ -769,7 +436,6 @@ export function AgentOrgChart() {
                 justifyContent: "center",
               }}
             >
-              {/* Agent nodes row */}
               <div
                 style={{
                   display: "flex",
@@ -780,13 +446,13 @@ export function AgentOrgChart() {
                 }}
               >
                 {/* Horizontal bar above the nodes */}
-                {running.length > 1 && (
+                {slotsToRender.length > 1 && (
                   <div
                     aria-hidden
                     style={{
                       position: "absolute",
                       top: 0,
-                      left: "calc(280px / 2)", // half the node width
+                      left: "calc(280px / 2)",
                       right: "calc(280px / 2)",
                       height: 1,
                       background: "var(--c-border-strong)",
@@ -795,15 +461,31 @@ export function AgentOrgChart() {
                   />
                 )}
 
-                {running.map((card) => (
-                  <AgentNode key={card.id} card={card} />
+                {slotsToRender.map((slot) => (
+                  <PoolAgentNode
+                    key={slot.agentId}
+                    slot={slot}
+                    log={slot.status === "idle" ? "" : (agentLogs[slot.agentId] ?? "")}
+                    stories={stories}
+                  />
                 ))}
               </div>
             </div>
           </div>
-        )}
-          </>
-        )}
+
+          {readyCount > 0 && agentSlots.length === 0 && (
+            <div
+              style={{
+                marginTop: "var(--c-space-4)",
+                fontSize: "var(--c-fs-xs)",
+                color: "var(--c-text-muted)",
+                textAlign: "center",
+              }}
+            >
+              {readyCount} stor{readyCount === 1 ? "y" : "ies"} ready — hit Auto-execute to start the fleet.
+            </div>
+          )}
+        </>
       </div>
     </div>
   );

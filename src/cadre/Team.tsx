@@ -7,7 +7,6 @@ import {
   Gavel,
   ClipboardCheck,
   Code2,
-  ShieldAlert,
   FlaskConical,
   Rocket,
   Search,
@@ -17,7 +16,7 @@ import { Modal } from "./components/Modal";
 import { useCadre } from "./useCadre";
 import { useBmadStore } from "../stores/bmadStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import { agentLabel, reconcileSlots } from "../lib/engine/agentSlots";
+import { agentLabel, composeRoster } from "../lib/engine/agentSlots";
 
 /**
  * The Team view — the CTO's org chart of the agent fleet: who's on the team, what
@@ -47,12 +46,6 @@ const REVIEW: Member[] = [
   { name: "Plan validation", role: "Whole-plan check that backs your CTO sign-off", icon: ClipboardCheck, tier: "Opus" },
 ];
 
-const FLEET: Member[] = [
-  { name: "Dev agent", role: "Implements the story test-first (claude -p in a worktree)", icon: Code2, tier: "Sonnet" },
-  { name: "Code reviewers ×3", role: "Diverse lenses — correctness · security · story-fit", icon: ShieldAlert, tier: "Sonnet" },
-  { name: "QA", role: "Mandatory gate + committed test report", icon: FlaskConical, tier: "Sonnet", planned: true },
-  { name: "Deployer", role: "Engine-run deploy + health check", icon: Rocket, tier: "Sonnet", planned: true },
-];
 
 function TierBadge({ tier }: { tier: Tier }) {
   const map: Record<Tier, { bg: string; fg: string }> = {
@@ -116,9 +109,8 @@ export function Team({ onClose }: { onClose: () => void }) {
   const techDocs = useCadre((s) => s.techDocs);
   const stories = useBmadStore((s) => s.stories);
 
-  // Team pool
-  const useTeamPool = useSettingsStore((s) => s.useTeamPool);
-  const teamSize = useSettingsStore((s) => s.teamSize);
+  // Role fleet — always on
+  const maxDevAgents = useSettingsStore((s) => s.maxDevAgents);
   const agentSlots = useCadre((s) => s.agentSlots);
 
   const planningLive = (name: string): Live | undefined => {
@@ -130,14 +122,6 @@ export function Team({ onClose }: { onClose: () => void }) {
     if (name === "Technical Writer") return ready(!!techDocs.trim());
     return undefined;
   };
-
-  const counts = { building: 0, blocked: 0, done: 0, draft: 0 };
-  for (const s of stories) {
-    if (s.status === "InProgress" || s.status === "InReview") counts.building++;
-    else if (s.status === "Blocked" || s.status === "Failed") counts.blocked++;
-    else if (s.status === "Done") counts.done++;
-    else counts.draft++;
-  }
 
   return (
     <Modal
@@ -181,61 +165,49 @@ export function Team({ onClose }: { onClose: () => void }) {
           </div>
 
           <div>
-            <div style={sectionLabel}>Fleet — they build & ship (per story)</div>
-            {useTeamPool ? (
-              /* ── Team-pool mode: list agent slots ── */
-              (() => {
-                // Derive slots from teamSize via reconcileSlots so the roster
-                // matches teamSize immediately after the user changes it.
-                const slotsToShow = reconcileSlots(teamSize, agentSlots);
+            <div style={sectionLabel}>Fleet — QA · DevOps · Dev agents (role-composed, always on)</div>
+            {/* Always render the role roster. Fall back to composeRoster placeholder
+                before the first dispatch so QA + DevOps + Dev slots are visible. */}
+            {(() => {
+              const slotsToShow =
+                agentSlots.length > 0
+                  ? agentSlots
+                  : composeRoster(maxDevAgents, []);
 
-                function slotLive(status: "idle" | "working" | "verifying"): Live {
-                  if (status === "working") return { label: "working", kind: "active" };
-                  if (status === "verifying") return { label: "verifying", kind: "active" };
-                  return { label: "idle", kind: "idle" };
-                }
+              function slotLive(status: "idle" | "working" | "verifying"): Live {
+                if (status === "working") return { label: "working", kind: "active" };
+                if (status === "verifying") return { label: "verifying", kind: "active" };
+                return { label: "idle", kind: "idle" };
+              }
 
-                return (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {slotsToShow.map((slot) => {
-                      const storyCard = slot.currentStory
-                        ? stories.find((s) => s.id === slot.currentStory)
-                        : null;
-                      const assignment = storyCard
-                        ? `${storyCard.epic}.${storyCard.story} · ${storyCard.title ?? slot.currentStory}`
-                        : "No task assigned";
+              // Choose icon by role
+              function roleIcon(role?: string): typeof Code2 {
+                if (role === "qa") return FlaskConical;
+                if (role === "devops") return Rocket;
+                return Code2;
+              }
 
-                      const m: Member = {
-                        name: agentLabel(slot.agentId),
-                        role: assignment,
-                        icon: Code2,
-                        tier: "Sonnet",
-                      };
-                      return <MemberRow key={slot.agentId} m={m} live={slotLive(slot.status)} />;
-                    })}
-                  </div>
-                );
-              })()
-            ) : (
-              /* ── Classic mode: existing static fleet rows ── */
-              <>
-                <div style={{ display: "flex", gap: 12, padding: "0 2px 6px", fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)" }}>
-                  {stories.length === 0 ? (
-                    <span>No stories yet.</span>
-                  ) : (
-                    <>
-                      <span>{stories.length} stories</span>
-                      {counts.building > 0 && <span style={{ color: "var(--c-accent)" }}>{counts.building} building</span>}
-                      {counts.blocked > 0 && <span style={{ color: "var(--c-warning)" }}>{counts.blocked} blocked</span>}
-                      {counts.done > 0 && <span style={{ color: "var(--c-success)" }}>{counts.done} done</span>}
-                    </>
-                  )}
-                </div>
+              return (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {FLEET.map((m) => <MemberRow key={m.name} m={m} />)}
+                  {slotsToShow.map((slot) => {
+                    const storyCard = slot.currentStory
+                      ? stories.find((s) => s.id === slot.currentStory)
+                      : null;
+                    const assignment = storyCard
+                      ? `${storyCard.epic}.${storyCard.story} · ${storyCard.title ?? slot.currentStory}`
+                      : "No task assigned";
+
+                    const m: Member = {
+                      name: agentLabel(slot.agentId),
+                      role: assignment,
+                      icon: roleIcon(slot.role),
+                      tier: "Sonnet",
+                    };
+                    return <MemberRow key={slot.agentId} m={m} live={slotLive(slot.status)} />;
+                  })}
                 </div>
-              </>
-            )}
+              );
+            })()}
           </div>
         </div>
     </Modal>
