@@ -114,7 +114,6 @@ vi.mock("../lib/planning/storyTool", () => ({
   CREATE_BACKLOG_TOOL: {},
   backlogFromTool: vi.fn(() => []),
 }));
-vi.mock("../lib/engine/schedule", () => ({ scheduleParallel: vi.fn(() => []) }));
 vi.mock("../lib/engine/detectVerify", () => ({ detectVerifyCommand: vi.fn(() => "") }));
 vi.mock("../lib/engine/integrate", () => ({ integrateStory: vi.fn() }));
 vi.mock("../lib/engine/providers", () => ({

@@ -49,9 +49,9 @@ export interface CadreSlice {
   logs: Record<string, string>;
   codeReviews: Record<string, { status: "reviewing" | "done"; reviews?: LensReview[] }>;
   active: Record<string, boolean>;
-  /** Persistent team-pool agent slots (agentId → slot state). Only populated when useTeamPool is on. */
+  /** Persistent role-fleet agent slots (QA, DevOps, Dev-N). */
   agentSlots: AgentSlot[];
-  /** Per-agent accumulated output log, keyed by agentId. Only populated when useTeamPool is on. */
+  /** Per-agent accumulated output log, keyed by agentId. */
   agentLogs: Record<string, string>;
   /** Human-readable status while an async action runs for this project (null = idle). */
   busy: string | null;

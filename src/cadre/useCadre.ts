@@ -172,9 +172,9 @@ interface CadreState {
    * session — the process is a child of the app). See `isInterrupted`.
    */
   active: Record<string, boolean>;
-  /** Persistent team-pool agent slots. Only populated when useTeamPool is on. */
+  /** Persistent role-fleet agent slots (QA, DevOps, Dev-N). */
   agentSlots: AgentSlot[];
-  /** Per-agent accumulated output log, keyed by agentId. Only populated when useTeamPool is on. */
+  /** Per-agent accumulated output log, keyed by agentId. */
   agentLogs: Record<string, string>;
   /** which model provider the Dev fleet runs on (id from engine PROVIDERS) */
   fleetProvider: string;
@@ -945,6 +945,8 @@ export const useCadre = create<CadreState>((set, get) => {
       const idleDevAgents: string[] = slots.filter((s) => s.role === "dev").map((s) => s.agentId);
 
       let inFlight = 0;
+      let qaBusy = false;
+      let devopsBusy = false;
       let resolveAll!: () => void;
       const allDone = new Promise<void>((res) => { resolveAll = res; });
 
@@ -952,13 +954,6 @@ export const useCadre = create<CadreState>((set, get) => {
       patchRoot(root, {
         busy: `Fleet: dispatching ${totalStories} stor${totalStories === 1 ? "y" : "ies"} (QA · DevOps · ${maxDev} Dev max)…`,
       });
-
-      // Helper: is a slot currently idle (check live agentSlots state)
-      const isSlotIdle = (agentId: string): boolean => {
-        const currentSlots = get().projects[root]?.agentSlots ?? [];
-        const slot = currentSlots.find((s) => s.agentId === agentId);
-        return !slot || slot.status === "idle";
-      };
 
       function pump() {
         const allEmpty = remainingDev.length === 0 && remainingQa.length === 0 && remainingDevops.length === 0;
@@ -968,16 +963,18 @@ export const useCadre = create<CadreState>((set, get) => {
         }
 
         // ── QA track (one at a time on agent-qa) ──
-        if (remainingQa.length > 0 && isSlotIdle(QA_AGENT_ID)) {
+        if (remainingQa.length > 0 && !qaBusy) {
           // Pick the first QA story that is file-disjoint from inFlightFiles
           const pick = remainingQa.find((s) => s.files.length === 0 ? inFlightFiles.size === 0 : !s.files.some((f) => inFlightFiles.has(f)));
           if (pick) {
             remainingQa = remainingQa.filter((s) => s.id !== pick.id);
             pick.files.forEach((f) => inFlightFiles.add(f));
             inFlight++;
+            qaBusy = true;
             const card = byId.get(pick.id)!;
             get().dispatchStory(card.epic, card.story, { silent: true, agentId: QA_AGENT_ID, context }).finally(() => {
               inFlight--;
+              qaBusy = false;
               pick.files.forEach((f) => inFlightFiles.delete(f));
               pump();
             });
@@ -985,15 +982,17 @@ export const useCadre = create<CadreState>((set, get) => {
         }
 
         // ── DevOps track (one at a time on agent-devops) ──
-        if (remainingDevops.length > 0 && isSlotIdle(DEVOPS_AGENT_ID)) {
+        if (remainingDevops.length > 0 && !devopsBusy) {
           const pick = remainingDevops.find((s) => s.files.length === 0 ? inFlightFiles.size === 0 : !s.files.some((f) => inFlightFiles.has(f)));
           if (pick) {
             remainingDevops = remainingDevops.filter((s) => s.id !== pick.id);
             pick.files.forEach((f) => inFlightFiles.add(f));
             inFlight++;
+            devopsBusy = true;
             const card = byId.get(pick.id)!;
             get().dispatchStory(card.epic, card.story, { silent: true, agentId: DEVOPS_AGENT_ID, context }).finally(() => {
               inFlight--;
+              devopsBusy = false;
               pick.files.forEach((f) => inFlightFiles.delete(f));
               pump();
             });
@@ -1002,8 +1001,8 @@ export const useCadre = create<CadreState>((set, get) => {
 
         // ── Dev track (up to maxDev parallel, file-disjoint) ──
         // Fallback: any QA/DevOps story whose role-agent is busy may be picked by a Dev slot
-        const qaAgentBusy = !isSlotIdle(QA_AGENT_ID);
-        const devopsAgentBusy = !isSlotIdle(DEVOPS_AGENT_ID);
+        const qaAgentBusy = qaBusy;
+        const devopsAgentBusy = devopsBusy;
 
         // Build the dev candidate list: dev stories + fallback qa/devops stories
         const devCandidates: ReadyStory[] = [

@@ -1,14 +1,8 @@
 /**
- * agentSlots — pure slot-reconciliation helpers (no Tauri/React/store imports).
+ * agentSlots — pure slot helpers (no Tauri/React/store imports).
  *
- * ENGINE-OWNED INVARIANT: reconcileSlots is the single source of truth for
- * clamping teamSize and seeding the agent-pool slot array. useCadre's pump
- * and the UI components both delegate here so the invariant is never
- * duplicated.
- *
- * Task 1 additions:
- *  - composeRoster(maxDev, existing): AgentSlot[]  — role-composed fleet builder
- *  - agentLabel updated to handle qa / devops / dev-N ids
+ * composeRoster(maxDev, existing): AgentSlot[] — role-composed fleet builder.
+ * agentLabel: converts role-typed agentIds to human-readable labels.
  */
 
 import type { AgentSlot } from "./projectSlices";
@@ -50,40 +44,6 @@ export function agentLabel(agentId: string): string {
   if (legacyM) return `Agent ${Number(legacyM[1]) + 1}`;
 
   return agentId;
-}
-
-// ── reconcileSlots (legacy, kept for Task 2 callers) ─────────────────────────
-
-const MIN_TEAM_SIZE = 1;
-const MAX_TEAM_SIZE = 8;
-
-/**
- * Produce exactly `teamSize` slots (agent-0 … agent-(N-1)), clamped to [1, 8].
- * Any slot whose agentId matches an existing slot is reused as-is (preserving
- * currentStory and status); new slots are fresh { agentId, currentStory: null,
- * status: "idle" }.
- *
- * Edge cases:
- * - teamSize ≤ 0, NaN, or negative → clamped to 1
- * - teamSize > 8 → clamped to 8
- * - Shrinking drops the high-index slots (existing slots beyond N are ignored).
- *
- * @deprecated Use composeRoster for the role-composed fleet (Task 2 will migrate
- * callers). Kept here so existing callers (Team.tsx, AgentOrgChart.tsx,
- * useCadre.ts) compile without change until Task 2.
- */
-export function reconcileSlots(teamSize: number, existing: AgentSlot[]): AgentSlot[] {
-  // Clamp: treat NaN and negatives as 1.
-  const safeSize = Number.isFinite(teamSize) && teamSize >= MIN_TEAM_SIZE
-    ? Math.min(teamSize, MAX_TEAM_SIZE)
-    : MIN_TEAM_SIZE;
-
-  const existingMap = new Map(existing.map((s) => [s.agentId, s]));
-
-  return Array.from({ length: safeSize }, (_, i) => {
-    const agentId = `agent-${i}`;
-    return existingMap.get(agentId) ?? { agentId, currentStory: null, status: "idle" as const };
-  });
 }
 
 // ── composeRoster ─────────────────────────────────────────────────────────────
