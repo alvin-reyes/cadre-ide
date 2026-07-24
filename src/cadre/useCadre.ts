@@ -10,7 +10,7 @@ import { ARCHITECT_SYSTEM_PROMPT, DESIGN_SYSTEM_PROMPT } from "../lib/planning/p
 import { generateStory } from "../lib/planning/generateStory";
 import { runApprovedStory } from "../lib/engine/orchestrator";
 import { reviewStory as reviewStoryFleet, aggregateReviews, type LensReview } from "../lib/engine/reviewFleet";
-import { documentProject as documentProjectFleet, BROWNFIELD_DOC_PATH } from "../lib/engine/brownfield";
+import { documentAllRepos, composeAggregateAnalysis, BROWNFIELD_DOC_PATH } from "../lib/engine/brownfield";
 import { CODE_REVIEW_LENSES } from "../lib/planning/review";
 import { tauriOrchestratorDeps, tauriReviewFleetDeps, tauriResolveConflictDeps } from "../lib/engine/tauriDeps";
 import { composeDispatchPrompt, storyBranch, type AlwaysFile } from "../lib/engine/dispatch";
@@ -21,6 +21,7 @@ import { appendSessionEntry, SESSION_LOG_PATH } from "../lib/engine/sessionLog";
 import { resolveStorySession } from "../lib/engine/agentSessions";
 import { nextStoryNumber, parseStoryFiles, parseStoryRepo, shardStory } from "../lib/engine/shard";
 import { parseRepos, resolveRepoPath, findRepo } from "../lib/engine/repos";
+import { useRepos } from "../stores/reposStore";
 import { CREATE_BACKLOG_TOOL, backlogFromTool } from "../lib/planning/storyTool";
 import { scheduleParallel } from "../lib/engine/schedule";
 import { detectVerifyCommand } from "../lib/engine/detectVerify";
@@ -968,19 +969,48 @@ export const useCadre = create<CadreState>((set, get) => {
       const provider = getProvider(get().fleetProvider);
       const { env, model } = await resolveFleetAuth(provider);
 
-      const res = await documentProjectFleet(tauriReviewFleetDeps(onOutput), {
-        root,
-        passes: 2,
-        model,
-        env,
-      });
-      // Ground the PM in the existing project (read back what the agent wrote).
-      const content =
-        res.content ||
-        (await invoke<string>("read_file", { path: `${root}/${BROWNFIELD_DOC_PATH}` }).catch(() => ""));
-      // Auto-detect the project's real test command to pre-fill sign-off later.
-      const detectedVerify = await detectProjectVerify(root).catch(() => "");
-      patchRoot(root, { projectContext: content, isBrownfield: false, analyzingBrownfield: false, detectedVerify, busy: null });
+      // Read the manifest (tolerant — missing cadre.json defaults to single root repo).
+      const manifestJson = await readManifest(root);
+      const repoRefs = parseRepos(manifestJson);
+      // Resolve each repo's path to an absolute path for the orchestrator.
+      const repos = repoRefs.map((r) => ({
+        id: r.id,
+        name: r.name,
+        path: resolveRepoPath(root, r.path),
+      }));
+
+      const baseDeps = tauriReviewFleetDeps(onOutput);
+      const results = await documentAllRepos(
+        {
+          ...baseDeps,
+          detectVerify: (repoRoot) => detectProjectVerify(repoRoot).then((v) => v || null),
+          onRepoStart: (repo, i, total) => {
+            onOutput(`\n\n=== Analyzing ${repo.name} (${i + 1}/${total}) ===\n`);
+          },
+        },
+        { repos, passes: 2, model, env }
+      );
+
+      // Compose aggregate analysis (single repo → verbatim; multi → sectioned).
+      const projectContext = composeAggregateAnalysis(results);
+      // Write the aggregate to the root so hydrate can restore it.
+      await invoke("write_text_file", {
+        path: `${root}/${BROWNFIELD_DOC_PATH}`,
+        content: projectContext,
+      }).catch(() => {});
+
+      // Persist detected verify commands to cadre.json via reposStore.
+      for (const result of results) {
+        if (result.detectedVerify) {
+          await useRepos.getState().setVerify(root, result.id, result.detectedVerify).catch(() => {});
+        }
+      }
+
+      // Pre-fill the single detectedVerify field from the default/first repo
+      // so the single-repo sign-off verify field still pre-fills as before.
+      const firstVerify = results[0]?.detectedVerify ?? "";
+
+      patchRoot(root, { projectContext, isBrownfield: false, analyzingBrownfield: false, detectedVerify: firstVerify, busy: null });
       toast("Project analyzed — the PM now has context", "success");
     } catch (e) {
       patchRoot(root, { error: String(e), analyzingBrownfield: false, busy: null });
