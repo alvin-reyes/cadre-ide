@@ -1,0 +1,1 @@
+Carde brand assets. See ../BRAND.md for usage. SVGs scale losslessly; rasterize app-icon.svg to 1024/512/256/128/64/32 and favicon.svg to 32/16 as needed.

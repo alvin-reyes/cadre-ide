@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Hexagon, FolderOpen, ArrowRight, Sparkles } from "lucide-react";
+import { FolderOpen, ArrowRight, Sparkles } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useBmadStore } from "../stores/bmadStore";
+import { BrandLogo } from "./BrandLogo";
 import { isTauri } from "../lib/secrets";
 
 /** First-run: start a new idea, open an existing project, or preview the UI. */
@@ -90,11 +91,8 @@ export function Welcome({ onPreview }: { onPreview: () => void }) {
       }}
     >
       <div style={{ width: 440, textAlign: "center" }}>
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 9, marginBottom: "var(--c-space-3)" }}>
-          <Hexagon size={26} strokeWidth={2} style={{ color: "var(--c-accent)" }} />
-          <span className="cadre-wordmark" style={{ fontSize: "var(--c-fs-2xl)" }}>
-            cadre
-          </span>
+        <div style={{ display: "inline-flex", alignItems: "center", marginBottom: "var(--c-space-3)" }}>
+          <BrandLogo size={40} />
         </div>
         <div style={{ fontSize: "var(--c-fs-md)", color: "var(--c-text-secondary)", marginBottom: "var(--c-space-6)" }}>
           Disciplined AI development. <b style={{ color: "var(--c-text)" }}>Verified, not vibed.</b>
