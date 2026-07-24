@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Phase } from "./components/PhaseStepper";
 import { useBmadStore } from "../stores/bmadStore";
 import { useSettingsStore } from "../stores/settingsStore";
+import { useModelsStore } from "../stores/modelsStore";
 import { toast } from "../stores/toastStore";
 import { aiLog } from "../stores/aiLogStore";
 import { callTool, planningTurn } from "../lib/planning/planningChat";
@@ -57,14 +58,19 @@ import { pickAssignable, type ReadyStory } from "../lib/engine/pool";
 // MODEL is the default; Settings can override it (planningModel / fleetModel).
 export const MODEL = "claude-opus-4-8";
 
-/** The configured planning-brain model (Settings override, else the default). */
+/** The configured planning-brain model — project override, else Settings, else the default. */
 export function planningModel(): string {
-  return useSettingsStore.getState().planningModel || MODEL;
+  return useModelsStore.getState().models.planning || useSettingsStore.getState().planningModel || MODEL;
 }
 
-/** The configured fleet-model override, if any (empty → caller uses provider default). */
+/** The fleet-model override — project override, else Settings (empty → caller uses provider default). */
 export function fleetModelOverride(): string {
-  return useSettingsStore.getState().fleetModel || "";
+  return useModelsStore.getState().models.fleet || useSettingsStore.getState().fleetModel || "";
+}
+
+/** The fleet provider id — project override, else the global fleetProvider state. */
+export function fleetProviderId(): string {
+  return useModelsStore.getState().models.provider || useCadre.getState().fleetProvider;
 }
 
 /**
@@ -714,7 +720,7 @@ export const useCadre = create<CadreState>((set, get) => {
       });
 
       // Resolve the model + per-agent env for the selected fleet provider.
-      const provider = getProvider(get().fleetProvider);
+      const provider = getProvider(fleetProviderId());
       const { env, model } = await resolveFleetAuth(provider);
       onOutput(`[cadre] dispatching on ${provider.name} (${model ?? "CLI default model"})\n`);
 
@@ -833,7 +839,7 @@ export const useCadre = create<CadreState>((set, get) => {
             try {
               const context = await loadSharedContext(root);
               const prompt = composeResolverPrompt({ storyMarkdown, alwaysFiles: context, epic, story });
-              const provider = getProvider(get().fleetProvider);
+              const provider = getProvider(fleetProviderId());
               const { env, model } = await resolveFleetAuth(provider);
               const approval = await invoke<PlanApproval | null>("get_plan_approval", { root }).catch(() => null);
               const commands = approval?.verification ?? [];
@@ -1064,7 +1070,7 @@ export const useCadre = create<CadreState>((set, get) => {
     };
     try {
       // Same provider routing as dispatch — reviewers are agents on the fleet.
-      const provider = getProvider(get().fleetProvider);
+      const provider = getProvider(fleetProviderId());
       const { env, model } = await resolveFleetAuth(provider);
       onOutput(`[cadre] dispatching ${CODE_REVIEW_LENSES.length} adversarial reviewers on ${provider.name}\n`);
 
@@ -1120,7 +1126,7 @@ export const useCadre = create<CadreState>((set, get) => {
       patchRoot(root, { logs: { ...(get().projects[root]?.logs ?? {}), brownfield: capped } });
     };
     try {
-      const provider = getProvider(get().fleetProvider);
+      const provider = getProvider(fleetProviderId());
       const { env, model } = await resolveFleetAuth(provider);
 
       // Read the manifest (tolerant — missing cadre.json defaults to single root repo).

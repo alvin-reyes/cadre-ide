@@ -19,6 +19,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre } from "./useCadre";
 import { useOpenProjects } from "../stores/openProjectsStore";
 import { useRepos } from "../stores/reposStore";
+import { useModelsStore } from "../stores/modelsStore";
 import { ContextView } from "./ContextView";
 
 /** The four top-level views, switched via the dock rail. Orchestrator is default. */
@@ -99,6 +100,8 @@ export function CadreApp() {
       hydrateFromProject();
       // Load the repo registry from cadre.json so RepoRegistry and per-repo verify gate are current.
       useRepos.getState().load(projectRoot);
+      // Load this project's model config from cadre.json (falls back to global when absent).
+      useModelsStore.getState().load(projectRoot);
       // Ensure the tab list always knows about this project (covers the Welcome
       // first-open path and any other direct openProject call).
       const { roots } = useOpenProjects.getState();

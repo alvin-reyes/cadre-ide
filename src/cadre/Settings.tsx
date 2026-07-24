@@ -8,6 +8,7 @@ import { secretGet, secretSet, isTauri } from "../lib/secrets";
 import { RepoSection } from "./RepoRegistry";
 import { useTrackerStore } from "../stores/trackerStore";
 import { useBmadStore } from "../stores/bmadStore";
+import { useModelsStore } from "../stores/modelsStore";
 
 /**
  * Settings — the CTO's control panel for API keys and models. Keys are written to
@@ -51,7 +52,13 @@ export function Settings({ onClose }: { onClose: () => void }) {
   const fleetProvider = useCadre((s) => s.fleetProvider);
   const setFleetProvider = useCadre((s) => s.setFleetProvider);
 
-  const provider = PROVIDERS[fleetProvider] ?? PROVIDERS.claude;
+  const projectRoot = useBmadStore((s) => s.projectRoot);
+  const projectModels = useModelsStore((s) => s.models);
+  const setProjectModels = useModelsStore((s) => s.setModels);
+
+  // Effective provider drives the fleet-model placeholder (its default model).
+  const effectiveProviderId = projectRoot ? (projectModels.provider ?? fleetProvider) : fleetProvider;
+  const effectiveProvider = PROVIDERS[effectiveProviderId] ?? PROVIDERS.claude;
 
   return (
     <Modal
@@ -81,13 +88,25 @@ export function Settings({ onClose }: { onClose: () => void }) {
         </Section>
 
         {/* Models */}
-        <Section icon={Cpu} title="Models" subtitle="The planning brain thinks; the dev fleet builds. The engine verifies either way.">
+        <Section
+          icon={Cpu}
+          title="Models"
+          subtitle={
+            projectRoot
+              ? "Models for THIS project — saved to its cadre.json. Blank = the global default. The engine verifies either way."
+              : "The planning brain thinks; the dev fleet builds. Open a project to set its models; these are the global defaults."
+          }
+        >
           <Field label="Planning brain" hint="PM · Architect · Designer · sharding · plan validation · reviews">
             <input
               list="cadre-planning-models"
-              value={planningModel}
-              onChange={(e) => setPlanningModel(e.target.value)}
-              placeholder="claude-opus-4-8"
+              value={projectRoot ? (projectModels.planning ?? "") : planningModel}
+              onChange={(e) =>
+                projectRoot
+                  ? setProjectModels(projectRoot, { planning: e.target.value })
+                  : setPlanningModel(e.target.value)
+              }
+              placeholder={projectRoot ? (planningModel || "claude-opus-4-8") : "claude-opus-4-8"}
               style={inputStyle}
             />
             <datalist id="cadre-planning-models">
@@ -98,7 +117,15 @@ export function Settings({ onClose }: { onClose: () => void }) {
           </Field>
 
           <Field label="Dev fleet provider" hint="Which model provider the Dev/QA fleet runs on">
-            <select value={fleetProvider} onChange={(e) => setFleetProvider(e.target.value)} style={inputStyle}>
+            <select
+              value={projectRoot ? (projectModels.provider ?? fleetProvider) : fleetProvider}
+              onChange={(e) =>
+                projectRoot
+                  ? setProjectModels(projectRoot, { provider: e.target.value })
+                  : setFleetProvider(e.target.value)
+              }
+              style={inputStyle}
+            >
               {Object.values(PROVIDERS).map((pr) => (
                 <option key={pr.id} value={pr.id}>
                   {pr.name}
@@ -107,11 +134,15 @@ export function Settings({ onClose }: { onClose: () => void }) {
             </select>
           </Field>
 
-          <Field label="Dev fleet model" hint={`Override — blank uses ${provider.name}'s default (${provider.defaultModel})`}>
+          <Field label="Dev fleet model" hint={`Override — blank uses ${effectiveProvider.name}'s default (${effectiveProvider.defaultModel})`}>
             <input
-              value={fleetModel}
-              onChange={(e) => setFleetModel(e.target.value)}
-              placeholder={provider.defaultModel}
+              value={projectRoot ? (projectModels.fleet ?? "") : fleetModel}
+              onChange={(e) =>
+                projectRoot
+                  ? setProjectModels(projectRoot, { fleet: e.target.value })
+                  : setFleetModel(e.target.value)
+              }
+              placeholder={effectiveProvider.defaultModel}
               style={inputStyle}
             />
           </Field>
