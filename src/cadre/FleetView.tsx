@@ -512,7 +512,7 @@ function ActivityTile({ card, log, live, onOpen }: { card: StoryCard; log: strin
 }
 
 /** Choose which model the Dev fleet runs on; capture a non-Claude key if needed. */
-function FleetModelPicker() {
+export function FleetModelPicker() {
   const fleetProvider = useCadre((s) => s.fleetProvider);
   const setFleetProvider = useCadre((s) => s.setFleetProvider);
   const provider = getProvider(fleetProvider);
