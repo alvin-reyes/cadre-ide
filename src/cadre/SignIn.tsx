@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Hexagon, Eye, EyeOff, Check, LogIn } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre } from "./useCadre";
 import { secretGet, secretSet, secretHas, isTauri } from "../lib/secrets";
@@ -51,6 +52,14 @@ export function SignIn({ onDone }: { onDone: () => void }) {
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  // Advisory Claude-login status (null = unchecked, true/false = result)
+  const [claudeLoginStatus, setClaudeLoginStatus] = useState<boolean | null>(null);
+  const [checkingClaudeLogin, setCheckingClaudeLogin] = useState(false);
+
+  // Part B fix 2: reset reveal when switching providers so a revealed key
+  // from one provider is never visible in plaintext on a different provider.
+  useEffect(() => { setReveal(false); }, [provider]);
+
   // Load any existing key from the keychain so the field pre-fills
   useEffect(() => {
     secretGet("deepseek_api_key").then((k) => { if (k) setDeepseekKey(k); });
@@ -66,6 +75,21 @@ export function SignIn({ onDone }: { onDone: () => void }) {
     provider === "claude"
       ? dispatchUseLogin || anthropicKey.trim().length > 0
       : currentKey.trim().length > 0;
+
+  // Advisory-only: probe for Claude CLI credentials on disk (never blocks, never gates).
+  async function handleCheckClaudeLogin() {
+    if (checkingClaudeLogin) return;
+    setCheckingClaudeLogin(true);
+    try {
+      const result = await invoke<boolean>("claude_auth_status");
+      setClaudeLoginStatus(result);
+    } catch {
+      // Treat any IPC error as "not detected" — purely advisory
+      setClaudeLoginStatus(false);
+    } finally {
+      setCheckingClaudeLogin(false);
+    }
+  }
 
   async function handleContinue() {
     if (!hasCredential || busy) return;
@@ -193,6 +217,36 @@ export function SignIn({ onDone }: { onDone: () => void }) {
                   </span>
                 </span>
               </label>
+
+              {/* Advisory: Check claude CLI login status */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button
+                  onClick={handleCheckClaudeLogin}
+                  disabled={checkingClaudeLogin}
+                  style={{
+                    fontSize: "var(--c-fs-xs)",
+                    padding: "4px 10px",
+                    borderRadius: "var(--c-radius)",
+                    border: "1px solid var(--c-border-strong)",
+                    background: "var(--c-surface-2)",
+                    color: "var(--c-text-secondary)",
+                    cursor: checkingClaudeLogin ? "default" : "pointer",
+                    flexShrink: 0,
+                  }}
+                >
+                  {checkingClaudeLogin ? "Checking…" : "Check login"}
+                </button>
+                {claudeLoginStatus === true && (
+                  <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-success)" }}>
+                    ✓ Claude CLI login detected
+                  </span>
+                )}
+                {claudeLoginStatus === false && (
+                  <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)" }}>
+                    No login found — run <code>claude login</code> in a terminal
+                  </span>
+                )}
+              </div>
 
               {/* Optional Anthropic key for planning */}
               <div>
@@ -365,7 +419,9 @@ export function useHasCredential(): { checked: boolean; hasCredential: boolean }
       setChecked(true);
       return;
     }
-    // Otherwise probe the keychain for any provider key
+    // Otherwise probe the keychain for any provider key.
+    // Part B fix 1: .catch ensures checked is set even if IPC rejects,
+    // so the app never shows a permanent blank screen.
     Promise.all([
       secretHas("anthropic_api_key"),
       secretHas("deepseek_api_key"),
@@ -373,7 +429,7 @@ export function useHasCredential(): { checked: boolean; hasCredential: boolean }
     ]).then(([a, d, m]) => {
       setKeychainHas(a || d || m);
       setChecked(true);
-    });
+    }).catch(() => setChecked(true));
   }, [anthropicKey]);
 
   const hasCredential = dispatchUseLogin || anthropicKey.trim().length > 0 || keychainHas;
