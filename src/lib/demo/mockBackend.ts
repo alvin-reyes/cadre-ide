@@ -192,7 +192,8 @@ function makeInvoke(fs: MockFs) {
           throw new Error(`[demo] illegal status transition: ${currentStatus} -> ${status}`);
         }
 
-        writeWithParents(fs, stateFile, JSON.stringify({ status }, null, 2));
+        // Engine state shape is {epic,story,status} — board.ts reconcile reads it.
+        writeWithParents(fs, stateFile, JSON.stringify({ epic, story, status }, null, 2));
         return null;
       }
 
@@ -207,8 +208,11 @@ function makeInvoke(fs: MockFs) {
       }
 
       case "is_own_write": {
-        // In demo mode, all writes are "own writes" — suppress watcher echoes.
-        return true;
+        // Must be false so the initial hydrate scan reconciles the seeded story
+        // statuses onto the board (a `true` here suppresses them → everything
+        // shows Draft). There are no watcher echoes to suppress in demo mode
+        // (watch_directory is a no-op; live updates go through setStatus).
+        return false;
       }
 
       case "approve_plan": {

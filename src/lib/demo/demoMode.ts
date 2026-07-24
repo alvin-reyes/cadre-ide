@@ -177,8 +177,10 @@ React 19 + TypeScript, Zustand, Vitest, Vite.
   DEMO_STORY_STATUSES.forEach((status, i) => {
     const epicNum = 1;
     const storyNum = i + 1;
+    // Match the engine's on-disk state shape ({epic,story,status}) so board.ts
+    // `reconcile` maps the status onto the story (else it stays Draft).
     files[`${DEMO_ROOT}/.cadre/state/${epicNum}.${storyNum}.json`] = JSON.stringify(
-      { status },
+      { epic: epicNum, story: storyNum, status },
       null,
       2
     );
@@ -220,6 +222,11 @@ export async function enterDemoMode(): Promise<void> {
   // (the stores import from @tauri-apps/api which the mock intercepts).
   const { useBmadStore } = await import("../../stores/bmadStore");
   const { useCadre } = await import("../../cadre/useCadre");
+  const { useSettingsStore } = await import("../../stores/settingsStore");
+
+  // Enable Claude login-mode so resolveFleetAuth succeeds without a key — the mock
+  // agent ignores env, but dispatch bails if no credential path is configured.
+  useSettingsStore.getState().setDispatchUseLogin(true);
 
   // openProject sets the active root, seeds the BmadSlice, and hydrates the board
   // (reads story files + state files from the mock FS via invoke).
