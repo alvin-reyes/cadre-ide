@@ -12,8 +12,9 @@ import { runApprovedStory } from "../lib/engine/orchestrator";
 import { reviewStory as reviewStoryFleet, aggregateReviews, type LensReview } from "../lib/engine/reviewFleet";
 import { documentProject as documentProjectFleet, BROWNFIELD_DOC_PATH } from "../lib/engine/brownfield";
 import { CODE_REVIEW_LENSES } from "../lib/planning/review";
-import { tauriOrchestratorDeps, tauriReviewFleetDeps } from "../lib/engine/tauriDeps";
-import { composeDispatchPrompt, type AlwaysFile } from "../lib/engine/dispatch";
+import { tauriOrchestratorDeps, tauriReviewFleetDeps, tauriResolveConflictDeps } from "../lib/engine/tauriDeps";
+import { composeDispatchPrompt, storyBranch, type AlwaysFile } from "../lib/engine/dispatch";
+import { resolveMergeConflict, composeResolverPrompt } from "../lib/engine/resolveConflict";
 import { reportError } from "../lib/reportError";
 import { appendSessionEntry, SESSION_LOG_PATH } from "../lib/engine/sessionLog";
 import { resolveStorySession } from "../lib/engine/agentSessions";
@@ -678,10 +679,37 @@ export const useCadre = create<CadreState>((set, get) => {
           integrateStory({ runGit: deps.runGit }, { root, repoPath, epic, story })
         );
         if (integ.conflict) {
-          await useBmadStore.getState().setStatus(epic, story, "Blocked", root);
-          onOutput(`\n[cadre] merge conflict integrating ${epic}.${story} — Blocked for manual integration\n`);
-          toast(`Story ${epic}.${story}: merge conflict — Blocked for you to integrate`, "error");
-          await logSession(root, `story ${named} hit a merge conflict — Blocked for manual integration`);
+          let resolved = false;
+          if (useSettingsStore.getState().autoResolveMerge) {
+            onOutput(`\n[cadre] merge conflict on ${epic}.${story} — attempting auto-resolution\n`);
+            try {
+              const context = await loadSharedContext(root);
+              const prompt = composeResolverPrompt({ storyMarkdown, alwaysFiles: context, epic, story });
+              const provider = getProvider(get().fleetProvider);
+              const { env, model } = await resolveFleetAuth(provider);
+              const approval = await invoke<PlanApproval | null>("get_plan_approval", { root }).catch(() => null);
+              const commands = approval?.verification ?? [];
+              const res = await withMergeLock(() => resolveMergeConflict(
+                tauriResolveConflictDeps(onOutput),
+                { root, epic, story, storyBranch: storyBranch(epic, story), prompt,
+                  commands, timeoutSecs: 1800, agentTimeoutSecs: agentTimeoutSecs(), model, env }
+              ));
+              resolved = res.resolved;
+              if (!resolved) onOutput(`\n[cadre] auto-resolution failed (${res.reason}) for ${epic}.${story}\n`);
+            } catch (e) {
+              reportError(`resolve ${epic}.${story}`, e);
+            }
+          }
+          if (resolved) {
+            onOutput(`\n[cadre] auto-resolved & integrated ${epic}.${story}\n`);
+            toast(`Story ${epic}.${story}: conflict auto-resolved & integrated`, "success");
+            await logSession(root, `auto-resolved merge conflict for story ${named} and integrated`);
+          } else {
+            await useBmadStore.getState().setStatus(epic, story, "Blocked", root);
+            onOutput(`\n[cadre] merge conflict integrating ${epic}.${story} — Blocked for manual integration\n`);
+            toast(`Story ${epic}.${story}: merge conflict — Blocked for you to integrate`, "error");
+            await logSession(root, `story ${named} hit a merge conflict — Blocked for manual integration`);
+          }
         } else {
           onOutput(`\n[cadre] integrated story ${epic}.${story} into main\n`);
           toast(`Story ${epic}.${story}: Done & integrated`, "success");
