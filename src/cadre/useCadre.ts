@@ -158,6 +158,8 @@ interface CadreState {
   clearError: () => void;
   /** Switch the foreground project; re-derives the mirror from that project's slice. */
   setActiveProject: (root: string) => void;
+  /** Mark the active project's plan as needing re-approval (e.g. after registry change). */
+  markNeedsReplan: () => void;
 
   /** Freeze the verification command, write the plan to disk, unlock the fleet. */
   approvePlan: (verification: string[]) => Promise<void>;
@@ -404,6 +406,10 @@ export const useCadre = create<CadreState>((set, get) => {
   },
   setFleetProvider: (fleetProvider) => set({ fleetProvider }),
   clearError: () => set({ error: null }),
+  markNeedsReplan: () => {
+    const root = get().activeRoot;
+    if (root && get().verification.length > 0) patchRoot(root, { needsReplan: true });
+  },
 
   approvePlan: async (verification) => {
     const cmds = verification.map((c) => c.trim()).filter(Boolean);

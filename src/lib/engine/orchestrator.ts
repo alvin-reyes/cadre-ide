@@ -1,5 +1,6 @@
 import { runStory, type RunStoryDeps, type RunStoryResult } from "./runStory";
 import type { PlanApproval } from "./planApproval";
+import { DEFAULT_REPO_ID } from "./repos";
 
 /**
  * The orchestrator facade — the seam the UI phase calls to run one story. It
@@ -41,10 +42,23 @@ export async function runApprovedStory(
     );
   }
 
-  // Select the per-repo verify commands if available (Task 5 adds repoVerification to
-  // PlanApproval); until then repoVerification is undefined and this falls back to the
-  // global frozen verification — behavior is unchanged for single-repo projects.
-  const commands = (approval as { repoVerification?: Record<string, string[]> }).repoVerification?.[input.repoId] ?? approval.verification;
+  // Select the per-repo verify commands with fail-closed logic:
+  // - If the repo has its own frozen verify map entry, use it.
+  // - If the repo is the default/main repo and has no entry, fall back to the global
+  //   frozen verify (backward-compat for single-repo projects).
+  // - If the repo is a NON-default repo absent from the frozen map, it was added after
+  //   approval — do NOT silently use the main repo's command; refuse to dispatch.
+  const rv = (approval as { repoVerification?: Record<string, string[]> }).repoVerification;
+  let commands: string[];
+  if (rv && rv[input.repoId] && rv[input.repoId].length > 0) {
+    commands = rv[input.repoId];                 // the repo's own frozen verify
+  } else if (input.repoId === DEFAULT_REPO_ID) {
+    commands = approval.verification;            // single-repo / main: the global frozen verify (backward-compat)
+  } else {
+    throw new Error(
+      `No frozen verify command for repo "${input.repoId}". Re-approve the plan so its verify command is frozen before dispatching its stories.`
+    );
+  }
 
   return runStory(deps, {
     root: input.root,

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { parseRepos, type RepoRef } from "../lib/engine/repos";
+import { useCadre } from "../cadre/useCadre";
 
 // ---------------------------------------------------------------------------
 // Pure ops — exported and framework-free so they're unit-testable without
@@ -93,12 +94,14 @@ export const useRepos = create<ReposState>((set, get) => ({
     const next = upsertRepo(get().repos, repo);
     await persistRepos(root, next);
     set({ repos: next });
+    useCadre.getState().markNeedsReplan();
   },
 
   removeRepo: async (root: string, id: string) => {
     const next = removeRepoFromList(get().repos, id);
     await persistRepos(root, next);
     set({ repos: next });
+    useCadre.getState().markNeedsReplan();
   },
 
   setVerify: async (root: string, id: string, verify: string) => {

@@ -41,4 +41,42 @@ describe("runApprovedStory", () => {
     // both frozen steps were run, in order
     expect(verifyCommands).toEqual(["forge test", "slither ."]);
   });
+
+  // --- multi-repo fail-closed tests ---
+
+  it("throws for a non-default repoId absent from the frozen repoVerification map (post-approval repo)", async () => {
+    const { deps } = makeDeps({
+      approved: true,
+      verification: ["npm test"],
+      repoVerification: {},
+    } as PlanApproval & { repoVerification: Record<string, string[]> });
+    const nonDefaultInput = { ...input, repoPath: "/proj/api", repoId: "api" };
+    await expect(runApprovedStory(deps, nonDefaultInput)).rejects.toThrow(
+      /No frozen verify command for repo "api"/
+    );
+  });
+
+  it("uses the repo's own frozen verify when repoId is present in repoVerification", async () => {
+    const { deps, verifyCommands } = makeDeps({
+      approved: true,
+      verification: ["npm test"],
+      repoVerification: { api: ["go test ./..."] },
+    } as PlanApproval & { repoVerification: Record<string, string[]> });
+    const apiInput = { ...input, repoPath: "/proj/api", repoId: "api" };
+    const r = await runApprovedStory(deps, apiInput);
+    expect(r.status).toBe("Done");
+    expect(verifyCommands).toEqual(["go test ./..."]);
+  });
+
+  it("falls back to approval.verification for the default repoId when repoVerification is empty (backward-compat)", async () => {
+    const { deps, verifyCommands } = makeDeps({
+      approved: true,
+      verification: ["npm test"],
+      repoVerification: {},
+    } as PlanApproval & { repoVerification: Record<string, string[]> });
+    // repoId "main" (DEFAULT_REPO_ID) with empty repoVerification → global verify
+    const r = await runApprovedStory(deps, input);
+    expect(r.status).toBe("Done");
+    expect(verifyCommands).toEqual(["npm test"]);
+  });
 });
