@@ -15,6 +15,9 @@ import type { Status } from "../engine/status";
 
 // Module-level flag (in-memory for this session)
 let _demoMode = false;
+// Tracks whether enterDemoMode already installed + seeded (idempotency guard).
+// Distinct from isDemoMode(), which is already true when entered via ?demo=1.
+let _entered = false;
 
 /** Returns true when running in browser demo mode (not real Tauri). */
 export function isDemoMode(): boolean {
@@ -210,10 +213,12 @@ React 19 + TypeScript, Zustand, Vitest, Vite.
  * from SignIn) so the stores are populated before the first render.
  */
 export async function enterDemoMode(): Promise<void> {
-  // Idempotent: if already in demo mode, don't rebuild the seed and wipe
-  // state the user may have already advanced (e.g. ?demo=1 + SignIn button,
-  // or a double-click on the demo button).
-  if (isDemoMode()) return;
+  // Idempotent: if we've ALREADY installed + seeded, don't rebuild the seed and
+  // wipe state the user may have advanced (e.g. ?demo=1 + SignIn button, or a
+  // double-click). NB: guard on `_entered`, NOT isDemoMode() — the latter is
+  // already true when entered via ?demo=1, which would make this a no-op forever.
+  if (_entered) return;
+  _entered = true;
 
   setDemoMode(true);
 
