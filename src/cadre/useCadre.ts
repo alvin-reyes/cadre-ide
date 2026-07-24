@@ -14,6 +14,7 @@ import { documentProject as documentProjectFleet, BROWNFIELD_DOC_PATH } from "..
 import { CODE_REVIEW_LENSES } from "../lib/planning/review";
 import { tauriOrchestratorDeps, tauriReviewFleetDeps } from "../lib/engine/tauriDeps";
 import { composeDispatchPrompt, type AlwaysFile } from "../lib/engine/dispatch";
+import { reportError } from "../lib/reportError";
 import { appendSessionEntry, SESSION_LOG_PATH } from "../lib/engine/sessionLog";
 import { resolveStorySession } from "../lib/engine/agentSessions";
 import { nextStoryNumber, parseStoryFiles, shardStory } from "../lib/engine/shard";
@@ -441,7 +442,7 @@ export const useCadre = create<CadreState>((set, get) => {
       await logSession(root, `plan approved (PRD + architecture) — verified by: ${cmds.join(", ")}`);
     } catch (e) {
       set({ error: String(e), busy: null });
-      toast("Sign-off failed", "error");
+      reportError("approve", e, { toastMessage: "Sign-off failed" });
     }
   },
 
@@ -471,7 +472,7 @@ export const useCadre = create<CadreState>((set, get) => {
       toast(`Story ${epic}.${story} sharded onto the board`, "success");
     } catch (e) {
       set({ error: String(e), busy: null });
-      toast("Sharding failed", "error");
+      reportError("shard", e, { toastMessage: "Sharding failed" });
     }
   },
 
@@ -507,7 +508,7 @@ export const useCadre = create<CadreState>((set, get) => {
       toast(`Sharded ${stories.length} stories across the lifecycle`, "success");
     } catch (e) {
       set({ error: String(e), busy: null });
-      toast("Backlog sharding failed", "error");
+      reportError("shard backlog", e, { toastMessage: "Backlog sharding failed" });
     }
   },
 
@@ -522,7 +523,7 @@ export const useCadre = create<CadreState>((set, get) => {
       root = requireRoot();
     } catch (e) {
       set({ error: String(e), busy: silent ? get().busy : null });
-      toast(`Dispatch failed for ${epic}.${story}`, "error");
+      reportError(`dispatch ${epic}.${story}`, e, { toastMessage: `Dispatch failed for ${epic}.${story}` });
       return;
     }
     // Fresh log for this run; the sink appends streamed output (capped). Mark the
@@ -651,7 +652,7 @@ export const useCadre = create<CadreState>((set, get) => {
     } catch (e) {
       onOutput(`\n[cadre] dispatch error: ${String(e)}\n`);
       set((s) => ({ error: String(e), busy: silent ? s.busy : null }));
-      toast(`Dispatch failed for ${epic}.${story}`, "error");
+      reportError(`dispatch ${epic}.${story}`, e, { toastMessage: `Dispatch failed for ${epic}.${story}` });
     } finally {
       // No longer running this session — an InProgress/InReview status left on the
       // board now reads as interrupted (see isInterrupted). Target the CAPTURED root.
@@ -707,7 +708,7 @@ export const useCadre = create<CadreState>((set, get) => {
       toast(`Dispatched ${done} stor${done === 1 ? "y" : "ies"} across ${batches.length} batch${batches.length === 1 ? "" : "es"}`, "success");
     } catch (e) {
       set({ error: String(e), busy: null });
-      toast("Parallel dispatch failed", "error");
+      reportError("dispatch ready", e, { toastMessage: "Parallel dispatch failed" });
     }
   },
 
@@ -717,7 +718,7 @@ export const useCadre = create<CadreState>((set, get) => {
       toast(`Story ${epic}.${story} approved — ready to dispatch`, "success");
     } catch (e) {
       set({ error: String(e) });
-      toast(`Approve failed for ${epic}.${story}`, "error");
+      reportError(`approve ${epic}.${story}`, e, { toastMessage: `Approve failed for ${epic}.${story}` });
     }
   },
 
@@ -731,7 +732,7 @@ export const useCadre = create<CadreState>((set, get) => {
       target = root ?? requireRoot();
     } catch (e) {
       set({ error: String(e) });
-      toast(`Review failed for ${key}`, "error");
+      reportError(`review ${key}`, e, { toastMessage: `Review failed for ${key}` });
       return;
     }
     set({ error: null });
@@ -773,7 +774,7 @@ export const useCadre = create<CadreState>((set, get) => {
         codeReviews: { ...(get().projects[target]?.codeReviews ?? {}), [key]: { status: "done", reviews: [] } },
       });
       set({ error: String(e) });
-      toast(`Review failed for ${key}`, "error");
+      reportError(`review ${key}`, e, { toastMessage: `Review failed for ${key}` });
     }
   },
 
@@ -784,7 +785,7 @@ export const useCadre = create<CadreState>((set, get) => {
       root = requireRoot();
     } catch (e) {
       set({ error: String(e) });
-      toast("Project analysis failed", "error");
+      reportError("document project", e, { toastMessage: "Project analysis failed" });
       return;
     }
     set({ busy: "Analyzing the existing project (2 passes)…", error: null });
@@ -816,7 +817,7 @@ export const useCadre = create<CadreState>((set, get) => {
       toast("Project analyzed — the PM now has context", "success");
     } catch (e) {
       set({ error: String(e), busy: null });
-      toast("Project analysis failed", "error");
+      reportError("document project", e, { toastMessage: "Project analysis failed" });
     }
   },
 
@@ -893,7 +894,7 @@ export const useCadre = create<CadreState>((set, get) => {
       toast("Plan updated downstream — re-approve to dispatch", "info");
     } catch (e) {
       set({ error: String(e), busy: null });
-      toast("Cascade failed", "error");
+      reportError("cascade replan", e, { toastMessage: "Cascade failed" });
     }
   },
 
