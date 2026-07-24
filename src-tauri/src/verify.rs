@@ -126,9 +126,36 @@ pub fn run_git(cwd: String, args: Vec<String>) -> Result<VerificationResult, Str
     run_child(child, 120)
 }
 
+/// Run the `gh` CLI with `args` in `cwd` (argv form — no shell escaping). Used by
+/// the GitHub tracker integration to push engine-verified status to Issues. Auth is
+/// `gh`'s own (`gh auth login`) — Cadre never handles or stores a token.
+#[tauri::command]
+pub fn run_gh(cwd: String, args: Vec<String>) -> Result<VerificationResult, String> {
+    let mut command = Command::new("gh");
+    command
+        .args(&args)
+        .current_dir(&cwd)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(unix)]
+    command.process_group(0);
+    let child = command
+        .spawn()
+        .map_err(|e| format!("gh {:?} failed in {}: {}", args, cwd, e))?;
+    // A GitHub API round-trip; a 60s bound stops a hung request from wedging a sync.
+    run_child(child, 60)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn run_gh_is_callable_without_panicking() {
+        // `gh` may be absent in CI — either it runs (Ok) or spawn fails (Err); the
+        // point is the arg/cwd plumbing is wired and never panics.
+        let _ = run_gh(".".to_string(), vec!["--version".to_string()]);
+    }
 
     #[test]
     fn captures_success_exit_code() {

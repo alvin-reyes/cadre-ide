@@ -533,6 +533,7 @@ pub fn run() {
             pty::get_pty_cwd,
             verify::run_verification,
             verify::run_git,
+            verify::run_gh,
             secrets::secret_set,
             secrets::secret_get,
             secrets::secret_has,
