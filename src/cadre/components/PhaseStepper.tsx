@@ -1,10 +1,11 @@
 import { Check, Lock } from "lucide-react";
 
-export type Phase = "PLAN" | "SHARD" | "FLEET" | "DONE";
+export type Phase = "PLAN" | "EXECUTE" | "DONE";
 
-// PLAN = produce the plan; SHARD = break it into stories (the task list) and
-// review them; FLEET = dispatch agents to build; DONE = all verified.
-const PHASES: Phase[] = ["PLAN", "SHARD", "FLEET", "DONE"];
+// PLAN = produce the plan; EXECUTE = break stories and dispatch agents; DONE = all verified.
+const PHASES: Phase[] = ["PLAN", "EXECUTE", "DONE"];
+
+const PHASE_LABELS: Record<Phase, string> = { PLAN: "Plan", EXECUTE: "Execute", DONE: "Done" };
 
 /** The always-visible discipline stepper (§4.3). Phases lock until their gate is met. */
 export function PhaseStepper({
@@ -56,7 +57,7 @@ export function PhaseStepper({
               }}
             >
               {done && <Check size={11} strokeWidth={2.5} />}
-              {phase}
+              {PHASE_LABELS[phase]}
               {locked && <Lock size={9} strokeWidth={2} />}
             </button>
             {i < PHASES.length - 1 && (

@@ -3,7 +3,7 @@ import { LayoutGrid, FolderTree, SquareTerminal, Library } from "lucide-react";
 import { TopBar } from "./components/TopBar";
 import { PhaseStepper } from "./components/PhaseStepper";
 import { PlanningStudio } from "./PlanningStudio";
-import { KanbanBoard } from "./KanbanBoard";
+import { ExecuteView } from "./ExecuteView";
 import { Workbench } from "./Workbench";
 import { TerminalTabs } from "./TerminalTabs";
 import { Team } from "./Team";
@@ -63,12 +63,11 @@ export function CadreApp() {
     setCtxMounted(false);
   }, [projectRoot]);
 
-  // Phase gating: SHARD/FLEET open once the plan is approved; DONE only when there
-  // are stories and they're all Done. Planning "finalizes" at approval.
+  // Phase gating: EXECUTE opens once the plan is approved; DONE only when all stories are Done.
   const planApproved = useCadre((s) => s.verification.length > 0);
   const stories = useBmadStore((s) => s.stories);
   const allDone = stories.length > 0 && stories.every((st) => st.status === "Done");
-  const unlocked = { PLAN: true, SHARD: planApproved, FLEET: planApproved, DONE: allDone } as const;
+  const unlocked = { PLAN: true, EXECUTE: planApproved, DONE: allDone } as const;
 
   useEffect(() => {
     hydrateSecrets();
@@ -173,7 +172,7 @@ export function CadreApp() {
             {phase === "PLAN" ? (
               <PlanningStudio />
             ) : (
-              <KanbanBoard />
+              <ExecuteView />
             )}
           </div>
 

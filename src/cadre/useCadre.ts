@@ -541,9 +541,8 @@ export const useCadre = create<CadreState>((set, get) => {
       const repoVerification: Record<string, string[]> = {};
       for (const r of repos) if (r.verify?.trim()) repoVerification[r.id] = [r.verify.trim()];
       await invoke("approve_plan", { root, verification: cmds, repoVerification });
-      // Land on SHARD — the next step is breaking the plan into stories (the board
-      // is empty until the SM shards), not the (empty) execution board.
-      patchRoot(root, { verification: cmds, phase: "SHARD", needsReplan: false, busy: null });
+      // Land on EXECUTE — the next step is breaking the plan into stories and dispatching agents.
+      patchRoot(root, { verification: cmds, phase: "EXECUTE", needsReplan: false, busy: null });
       toast("Plan signed off — shard it into stories", "success");
       await logSession(root, `plan approved (PRD + architecture) — verified by: ${cmds.join(", ")}`);
     } catch (e) {
@@ -1174,13 +1173,8 @@ export const useCadre = create<CadreState>((set, get) => {
       projectContext: projectContext || prior.projectContext,
       isBrownfield,
       verification: approval?.verification ?? prior.verification,
-      // Approved on reload: go to FLEET if stories already exist (mid-execution),
-      // else SHARD (break the plan down) — matching approvePlan's landing.
-      phase: approved
-        ? useBmadStore.getState().stories.length > 0
-          ? "FLEET"
-          : "SHARD"
-        : prior.phase,
+      // Approved on reload: always land on EXECUTE (the combined shard + fleet view).
+      phase: approved ? "EXECUTE" : prior.phase,
     });
   },
   };

@@ -259,24 +259,24 @@ describe("setPrd — per-project routing", () => {
 describe("setPhase — per-project routing", () => {
   it("routes setPhase to the active project's slice", () => {
     useCadre.getState().setActiveProject("/a");
-    useCadre.getState().setPhase("SHARD");
+    useCadre.getState().setPhase("EXECUTE");
 
-    expect(useCadre.getState().projects["/a"].phase).toBe("SHARD");
-    expect(useCadre.getState().phase).toBe("SHARD");
+    expect(useCadre.getState().projects["/a"].phase).toBe("EXECUTE");
+    expect(useCadre.getState().phase).toBe("EXECUTE");
   });
 
   it("restores /a's phase when switching back from /b", () => {
     useCadre.getState().setActiveProject("/a");
-    useCadre.getState().setPhase("FLEET");
+    useCadre.getState().setPhase("EXECUTE");
 
     useCadre.getState().setActiveProject("/b");
     expect(useCadre.getState().phase).toBe("PLAN"); // /b starts at PLAN
 
-    useCadre.getState().setPhase("SHARD");
+    useCadre.getState().setPhase("DONE");
     useCadre.getState().setActiveProject("/a");
 
-    expect(useCadre.getState().phase).toBe("FLEET"); // /a's value restored
-    expect(useCadre.getState().projects["/b"].phase).toBe("SHARD");
+    expect(useCadre.getState().phase).toBe("EXECUTE"); // /a's value restored
+    expect(useCadre.getState().projects["/b"].phase).toBe("DONE");
   });
 });
 
