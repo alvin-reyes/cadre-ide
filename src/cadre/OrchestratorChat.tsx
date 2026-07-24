@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Bot, X, ArrowUp, Plus, ScrollText, Play, PanelRight, Maximize2, Minimize2 } from "lucide-react";
-import { planningTurn, type ChatMessage } from "../lib/planning/planningChat";
+import { type ChatMessage } from "../lib/planning/planningChat";
+import { orchestratorTurn } from "../lib/planning/orchestratorTurn";
+import { runOrchestratorTool, type OrchestratorActions } from "../lib/planning/orchestratorTools";
 import { ORCHESTRATOR_SYSTEM_PROMPT } from "../lib/planning/personas";
-import { SESSION_LOG_PATH, tailSessionLog } from "../lib/engine/sessionLog";
+import { SESSION_LOG_PATH, tailSessionLog, appendSessionEntry } from "../lib/engine/sessionLog";
 import { Markdown } from "./components/Markdown";
 import { useCadre, MODEL } from "./useCadre";
 import { useBmadStore } from "../stores/bmadStore";
@@ -98,28 +100,78 @@ export function OrchestratorChat() {
       : "";
     const ctx = buildContext(phase, prd, architecture, stories, journal);
     let acc = "";
+    // Tool-event lines are accumulated before the reply text so they appear inline.
+    const toolLines: string[] = [];
     const setLast = (content: string) =>
       setMessages((m) => {
         const a = m.slice();
         a[a.length - 1] = { role: "assistant", content };
         return a;
       });
+
+    // The useCadre actions swallow their own errors (catch → reportError → set `error`)
+    // and resolve normally. So the copilot doesn't falsely claim success, run each
+    // action through a guard that clears `error` first and rethrows if the action set
+    // it — turning a silent store failure into an `ok:false` tool outcome the model sees.
+    const runAction = async (fn: () => Promise<void>) => {
+      useCadre.setState({ error: null });
+      await fn();
+      const err = useCadre.getState().error;
+      if (err) throw new Error(err);
+    };
+    const actions: OrchestratorActions = {
+      shardStory: (e) => runAction(() => useCadre.getState().shardNextStory(e)),
+      shardBacklog: (e) => runAction(() => useCadre.getState().shardBacklog(e)),
+      approveStory: (e, s) => runAction(() => useCadre.getState().approveStory(e, s)),
+      dispatchStory: (e, s) => runAction(() => useCadre.getState().dispatchStory(e, s)),
+      dispatchReady: () => runAction(() => useCadre.getState().dispatchReady()),
+    };
+
+    const sessionDeps = root
+      ? {
+          readFile: (p: string) => invoke<string>("read_file", { path: p }),
+          writeFile: (p: string, c: string) => invoke("write_text_file", { path: p, content: c }).then(() => {}),
+        }
+      : null;
+
     try {
-      const res = await planningTurn({
+      const res = await orchestratorTurn({
         apiKey: auth.apiKey,
         baseUrl: auth.baseUrl,
         model,
         systemPrompt: `${ORCHESTRATOR_SYSTEM_PROMPT}\n\n## Live project state\n${ctx}`,
         messages: base,
-        allowMockup: false,
-        allowVerification: false,
-        allowHandoff: false,
         onText: (d) => {
           acc += d;
-          setLast(acc);
+          // Render any accumulated tool lines as a prefix above the streamed text.
+          const prefix = toolLines.length > 0 ? toolLines.join("\n") + "\n\n" : "";
+          setLast(prefix + acc);
+        },
+        onToolCall: (name, input) => runOrchestratorTool(name, input, actions),
+        onToolEvent: (e) => {
+          if (e.phase === "done") {
+            const ok = e.ok ?? true;
+            const msg = e.message ?? "";
+            const line = ok
+              ? `⚙ ${e.name}(${JSON.stringify(e.input)}) — ${msg}`
+              : `⚙ ${e.name}(${JSON.stringify(e.input)}) — failed: ${msg}`;
+            toolLines.push(line);
+            // Update the bubble immediately so tool progress is visible.
+            const prefix = toolLines.join("\n") + (acc ? "\n\n" : "");
+            setLast(prefix + acc);
+            // Journal the tool event (best-effort).
+            if (sessionDeps && root) {
+              appendSessionEntry(sessionDeps, root, Date.now(), `orchestrator tool ${e.name}: ${msg}`).catch(() => {});
+            }
+            // Surface failures via toast + AI log.
+            if (!ok) {
+              reportError("orchestrator tool", new Error(msg));
+            }
+          }
         },
       });
-      setLast((res.reply || acc).trim() || "(no reply)");
+      const prefix = toolLines.length > 0 ? toolLines.join("\n") + "\n\n" : "";
+      setLast(prefix + ((res.reply || acc).trim() || "(no reply)"));
     } catch (e) {
       setLast(`Error: ${String(e)}`);
       reportError("orchestrator", e);
