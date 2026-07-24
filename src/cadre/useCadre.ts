@@ -35,8 +35,11 @@ import {
   emptyCadreSlice,
   mirrorCadre,
   updateSlice,
+  type AgentSlot,
   type CadreSlice,
 } from "../lib/engine/projectSlices";
+import { resolveAgentSession } from "../lib/engine/teamSessions";
+import { pickAssignable, type ReadyStory } from "../lib/engine/pool";
 
 /**
  * useCadre: the app-level orchestration seam. It holds the plan the Planning
@@ -162,6 +165,10 @@ interface CadreState {
    * session — the process is a child of the app). See `isInterrupted`.
    */
   active: Record<string, boolean>;
+  /** Persistent team-pool agent slots. Only populated when useTeamPool is on. */
+  agentSlots: AgentSlot[];
+  /** Per-agent accumulated output log, keyed by agentId. Only populated when useTeamPool is on. */
+  agentLogs: Record<string, string>;
   /** which model provider the Dev fleet runs on (id from engine PROVIDERS) */
   fleetProvider: string;
   /**
@@ -198,7 +205,7 @@ interface CadreState {
   /** Run the SM to shard the COMPLETE lifecycle backlog (features + tests + deploy + support…). */
   shardBacklog: (epic?: number) => Promise<void>;
   /** Dispatch a Dev agent for a story; Cadre verifies and writes the status. */
-  dispatchStory: (epic: number, story: number, opts?: { silent?: boolean; context?: AlwaysFile[] }) => Promise<void>;
+  dispatchStory: (epic: number, story: number, opts?: { silent?: boolean; context?: AlwaysFile[]; agentId?: string }) => Promise<void>;
   /**
    * Dispatch ALL ready stories in parallel, grouped so no two concurrent agents
    * touch the same declared file (disjoint sharding); file-sharing stories run in
@@ -438,6 +445,8 @@ export const useCadre = create<CadreState>((set, get) => {
   logs: {},
   codeReviews: {},
   active: {},
+  agentSlots: [],
+  agentLogs: {},
   // --- global (not per-project) ---
   fleetProvider: "claude",
   // busy/error are mirror fields; initialize from emptyCadreSlice defaults.
@@ -644,6 +653,7 @@ export const useCadre = create<CadreState>((set, get) => {
   dispatchStory: async (epic, story, opts) => {
     const key = `${epic}.${story}`;
     const silent = opts?.silent ?? false;
+    const agentId = opts?.agentId;
     // Capture the target project ONCE at the top. Every per-project write in this
     // action (logs, active, codeReviews, busy, error) targets THIS root — never
     // get().activeRoot — so a background dispatch never corrupts the foreground.
@@ -670,7 +680,15 @@ export const useCadre = create<CadreState>((set, get) => {
       const prev = get().projects[root]?.logs?.[key] ?? "";
       const next = prev + chunk;
       const capped = next.length > 200_000 ? next.slice(next.length - 200_000) : next;
-      patchRoot(root, { logs: { ...(get().projects[root]?.logs ?? {}), [key]: capped } });
+      const patch: Partial<CadreSlice> = { logs: { ...(get().projects[root]?.logs ?? {}), [key]: capped } };
+      // When running in pool mode with an agent, also stream to the agent log.
+      if (agentId && useSettingsStore.getState().useTeamPool) {
+        const agentPrev = get().projects[root]?.agentLogs?.[agentId] ?? "";
+        const agentNext = agentPrev + chunk;
+        const agentCapped = agentNext.length > 200_000 ? agentNext.slice(agentNext.length - 200_000) : agentNext;
+        patch.agentLogs = { ...(get().projects[root]?.agentLogs ?? {}), [agentId]: agentCapped };
+      }
+      patchRoot(root, patch);
     };
     try {
       // Find the story file (docs/stories/{epic}.{story}.{slug}.md) and read it.
@@ -704,14 +722,39 @@ export const useCadre = create<CadreState>((set, get) => {
 
       // Resolve this story's Claude session: mint one on first dispatch, resume it on a
       // re-dispatch so the retry keeps the prior attempt's context. Opt-out via settings.
+      // In pool mode with an agentId, use the AGENT-keyed session (persistent across tasks,
+      // reset after K tasks) instead of the story-keyed session.
       let sessionId: string | undefined;
       let resumeSession = false;
-      if (useSettingsStore.getState().resumeSessions) {
+      const settings = useSettingsStore.getState();
+      const fileDeps = {
+        readFile: (p: string) => invoke<string>("read_file", { path: p }),
+        writeFile: (p: string, c: string) => invoke("write_text_file", { path: p, content: c }).then(() => {}),
+      };
+      if (settings.useTeamPool && agentId) {
+        // Agent-keyed session: carries context across tasks; resets after sessionResetK tasks.
+        const sess = await resolveAgentSession(
+          fileDeps,
+          root,
+          agentId,
+          settings.sessionResetK,
+          () => crypto.randomUUID()
+        ).catch(() => null);
+        if (sess) {
+          sessionId = sess.sessionId;
+          resumeSession = sess.resume;
+          if (sess.resume) onOutput(`[cadre] ${agentId}: resuming persistent session (task-keyed context)\n`);
+          else onOutput(`[cadre] ${agentId}: fresh session (new or reset after ${settings.sessionResetK} tasks)\n`);
+        }
+        // Mark agent slot as working.
+        const currentSlots = get().projects[root]?.agentSlots ?? [];
+        const updatedSlots: AgentSlot[] = currentSlots.map((s) =>
+          s.agentId === agentId ? { ...s, currentStory: key, status: "working" } : s
+        );
+        patchRoot(root, { agentSlots: updatedSlots });
+      } else if (settings.resumeSessions) {
         const sess = await resolveStorySession(
-          {
-            readFile: (p) => invoke<string>("read_file", { path: p }),
-            writeFile: (p, c) => invoke("write_text_file", { path: p, content: c }).then(() => {}),
-          },
+          fileDeps,
           root,
           key,
           () => crypto.randomUUID()
@@ -824,14 +867,21 @@ export const useCadre = create<CadreState>((set, get) => {
       // board now reads as interrupted (see isInterrupted). Target the CAPTURED root.
       const active = { ...(get().projects[root]?.active ?? {}) };
       delete active[key];
-      patchRoot(root, { active });
+      const finalPatch: Partial<CadreSlice> = { active };
+      // Reset the agent slot back to idle when pool mode is active.
+      if (agentId && useSettingsStore.getState().useTeamPool) {
+        const currentSlots = get().projects[root]?.agentSlots ?? [];
+        finalPatch.agentSlots = currentSlots.map((s) =>
+          s.agentId === agentId ? { ...s, currentStory: null, status: "idle" } : s
+        );
+      }
+      patchRoot(root, finalPatch);
     }
   },
 
   dispatchReady: async () => {
     try {
       const root = requireRoot();
-      // Ready = not yet building/done: Draft (sharded) / Approved / Failed (retry).
       // Ready = gated for the fleet: Approved (draft-reviewed) or Failed (retry).
       const ready = useBmadStore
         .getState()
@@ -841,12 +891,7 @@ export const useCadre = create<CadreState>((set, get) => {
         return;
       }
 
-      // Read each story's declared files to schedule file-disjoint parallel batches.
-      // Prefix each file with the story's repo id so stories in different repos that
-      // touch files with the same relative path are never treated as conflicting.
-      // For single-repo projects parseStoryRepo always returns "main", so the prefix
-      // is stable and scheduleParallel (which treats file strings opaquely) behaves
-      // exactly as before.
+      // Read each story's declared files (repo-namespaced) — shared by both paths.
       const scheduled = await Promise.all(
         ready.map(async (c) => {
           const p = await findStoryPath(root, c.epic, c.story);
@@ -855,29 +900,111 @@ export const useCadre = create<CadreState>((set, get) => {
           return { id: c.id, files: parseStoryFiles(md).map((f) => `${storyRepoId}:${f}`) };
         })
       );
-      const batches = scheduleParallel(scheduled, 4);
       const byId = new Map(ready.map((c) => [c.id, c]));
 
       // Load the shared Context Store once and reuse it for every agent.
       const context = await loadSharedContext(root);
 
-      let done = 0;
-      for (let b = 0; b < batches.length; b++) {
-        const batch = batches[b];
-        patchRoot(root, {
-          busy: `Building ${batch.length} stor${batch.length === 1 ? "y" : "ies"} in parallel — batch ${b + 1}/${batches.length}…`,
-          error: null,
-        });
-        await Promise.all(
-          batch.map((id) => {
-            const c = byId.get(id)!;
-            return get().dispatchStory(c.epic, c.story, { silent: true, context });
-          })
-        );
-        done += batch.length;
+      const { useTeamPool, teamSize } = useSettingsStore.getState();
+
+      if (!useTeamPool) {
+        // ---- OFF PATH: existing scheduleParallel batch loop — byte-identical behavior ----
+        const batches = scheduleParallel(scheduled, 4);
+        let done = 0;
+        for (let b = 0; b < batches.length; b++) {
+          const batch = batches[b];
+          patchRoot(root, {
+            busy: `Building ${batch.length} stor${batch.length === 1 ? "y" : "ies"} in parallel — batch ${b + 1}/${batches.length}…`,
+            error: null,
+          });
+          await Promise.all(
+            batch.map((id) => {
+              const c = byId.get(id)!;
+              return get().dispatchStory(c.epic, c.story, { silent: true, context });
+            })
+          );
+          done += batch.length;
+        }
+        patchRoot(root, { busy: null });
+        toast(`Dispatched ${done} stor${done === 1 ? "y" : "ies"} across ${batches.length} batch${batches.length === 1 ? "" : "es"}`, "success");
+        return;
       }
+
+      // ---- ON PATH: team-pool worker-pump ----
+      // Ensure teamSize agent slots exist in the slice (idempotent — preserve existing state).
+      const existingSlots = get().projects[root]?.agentSlots ?? [];
+      const slots: AgentSlot[] = Array.from({ length: teamSize }, (_, i) => {
+        const id = `agent-${i}`;
+        return existingSlots.find((s) => s.agentId === id) ?? { agentId: id, currentStory: null, status: "idle" };
+      });
+      patchRoot(root, { agentSlots: slots, error: null });
+
+      // Mutable pump state (local to this dispatchReady invocation).
+      let remainingReady: ReadyStory[] = [...scheduled];
+      const inFlightFiles = new Set<string>();
+      // agentId pool — initially all idle.
+      const idleAgents: string[] = slots.map((s) => s.agentId);
+
+      // Deferred completion: resolves when remainingReady is empty AND inFlight === 0.
+      // We use a counter + deferred rather than Promise.all(array) because re-pump
+      // dispatches are created inside .finally callbacks — after Promise.all has already
+      // captured its snapshot — so they would not be tracked by a static Promise.all call.
+      let inFlight = 0;
+      let resolveAll!: () => void;
+      const allDone = new Promise<void>((res) => { resolveAll = res; });
+
+      patchRoot(root, {
+        busy: `Team pool: dispatching ${remainingReady.length} stor${remainingReady.length === 1 ? "y" : "ies"} across ${teamSize} agents…`,
+      });
+
+      // pump() fires as many stories as possible right now (limited by free slots
+      // and file-disjoint safety). Each fired dispatch removes itself from
+      // remainingReady and schedules a re-pump on completion.
+      // Resolves allDone when nothing remains and nothing is in flight.
+      function pump() {
+        const freeSlots = idleAgents.length;
+        if (remainingReady.length === 0 && inFlight === 0) {
+          resolveAll();
+          return;
+        }
+        if (freeSlots === 0 || remainingReady.length === 0) return;
+
+        const picks = pickAssignable(remainingReady, inFlightFiles, freeSlots);
+        if (picks.length === 0 && inFlight === 0) {
+          // No picks and nothing running — stuck (should not happen with valid input).
+          resolveAll();
+          return;
+        }
+        for (const pick of picks) {
+          // Take this story out of the remaining queue — synchronous, no races.
+          remainingReady = remainingReady.filter((r) => r.id !== pick.id);
+          // Claim an idle agent.
+          const agentId = idleAgents.shift()!;
+          // Mark its files as in-flight.
+          pick.files.forEach((f) => inFlightFiles.add(f));
+          inFlight++;
+
+          const card = byId.get(pick.id)!;
+          get()
+            .dispatchStory(card.epic, card.story, { silent: true, agentId, context })
+            .finally(() => {
+              // Release: free the agent and its files, then re-pump.
+              inFlight--;
+              idleAgents.push(agentId);
+              pick.files.forEach((f) => inFlightFiles.delete(f));
+              pump();
+            });
+        }
+      }
+
+      pump();
+
+      // Wait for the deferred to resolve (fires when remainingReady is empty AND inFlight===0).
+      await allDone;
+
       patchRoot(root, { busy: null });
-      toast(`Dispatched ${done} stor${done === 1 ? "y" : "ies"} across ${batches.length} batch${batches.length === 1 ? "" : "es"}`, "success");
+      const total = scheduled.length;
+      toast(`Team pool: dispatched ${total} stor${total === 1 ? "y" : "ies"} across ${teamSize} agents`, "success");
     } catch (e) {
       const root = get().activeRoot;
       if (root) patchRoot(root, { error: String(e), busy: null });

@@ -307,6 +307,12 @@ interface Settings {
   authProvider: string;
   /** When true, re-dispatching a story resumes its prior Claude session to keep context. */
   resumeSessions: boolean;
+  /** When true, enable the persistent team-pool dispatch mode (N durable agent slots). */
+  useTeamPool: boolean;
+  /** Number of persistent agent slots in the team pool (1–8). */
+  teamSize: number;
+  /** Reset an agent's Claude session after this many tasks (fresh context window). */
+  sessionResetK: number;
   orchestratorModel: string;
   ollamaEndpoint: string;
   ollamaModel: string;
@@ -339,6 +345,9 @@ interface SettingsStore extends Settings {
   setDispatchUseLogin: (on: boolean) => void;
   setAuthProvider: (id: string) => void;
   setResumeSessions: (on: boolean) => void;
+  setUseTeamPool: (on: boolean) => void;
+  setTeamSize: (n: number) => void;
+  setSessionResetK: (k: number) => void;
   /** Load secrets (API key) from the OS keychain into the store (desktop only). */
   hydrateSecrets: () => Promise<void>;
   setOrchestratorModel: (model: string) => void;
@@ -398,6 +407,9 @@ const defaults: Settings = {
   dispatchUseLogin: false,
   authProvider: "claude",
   resumeSessions: true,
+  useTeamPool: false,
+  teamSize: 4,
+  sessionResetK: 5,
   orchestratorModel: "claude-opus-4-20250514",
   ollamaEndpoint: "http://localhost:11434",
   ollamaModel: "deepseek-r1",
@@ -521,6 +533,21 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
   setResumeSessions: (resumeSessions) => {
     set({ resumeSessions });
+    persistSettings(get());
+  },
+
+  setUseTeamPool: (useTeamPool) => {
+    set({ useTeamPool });
+    persistSettings(get());
+  },
+
+  setTeamSize: (teamSize) => {
+    set({ teamSize: Math.max(1, Math.min(8, Math.floor(teamSize) || 1)) });
+    persistSettings(get());
+  },
+
+  setSessionResetK: (sessionResetK) => {
+    set({ sessionResetK: Math.max(1, Math.floor(sessionResetK) || 1) });
     persistSettings(get());
   },
 
