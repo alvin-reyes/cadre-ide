@@ -10,6 +10,7 @@ import {
 } from "../lib/engine/board";
 import type { Status } from "../lib/engine/status";
 import { scaffoldFiles } from "../lib/projectScaffold";
+import { reportError } from "../lib/reportError";
 import {
   emptyBmadSlice,
   mirrorBmad,
@@ -214,6 +215,7 @@ export const useBmadStore = create<BmadState>((set, get) => {
           projects: updateSlice(s.projects, root, { watchError: `state watch failed: ${e}` }, emptyBmadSlice),
         }));
         syncMirror();
+        reportError("state watch", e);
       });
       invoke("watch_directory", {
         dir: storyDir,
@@ -224,6 +226,7 @@ export const useBmadStore = create<BmadState>((set, get) => {
           projects: updateSlice(s.projects, root, { watchError: `story watch failed: ${e}` }, emptyBmadSlice),
         }));
         syncMirror();
+        reportError("story watch", e);
       });
     },
   };

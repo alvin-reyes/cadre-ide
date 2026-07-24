@@ -10,6 +10,7 @@ import { Markdown } from "./components/Markdown";
 import { planningTurn, type ChatMessage, type Attachment } from "../lib/planning/planningChat";
 import { PM_SYSTEM_PROMPT, ARCHITECT_SYSTEM_PROMPT, DESIGN_SYSTEM_PROMPT, ANALYST_SYSTEM_PROMPT, TECHWRITER_SYSTEM_PROMPT, ADVERSARIAL_REVIEW_PROMPTS, PLAN_VALIDATION_PROMPT } from "../lib/planning/personas";
 import { reviewArtifact, type ReviewResult, type Severity, type Finding } from "../lib/planning/review";
+import { reportError } from "../lib/reportError";
 
 /** Read a pasted/dropped File as text. */
 function readFileText(file: File): Promise<string> {
@@ -225,6 +226,7 @@ export function PlanningStudio() {
         ...r,
         [active]: { status: "done", result: { verdict: "block", summary: String(e), findings: [] } },
       }));
+      reportError("review", e);
     }
   }
 
@@ -251,6 +253,7 @@ export function PlanningStudio() {
       setPoCheck({ status: "done", result });
     } catch (e) {
       setPoCheck({ status: "done", result: { verdict: "block", summary: String(e), findings: [] } });
+      reportError("po validation", e);
     }
   }
 
@@ -461,6 +464,7 @@ export function PlanningStudio() {
       if (result.suggestions && result.suggestions.length) setSuggestions(result.suggestions);
     } catch (e) {
       setAssistant(`Error: ${String(e)}`);
+      reportError("planning", e);
     } finally {
       setThinking(false);
       // Return focus to the composer so the user can keep typing immediately.

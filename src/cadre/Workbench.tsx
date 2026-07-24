@@ -7,6 +7,7 @@ import { SearchPanel } from "./SearchPanel";
 import { TerminalTabs } from "./TerminalTabs";
 import { useThemeStore } from "../stores/themeStore";
 import { toast } from "../stores/toastStore";
+import { reportError } from "../lib/reportError";
 
 /**
  * The File View: the project structure (tree) beside a real code editor (Monaco),
@@ -88,7 +89,7 @@ export function Workbench({ root }: { root: string }) {
       toast(`Saved ${relTo(root, openPath)}`, "success");
     } catch (e) {
       setError(String(e));
-      toast("Save failed", "error");
+      reportError("save file", e);
     }
   }
 

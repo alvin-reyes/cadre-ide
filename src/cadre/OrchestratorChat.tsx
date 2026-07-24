@@ -7,6 +7,7 @@ import { SESSION_LOG_PATH, tailSessionLog } from "../lib/engine/sessionLog";
 import { Markdown } from "./components/Markdown";
 import { useCadre, MODEL } from "./useCadre";
 import { useBmadStore } from "../stores/bmadStore";
+import { reportError } from "../lib/reportError";
 import { useSettingsStore } from "../stores/settingsStore";
 import type { StoryCard } from "../lib/engine/board";
 
@@ -106,6 +107,7 @@ export function OrchestratorChat() {
       setLast((res.reply || acc).trim() || "(no reply)");
     } catch (e) {
       setLast(`Error: ${String(e)}`);
+      reportError("orchestrator", e);
     } finally {
       setThinking(false);
     }

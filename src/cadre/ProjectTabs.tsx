@@ -4,7 +4,7 @@ import { useBmadStore } from "../stores/bmadStore";
 import { useOpenProjects } from "../stores/openProjectsStore";
 import { useCadre } from "./useCadre";
 import { isTauri } from "../lib/secrets";
-import { toast } from "../stores/toastStore";
+import { reportError } from "../lib/reportError";
 
 function basename(path: string): string {
   const i = path.lastIndexOf("/");
@@ -60,7 +60,7 @@ export function ProjectTabs() {
       useOpenProjects.getState().open(dir, name);
       selectProject(dir);
     } catch (e) {
-      toast(`Couldn't open project: ${e}`, "error");
+      reportError("open project", e);
     }
   }
 
