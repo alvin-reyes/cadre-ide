@@ -58,6 +58,10 @@ export async function runStory(
     { runGit: deps.runGit, spawnAgent: deps.spawnAgent },
     {
       root: input.root,
+      // Task-4 shim: multi-repo routing will pass repoPath/repoId from the story's
+      // repo ref. For now default to the project root so single-repo projects work.
+      repoPath: input.root,
+      repoId: "main",
       epic: input.epic,
       story: input.story,
       prompt: input.prompt,

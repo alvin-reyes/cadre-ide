@@ -1,5 +1,5 @@
 import type { DispatchDeps } from "./dispatch";
-import { storyWorktreePath } from "./dispatch";
+import { repoWorktreePath } from "./repos";
 
 /**
  * The adversarial code-review fleet (§3.11). Each reviewer is a real **Claude
@@ -84,7 +84,8 @@ export async function reviewStory(
   deps: ReviewFleetDeps,
   input: ReviewFleetInput
 ): Promise<LensReview[]> {
-  const worktree = storyWorktreePath(input.root, input.epic, input.story);
+  // Task 4 will add repoId to ReviewFleetInput; for now default to "main" (shim).
+  const worktree = repoWorktreePath(input.root, "main", input.epic, input.story);
 
   return Promise.all(
     input.lenses.map(async (lens): Promise<LensReview> => {

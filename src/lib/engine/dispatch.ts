@@ -5,12 +5,10 @@
  * orchestration is testable; in production they wrap Tauri commands.
  */
 
+import { repoWorktreePath } from "./repos";
+
 export function storyBranch(epic: number, story: number): string {
   return `story/${epic}.${story}`;
-}
-
-export function storyWorktreePath(root: string, epic: number, story: number): string {
-  return `${root}/.cadre/worktrees/${epic}.${story}`;
 }
 
 /** Where the agent drops its (advisory) result marker; the watcher sees it. */
@@ -71,6 +69,10 @@ export interface DispatchDeps {
 
 export interface DispatchInput {
   root: string;
+  /** the code repo the story targets (=== root when path:".") */
+  repoPath: string;
+  /** the repo id used to namespace the worktree path */
+  repoId: string;
   epic: number;
   story: number;
   /** the composed prompt (see composeDispatchPrompt) */
@@ -96,7 +98,7 @@ export async function dispatchStory(
   input: DispatchInput
 ): Promise<DispatchResult> {
   const branch = storyBranch(input.epic, input.story);
-  const worktree = storyWorktreePath(input.root, input.epic, input.story);
+  const worktree = repoWorktreePath(input.root, input.repoId, input.epic, input.story);
 
   // Make dispatch idempotent. A prior run that was killed mid-story (e.g. the app
   // was closed) leaves this worktree + branch behind, which would make
@@ -104,9 +106,11 @@ export async function dispatchStory(
   // tolerant, since there's nothing to remove on a first dispatch. The
   // interrupted run's partial, unverified work is intentionally discarded; the
   // story re-runs clean from HEAD.
+  // All worktree/branch management runs in the CODE REPO (repoPath), not the
+  // Cadre project root — the worktree is registered in the code repo's git graph.
   const tryGit = async (args: string[]) => {
     try {
-      await deps.runGit(args, input.root);
+      await deps.runGit(args, input.repoPath);
     } catch {
       /* nothing to clean up */
     }
@@ -116,7 +120,7 @@ export async function dispatchStory(
   await tryGit(["branch", "-D", branch]);
 
   // Isolate the story in its own worktree on a per-story branch.
-  await deps.runGit(["worktree", "add", "-b", branch, worktree, "HEAD"], input.root);
+  await deps.runGit(["worktree", "add", "-b", branch, worktree, "HEAD"], input.repoPath);
 
   // --dangerously-skip-permissions lets the headless agent actually use its tools
   // (edit files, run the build) without interactive permission prompts — without it

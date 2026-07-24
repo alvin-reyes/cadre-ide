@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   storyBranch,
-  storyWorktreePath,
   resultMarkerPath,
   composeDispatchPrompt,
   dispatchStory,
@@ -9,11 +8,8 @@ import {
 } from "./dispatch";
 
 describe("path helpers", () => {
-  it("computes the per-story branch, worktree, and marker paths", () => {
+  it("computes the per-story branch and marker paths", () => {
     expect(storyBranch(1, 2)).toBe("story/1.2");
-    expect(storyWorktreePath("/proj", 1, 2)).toBe(
-      "/proj/.cadre/worktrees/1.2"
-    );
     expect(resultMarkerPath("/proj", 1, 2)).toBe(
       "/proj/.cadre/markers/1.2.json"
     );
@@ -71,29 +67,35 @@ describe("dispatchStory", () => {
   it("creates a per-story worktree then spawns claude -p in it", async () => {
     const { deps, calls } = recordingDeps();
     const result = await dispatchStory(deps, {
-      root: "/proj",
-      epic: 1,
-      story: 2,
-      prompt: "PROMPT",
+      root: "/proj", repoPath: "/proj", repoId: "main",
+      epic: 1, story: 2, prompt: "PROMPT",
     });
 
     // Idempotent: clears any stale worktree/branch from a killed run, then adds fresh.
     expect(calls.git).toEqual([
-      { args: ["worktree", "remove", "--force", "/proj/.cadre/worktrees/1.2"], cwd: "/proj" },
+      { args: ["worktree", "remove", "--force", "/proj/.cadre/worktrees/main/1.2"], cwd: "/proj" },
       { args: ["worktree", "prune"], cwd: "/proj" },
       { args: ["branch", "-D", "story/1.2"], cwd: "/proj" },
-      { args: ["worktree", "add", "-b", "story/1.2", "/proj/.cadre/worktrees/1.2", "HEAD"], cwd: "/proj" },
+      { args: ["worktree", "add", "-b", "story/1.2", "/proj/.cadre/worktrees/main/1.2", "HEAD"], cwd: "/proj" },
     ]);
     expect(calls.spawn).toHaveLength(1);
     expect(calls.spawn[0].command).toBe("claude");
     expect(calls.spawn[0].args).toEqual(["--dangerously-skip-permissions", "-p", "PROMPT"]);
-    expect(calls.spawn[0].cwd).toBe("/proj/.cadre/worktrees/1.2");
+    expect(calls.spawn[0].cwd).toBe("/proj/.cadre/worktrees/main/1.2");
 
     expect(result).toEqual({
       ptyId: 42,
       branch: "story/1.2",
-      worktree: "/proj/.cadre/worktrees/1.2",
+      worktree: "/proj/.cadre/worktrees/main/1.2",
     });
+  });
+
+  it("routes worktree git to the story's code repo", async () => {
+    const { deps, calls } = recordingDeps();
+    await dispatchStory(deps, { root: "/proj", repoPath: "/code/api", repoId: "api", epic: 2, story: 1, prompt: "P" });
+    expect(calls.git[0]).toEqual({ args: ["worktree", "remove", "--force", "/proj/.cadre/worktrees/api/2.1"], cwd: "/code/api" });
+    expect(calls.git[calls.git.length - 1]).toEqual({ args: ["worktree", "add", "-b", "story/2.1", "/proj/.cadre/worktrees/api/2.1", "HEAD"], cwd: "/code/api" });
+    expect(calls.spawn[0].cwd).toBe("/proj/.cadre/worktrees/api/2.1");
   });
 
   it("is idempotent: tolerates cleanup failures and still dispatches (first run / recovery)", async () => {
@@ -110,18 +112,18 @@ describe("dispatchStory", () => {
       },
       spawnAgent: async () => 7,
     };
-    const result = await dispatchStory(deps, { root: "/proj", epic: 1, story: 2, prompt: "P" });
+    const result = await dispatchStory(deps, { root: "/proj", repoPath: "/proj", repoId: "main", epic: 1, story: 2, prompt: "P" });
 
-    expect(seen).toContainEqual(["worktree", "remove", "--force", "/proj/.cadre/worktrees/1.2"]);
+    expect(seen).toContainEqual(["worktree", "remove", "--force", "/proj/.cadre/worktrees/main/1.2"]);
     expect(seen).toContainEqual(["branch", "-D", "story/1.2"]);
-    expect(seen).toContainEqual(["worktree", "add", "-b", "story/1.2", "/proj/.cadre/worktrees/1.2", "HEAD"]);
+    expect(seen).toContainEqual(["worktree", "add", "-b", "story/1.2", "/proj/.cadre/worktrees/main/1.2", "HEAD"]);
     expect(result.ptyId).toBe(7);
   });
 
   it("passes --model and env when routing to a specific model", async () => {
     const { deps, calls } = recordingDeps();
     await dispatchStory(deps, {
-      root: "/proj",
+      root: "/proj", repoPath: "/proj", repoId: "main",
       epic: 3,
       story: 1,
       prompt: "P",
@@ -136,11 +138,11 @@ describe("dispatchStory", () => {
 
   it("passes --session-id for a fresh session and --resume for a retry (before the -p prompt)", async () => {
     const fresh = recordingDeps();
-    await dispatchStory(fresh.deps, { root: "/proj", epic: 1, story: 2, prompt: "P", sessionId: "sess-1" });
+    await dispatchStory(fresh.deps, { root: "/proj", repoPath: "/proj", repoId: "main", epic: 1, story: 2, prompt: "P", sessionId: "sess-1" });
     expect(fresh.calls.spawn[0].args).toEqual(["--dangerously-skip-permissions", "--session-id", "sess-1", "-p", "P"]);
 
     const retry = recordingDeps();
-    await dispatchStory(retry.deps, { root: "/proj", epic: 1, story: 2, prompt: "P", sessionId: "sess-1", resumeSession: true });
+    await dispatchStory(retry.deps, { root: "/proj", repoPath: "/proj", repoId: "main", epic: 1, story: 2, prompt: "P", sessionId: "sess-1", resumeSession: true });
     expect(retry.calls.spawn[0].args).toEqual(["--dangerously-skip-permissions", "--resume", "sess-1", "-p", "P"]);
   });
 });

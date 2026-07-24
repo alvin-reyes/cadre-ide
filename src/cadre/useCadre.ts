@@ -632,7 +632,8 @@ export const useCadre = create<CadreState>((set, get) => {
         // Merge the verified worktree back into main — serialized so parallel
         // stories integrate safely. On conflict, mark Blocked for the human (A).
         const integ = await withMergeLock(() =>
-          integrateStory({ runGit: deps.runGit }, { root, epic, story })
+          // Task-4 shim: multi-repo routing will supply repoPath from the story's repo ref.
+          integrateStory({ runGit: deps.runGit }, { root, repoPath: root, epic, story })
         );
         if (integ.conflict) {
           await useBmadStore.getState().setStatus(epic, story, "Blocked", root);

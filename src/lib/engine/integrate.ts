@@ -14,6 +14,8 @@ export interface IntegrateDeps {
 
 export interface IntegrateInput {
   root: string;
+  /** the code repo where the story branch lives and where the merge runs */
+  repoPath: string;
   epic: number;
   story: number;
 }
@@ -33,12 +35,12 @@ export async function integrateStory(
   const branch = storyBranch(input.epic, input.story);
   const msg = `cadre: integrate story ${input.epic}.${input.story}`;
   try {
-    await deps.runGit([...IDENT, "merge", "--no-ff", "-m", msg, branch], input.root);
+    await deps.runGit([...IDENT, "merge", "--no-ff", "-m", msg, branch], input.repoPath);
     return { merged: true, conflict: false };
   } catch {
     // Conflict (or other merge failure): abort so main stays clean for the human.
     try {
-      await deps.runGit(["merge", "--abort"], input.root);
+      await deps.runGit(["merge", "--abort"], input.repoPath);
     } catch {
       /* nothing to abort */
     }

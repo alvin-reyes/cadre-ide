@@ -200,15 +200,16 @@ describe("e2e: the disciplined loop", () => {
     const { world, deps } = makeWorld({});
     await runApprovedStory(deps, baseInput({ epic: 2, story: 3 }));
     // Dispatch is idempotent: it clears any stale worktree/branch, then adds fresh.
+    // Worktree path is namespaced by repoId ("main" shim until Task 4).
     expect(world.gitCalls).toContainEqual([
       "worktree",
       "add",
       "-b",
       "story/2.3",
-      "/proj/.cadre/worktrees/2.3",
+      "/proj/.cadre/worktrees/main/2.3",
       "HEAD",
     ]);
-    expect(world.gitCalls).toContainEqual(["worktree", "remove", "--force", "/proj/.cadre/worktrees/2.3"]);
+    expect(world.gitCalls).toContainEqual(["worktree", "remove", "--force", "/proj/.cadre/worktrees/main/2.3"]);
     expect(world.gitCalls).toContainEqual(["branch", "-D", "story/2.3"]);
     expect(world.spawned).toBe(1);
   });
