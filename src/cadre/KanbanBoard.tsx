@@ -11,7 +11,7 @@
  * Swimlanes: one horizontal lane per epic; unmatched stories fall into "Other".
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
   Circle,
   Plus,
@@ -30,83 +30,9 @@ import { parseEpics } from "../lib/planning/epics";
 import { parseDefinitionOfDone } from "../lib/engine/shard";
 import { KANBAN_COLUMNS, statusColumn, isAttention } from "../lib/engine/kanban";
 import { StatusPill } from "./components/StatusPill";
-import { FleetModelPicker } from "./FleetView";
+import { stateInfo, LiveTerminal, FleetModelPicker } from "./agentShared";
 import type { StoryCard } from "../lib/engine/board";
 import type { Epic } from "../lib/planning/epics";
-import type { Status } from "../lib/engine/status";
-
-// ── stateInfo — mirrors FleetView (not exported from there; kept in sync) ─────
-function stateInfo(status: Status): { label: string; color: string; live: boolean } {
-  switch (status) {
-    case "InProgress":
-      return { label: "Agent working — cadre verifies before Done", color: "var(--c-accent)", live: true };
-    case "InReview":
-      return { label: "Verifying — running the frozen command", color: "var(--c-warning)", live: true };
-    case "Done":
-      return { label: "Verified — Done", color: "var(--c-success)", live: false };
-    case "Failed":
-      return { label: "Failed verification — bounce to fix", color: "var(--c-danger)", live: false };
-    case "Blocked":
-      return { label: "Blocked — couldn't integrate; resolve it, then re-dispatch", color: "var(--c-danger)", live: false };
-    default:
-      return { label: "Ready to dispatch", color: "var(--c-text-muted)", live: false };
-  }
-}
-
-// ── stripAnsi — same as FleetView ─────────────────────────────────────────────
-function stripAnsi(s: string): string {
-  // eslint-disable-next-line no-control-regex
-  return s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "");
-}
-
-// ── LiveTerminal — mirrors FleetView's component (not exported from there) ────
-function LiveTerminal({ log, empty }: { log: string; empty: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [log]);
-
-  if (!log) {
-    return (
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "var(--c-text-faint)",
-          fontSize: "var(--c-fs-sm)",
-          background: "var(--c-code-bg)",
-          padding: "var(--c-space-4)",
-          borderRadius: "var(--c-radius)",
-        }}
-      >
-        {empty}
-      </div>
-    );
-  }
-  return (
-    <div
-      ref={ref}
-      style={{
-        background: "var(--c-code-bg)",
-        padding: "var(--c-space-3) var(--c-space-4)",
-        fontFamily: "var(--c-font-mono)",
-        fontSize: "var(--c-fs-xs)",
-        lineHeight: 1.6,
-        color: "var(--c-text-secondary)",
-        whiteSpace: "pre-wrap",
-        wordBreak: "break-word",
-        overflow: "auto",
-        maxHeight: 260,
-        borderRadius: "var(--c-radius)",
-        marginTop: "var(--c-space-2)",
-      }}
-    >
-      {stripAnsi(log)}
-    </div>
-  );
-}
 
 // ── KanbanCard — individual story card ────────────────────────────────────────
 function KanbanCard({ card, preview }: { card: StoryCard; preview: boolean }) {
@@ -753,7 +679,7 @@ export function KanbanBoard() {
 
         <div style={{ flex: 1 }} />
 
-        {/* Fleet model picker (reused from FleetView) */}
+        {/* Fleet model picker */}
         <FleetModelPicker />
       </div>
 

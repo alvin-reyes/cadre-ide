@@ -3,7 +3,7 @@ import { LayoutGrid, FolderTree, SquareTerminal, Library } from "lucide-react";
 import { TopBar } from "./components/TopBar";
 import { PhaseStepper } from "./components/PhaseStepper";
 import { PlanningStudio } from "./PlanningStudio";
-import { FleetView } from "./FleetView";
+import { KanbanBoard } from "./KanbanBoard";
 import { Workbench } from "./Workbench";
 import { TerminalTabs } from "./TerminalTabs";
 import { Team } from "./Team";
@@ -173,7 +173,7 @@ export function CadreApp() {
             {phase === "PLAN" ? (
               <PlanningStudio />
             ) : (
-              <FleetView key={phase === "SHARD" ? "shard" : "fleet"} mode={phase === "SHARD" ? "shard" : "fleet"} />
+              <KanbanBoard />
             )}
           </div>
 
