@@ -16,7 +16,8 @@ import { tauriOrchestratorDeps, tauriReviewFleetDeps } from "../lib/engine/tauri
 import { composeDispatchPrompt, type AlwaysFile } from "../lib/engine/dispatch";
 import { appendSessionEntry, SESSION_LOG_PATH } from "../lib/engine/sessionLog";
 import { resolveStorySession } from "../lib/engine/agentSessions";
-import { nextStoryNumber, parseStoryFiles, shardStory } from "../lib/engine/shard";
+import { nextStoryNumber, parseStoryFiles, parseStoryRepo, shardStory } from "../lib/engine/shard";
+import { parseRepos, resolveRepoPath, findRepo } from "../lib/engine/repos";
 import { CREATE_BACKLOG_TOOL, backlogFromTool } from "../lib/planning/storyTool";
 import { scheduleParallel } from "../lib/engine/schedule";
 import { detectVerifyCommand } from "../lib/engine/detectVerify";
@@ -175,7 +176,7 @@ interface CadreState {
   /** Gate a sharded story for the fleet: Draft → Approved (the SM/CTO review step). */
   approveStory: (epic: number, story: number) => Promise<void>;
   /** Run the adversarial code-review fleet (diverse-lens agent loops) on a story. */
-  reviewStory: (epic: number, story: number, root?: string) => Promise<void>;
+  reviewStory: (epic: number, story: number, root?: string, repoId?: string) => Promise<void>;
   /** Brownfield onboarding: a PM/Analyst agent documents an existing project (twice). */
   documentProject: () => Promise<void>;
   /** Read a story's markdown (docs/stories/{epic}.{story}.*.md), or "" if none. */
@@ -238,6 +239,11 @@ async function detectProjectVerify(root: string): Promise<string> {
     has("bun.lockb"),
   ]);
   return detectVerifyCommand({ packageJson, cargoToml, goMod, pyproject, makefile, pnpmLock, yarnLock, bunLock }) ?? "";
+}
+
+/** Read the project's cadre.json manifest (returns "" when absent — single-repo compat). */
+async function readManifest(root: string): Promise<string> {
+  return invoke<string>("read_file", { path: `${root}/cadre.json` }).catch(() => "");
 }
 
 /**
@@ -432,10 +438,12 @@ export const useCadre = create<CadreState>((set, get) => {
         await invoke("write_text_file", { path: `${root}/${PO_PATH}`, content: poValidation });
       }
       // Freeze the verification command in engine-owned state (agents can't forge it).
-      // Task-6 shim: repoVerification will be populated from the multi-repo registry
-      // once Task 6 builds the real per-repo map. For now send an empty map so the
-      // Rust command (which requires the field after Task 5) doesn't error at runtime.
-      await invoke("approve_plan", { root, verification: cmds, repoVerification: {} });
+      // Build the per-repo verify map from the cadre.json registry so each repo's
+      // verification command is frozen alongside the plan.
+      const repos = parseRepos(await readManifest(root));
+      const repoVerification: Record<string, string[]> = {};
+      for (const r of repos) if (r.verify?.trim()) repoVerification[r.id] = [r.verify.trim()];
+      await invoke("approve_plan", { root, verification: cmds, repoVerification });
       // Land on SHARD — the next step is breaking the plan into stories (the board
       // is empty until the SM shards), not the (empty) execution board.
       patchRoot(root, { verification: cmds, phase: "SHARD", needsReplan: false });
@@ -550,6 +558,13 @@ export const useCadre = create<CadreState>((set, get) => {
       if (!storyPath) throw new Error(`No story file for ${epic}.${story} — shard it first.`);
       const storyMarkdown = await invoke<string>("read_file", { path: storyPath });
 
+      // Resolve this story's target repo from the story markdown and the cadre.json registry.
+      // For single-repo projects (no cadre.json or no repos array), parseRepos returns
+      // [{id:"main",path:"."}] and parseStoryRepo returns "main", so repoPath === root.
+      const repoId = parseStoryRepo(storyMarkdown);
+      const repos = parseRepos(await readManifest(root));
+      const repoPath = resolveRepoPath(root, findRepo(repos, repoId).path);
+
       // Inject the shared Context Store (architecture + .cadre/context) so every
       // parallel agent builds against the same interfaces and decisions.
       const alwaysFiles = opts?.context ?? (await loadSharedContext(root));
@@ -599,10 +614,8 @@ export const useCadre = create<CadreState>((set, get) => {
 
       const res = await runApprovedStory(deps, {
         root,
-        // Task-6 shim: multi-repo routing will supply repoPath/repoId from the story's
-        // repo ref. For now default to the project root / "main" so single-repo projects work.
-        repoPath: root,
-        repoId: "main",
+        repoPath,
+        repoId,
         epic,
         story,
         prompt,
@@ -626,7 +639,7 @@ export const useCadre = create<CadreState>((set, get) => {
         // integrating. If it blocks, quarantine the story (Blocked) and don't merge
         // — the review has real authority, not just an advisory badge. Toggleable.
         if (useSettingsStore.getState().gateOnReview) {
-          await get().reviewStory(epic, story, root);
+          await get().reviewStory(epic, story, root, repoId);
           const reviews = get().projects[root]?.codeReviews?.[key]?.reviews ?? [];
           if (aggregateReviews(reviews).verdict === "block") {
             await useBmadStore.getState().setStatus(epic, story, "Blocked", root);
@@ -639,8 +652,7 @@ export const useCadre = create<CadreState>((set, get) => {
         // Merge the verified worktree back into main — serialized so parallel
         // stories integrate safely. On conflict, mark Blocked for the human (A).
         const integ = await withMergeLock(() =>
-          // Task-4 shim: multi-repo routing will supply repoPath from the story's repo ref.
-          integrateStory({ runGit: deps.runGit }, { root, repoPath: root, epic, story })
+          integrateStory({ runGit: deps.runGit }, { root, repoPath, epic, story })
         );
         if (integ.conflict) {
           await useBmadStore.getState().setStatus(epic, story, "Blocked", root);
@@ -683,11 +695,17 @@ export const useCadre = create<CadreState>((set, get) => {
       }
 
       // Read each story's declared files to schedule file-disjoint parallel batches.
+      // Prefix each file with the story's repo id so stories in different repos that
+      // touch files with the same relative path are never treated as conflicting.
+      // For single-repo projects parseStoryRepo always returns "main", so the prefix
+      // is stable and scheduleParallel (which treats file strings opaquely) behaves
+      // exactly as before.
       const scheduled = await Promise.all(
         ready.map(async (c) => {
           const p = await findStoryPath(root, c.epic, c.story);
           const md = p ? await invoke<string>("read_file", { path: p }).catch(() => "") : "";
-          return { id: c.id, files: parseStoryFiles(md) };
+          const storyRepoId = parseStoryRepo(md);
+          return { id: c.id, files: parseStoryFiles(md).map((f) => `${storyRepoId}:${f}`) };
         })
       );
       const batches = scheduleParallel(scheduled, 4);
@@ -729,7 +747,7 @@ export const useCadre = create<CadreState>((set, get) => {
     }
   },
 
-  reviewStory: async (epic, story, root?: string) => {
+  reviewStory: async (epic, story, root?: string, repoId?: string) => {
     const key = `${epic}.${story}`;
     // If a captured root is provided (e.g. from dispatchStory's gate), use it so
     // background dispatches write the correct project's slice even if the foreground
@@ -759,11 +777,14 @@ export const useCadre = create<CadreState>((set, get) => {
       const { env, model } = await resolveFleetAuth(provider);
       onOutput(`[cadre] dispatching ${CODE_REVIEW_LENSES.length} adversarial reviewers on ${provider.name}\n`);
 
+      // Resolve the repo id: use the caller-supplied value (from a background dispatch
+      // gate that already parsed the story) or parse the story markdown. For single-repo
+      // projects parseStoryRepo returns "main" so behaviour is identical to before.
+      const rid = repoId ?? parseStoryRepo(await get().getStoryMarkdown(epic, story));
+
       const reviews = await reviewStoryFleet(tauriReviewFleetDeps(onOutput), {
         root: target,
-        // Task-6 shim: multi-repo routing will supply repoId from the story's repo ref.
-        // For now default to "main" so single-repo projects work.
-        repoId: "main",
+        repoId: rid,
         epic,
         story,
         lenses: CODE_REVIEW_LENSES,
