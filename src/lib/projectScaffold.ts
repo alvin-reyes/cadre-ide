@@ -45,6 +45,9 @@ story is Done.**
 - \`.cadre/context/\` — the **Context Store**: shared interfaces, types, and decisions
   that parallel/later stories must agree on. Read it before inventing a contract; add
   a small Markdown file when you establish one.
+- \`.cadre/context/decisions/\` — the **decision log**: Architecture Decision Records
+  (\`NNNN-slug.md\`, with Status · Context · Decision · Consequences). Read the existing
+  ADRs before diverging from a settled choice; record a new ADR when you make one.
 - \`.cadre/session.md\` — the **session journal**: an append-only record of what's been
   planned, built, and shipped. Read it first to know the current state of the project.
 
@@ -121,7 +124,9 @@ engine verifies.
 - **Respect the Context Store.** Before inventing a shared interface, type, API contract,
   config key, or cross-cutting decision, read \`.cadre/context/\`. When you establish one,
   record it there in a small, factual Markdown file so parallel and later agents stay
-  consistent.
+  consistent. Significant, lasting decisions go in the **decision log** as an ADR under
+  \`.cadre/context/decisions/NNNN-slug.md\` (Status · Context · Decision · Consequences);
+  read the existing ADRs before diverging, and add one when you decide — never silently re-decide.
 - **Stay in your lane.** Each role owns specific artifacts (see \`.cadre/agents/\`). Don't
   redesign the architecture as a Dev, or pick the stack as a Designer.
 - **Adversarial review is mandatory.** Every artifact is reviewed by a same-role skeptic
@@ -241,7 +246,7 @@ The implementation of your one story: the failing tests, the minimal code to pas
 - Work **test-first**, always: write the failing test that encodes an acceptance criterion, watch it fail, then write the minimal code to make it pass. Repeat until every acceptance criterion is covered by a passing test.
 - Follow the project's coding standards and \`CLAUDE.md\` conventions **verbatim**. Match the surrounding code's patterns, naming, and structure — your change should read like the rest of the codebase.
 - Implement **only** your story. No scope creep, no drive-by refactors, no gold-plating. If you spot other problems, note them; don't fix them here.
-- **Shared context is sacred.** Before inventing a shared interface, type, API contract, or config key, read \`.cadre/context/\`. If you establish one, record it there in a small, factual file so parallel and later agents agree with you.
+- **Shared context is sacred.** Before inventing a shared interface, type, API contract, or config key, read \`.cadre/context/\`. If you establish one, record it there in a small, factual file so parallel and later agents agree with you. For significant, lasting decisions, read the ADRs in \`.cadre/context/decisions/\` first and follow them — and when you make such a decision, record it as a new ADR (\`NNNN-slug.md\`: Status · Context · Decision · Consequences) so later agents inherit it, never silently re-decide.
 
 ## The one hard rule
 **You do NOT decide "Done."** You never mark the story complete, edit \`.cadre/\` state, or self-report success. Cadre runs the frozen verification command and decides. When you've done the work, stop and leave your changes in your worktree; write your result marker only if one was requested.
