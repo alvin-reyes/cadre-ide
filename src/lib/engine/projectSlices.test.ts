@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { emptyBmadSlice, mirrorBmad, updateSlice } from "./projectSlices";
+import { emptyBmadSlice, mirrorBmad, updateSlice, emptyCadreSlice, mirrorCadre } from "./projectSlices";
 import { emptyBoard } from "./board";
 
 describe("projectSlices", () => {
@@ -26,5 +26,66 @@ describe("projectSlices", () => {
     const none = mirrorBmad({ "/p": slice }, null);
     expect(none.projectRoot).toBeNull();
     expect(none.stories).toEqual([]);
+  });
+
+  // --- CadreSlice / mirrorCadre tests ---
+
+  describe("emptyCadreSlice", () => {
+    it("initialises busy and error to null", () => {
+      const s = emptyCadreSlice();
+      expect(s.busy).toBeNull();
+      expect(s.error).toBeNull();
+    });
+
+    it("initialises all string fields to empty string and boolean fields to false", () => {
+      const s = emptyCadreSlice();
+      expect(s.prd).toBe("");
+      expect(s.architecture).toBe("");
+      expect(s.phase).toBe("PLAN");
+      expect(s.isBrownfield).toBe(false);
+      expect(s.needsReplan).toBe(false);
+      expect(s.verification).toEqual([]);
+    });
+  });
+
+  describe("mirrorCadre", () => {
+    it("returns empty-slice defaults when activeRoot is null", () => {
+      const m = mirrorCadre({}, null);
+      expect(m.busy).toBeNull();
+      expect(m.error).toBeNull();
+      expect(m.prd).toBe("");
+      expect(m.phase).toBe("PLAN");
+    });
+
+    it("returns empty-slice defaults when activeRoot is absent from projects map", () => {
+      const m = mirrorCadre({}, "/nonexistent");
+      expect(m.busy).toBeNull();
+      expect(m.error).toBeNull();
+    });
+
+    it("copies busy and error from the active slice", () => {
+      const slice = { ...emptyCadreSlice(), busy: "Dispatching…", error: "something went wrong" };
+      const m = mirrorCadre({ "/a": slice }, "/a");
+      expect(m.busy).toBe("Dispatching…");
+      expect(m.error).toBe("something went wrong");
+    });
+
+    it("returns null busy/error when the active slice has null values", () => {
+      const slice = { ...emptyCadreSlice(), busy: null, error: null };
+      const m = mirrorCadre({ "/a": slice }, "/a");
+      expect(m.busy).toBeNull();
+      expect(m.error).toBeNull();
+    });
+
+    it("mirrors only the active slice — not other projects' slices", () => {
+      const sliceA = { ...emptyCadreSlice(), prd: "A's PRD", busy: "busy-A" };
+      const sliceB = { ...emptyCadreSlice(), prd: "B's PRD", busy: "busy-B" };
+      const ma = mirrorCadre({ "/a": sliceA, "/b": sliceB }, "/a");
+      expect(ma.prd).toBe("A's PRD");
+      expect(ma.busy).toBe("busy-A");
+      const mb = mirrorCadre({ "/a": sliceA, "/b": sliceB }, "/b");
+      expect(mb.prd).toBe("B's PRD");
+      expect(mb.busy).toBe("busy-B");
+    });
   });
 });
