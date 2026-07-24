@@ -17,6 +17,7 @@ import {
   updateSlice,
   type BmadSlice,
 } from "../lib/engine/projectSlices";
+import { useTrackerStore } from "./trackerStore";
 
 /**
  * bmadStore: the live Fleet board. Opens a project, hydrates the board from the
@@ -142,6 +143,13 @@ export const useBmadStore = create<BmadState>((set, get) => {
       pushRoot(root, applyStatus(prev, epic, story, status));
       try {
         await invoke("story_set_status", { root, epic, story, status });
+        // Best-effort push to the GitHub tracker (no-op unless enabled for this project).
+        const tracker = useTrackerStore.getState();
+        if (tracker.config.enabled && tracker.config.repo) {
+          const st = get().projects[root]?.stories?.find((s) => s.epic === epic && s.story === story);
+          const title = st?.title ?? `Story ${epic}.${story}`;
+          void tracker.syncStory(root, { epic, story, title }, status).catch(() => {});
+        }
       } catch (e) {
         // Rejected (e.g. an illegal edge): roll back so the board doesn't drift
         // ahead of the on-disk state that never changed.
