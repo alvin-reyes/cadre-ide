@@ -116,3 +116,19 @@ export function groupIntoLanes<
   }
   return { epicBuckets, otherCards };
 }
+
+/**
+ * Derive the fleet ROLE of the agent building a story from its `[phase]` title
+ * tag (the SM tags backlog stories with their lifecycle phase). Lets the Fleet
+ * org chart label DevOps and Docs agents distinctly from Dev/QA — the role
+ * reflects the STORY type, independent of its status.
+ */
+export type StoryRoleKind = "dev" | "qa" | "devops" | "docs";
+export function storyRole(title: string): { kind: StoryRoleKind; label: string } {
+  const m = title.match(/^\s*\[([^\]]+)\]/);
+  const phase = (m ? m[1] : "").toLowerCase();
+  if (/(ops|devops|deploy|infra|\bci\b|\bcd\b|release|monitor|observ)/.test(phase)) return { kind: "devops", label: "DevOps" };
+  if (/(doc|support)/.test(phase)) return { kind: "docs", label: "Docs" };
+  if (/(qa|test|e2e|accept|integration)/.test(phase)) return { kind: "qa", label: "QA" };
+  return { kind: "dev", label: "Dev" };
+}

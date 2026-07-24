@@ -14,7 +14,7 @@ import { Circle, Play, Network } from "lucide-react";
 import { useBmadStore } from "../stores/bmadStore";
 import { useCadre } from "./useCadre";
 import { stateInfo, LiveTerminal, FleetModelPicker } from "./agentShared";
-import { rollupCounts, selectRunningAgents } from "../lib/engine/kanban";
+import { rollupCounts, selectRunningAgents, storyRole } from "../lib/engine/kanban";
 import { FleetBoard } from "./components/FleetBoard";
 import { useSettingsStore } from "../stores/settingsStore";
 import { agentLabel, reconcileSlots } from "../lib/engine/agentSlots";
@@ -104,7 +104,10 @@ function AgentNode({ card }: { card: StoryCard }) {
 
   const info = stateInfo(card.status);
   const isInReview = card.status === "InReview";
-  const roleLabel = isInReview ? "QA / Review" : "Dev Agent";
+  // Role reflects the STORY type (from its [phase] tag): Dev / QA / DevOps / Docs —
+  // so DevOps and Docs agents are visible as distinct fleet roles. The verifying
+  // state (InReview) is conveyed by the status color + activity line, not the role.
+  const roleLabel = `${storyRole(card.title ?? "").label} agent`;
 
   // Parse [phase] chip from title
   const phaseMatch = card.title?.match(/^\[([^\]]+)\]\s*(.*)/);
