@@ -52,6 +52,10 @@ describe("resolveMergeConflict", () => {
     expect(r).toEqual({ resolved: false, reason: "verify-failed" });
     expect(git.some((a) => a.includes("--ff-only"))).toBe(false);
   });
+  it("fast-forward into main fails → resolved:false reason integrate-failed, cleaned up", async () => {
+    const { deps } = fakeDeps({ unmergedAfterAgent: "", agentExit: 0, verifyExit: 0, ffThrows: true });
+    expect(await resolveMergeConflict(deps, base)).toEqual({ resolved: false, reason: "integrate-failed" });
+  });
   it("composeResolverPrompt includes the story, context files, and a resolve+commit directive", () => {
     const p = composeResolverPrompt({ storyMarkdown: "# Story 1.2", alwaysFiles: [{ path: ".cadre/context/api.md", content: "contract" }], epic: 1, story: 2 });
     expect(p).toContain("# Story 1.2");
