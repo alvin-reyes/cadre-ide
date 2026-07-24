@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { statusColumn, isAttention, rollupCounts, groupIntoLanes, selectRunningAgents, KANBAN_COLUMNS, type KanbanColumn } from "./kanban";
+import { statusColumn, isAttention, rollupCounts, groupIntoLanes, selectRunningAgents, storyRole, KANBAN_COLUMNS, type KanbanColumn } from "./kanban";
 import type { Status } from "./status";
 import type { StoryCard } from "./board";
 
@@ -274,5 +274,23 @@ describe("selectRunningAgents", () => {
     ];
     const result = selectRunningAgents(cards, { "1.3": true });
     expect(result.map((c) => c.id).sort()).toEqual(["1.1", "1.2", "1.3"]);
+  });
+});
+
+describe("storyRole", () => {
+  it("maps the [phase] tag to a fleet role", () => {
+    expect(storyRole("[ops] Deploy runbook").label).toBe("DevOps");
+    expect(storyRole("[devops] CI/CD pipeline").label).toBe("DevOps");
+    expect(storyRole("[deployment] Blue-green rollout").label).toBe("DevOps");
+    expect(storyRole("[documentation] API reference").label).toBe("Docs");
+    expect(storyRole("[docs] README").label).toBe("Docs");
+    expect(storyRole("[testing] E2E suite").label).toBe("QA");
+    expect(storyRole("[qa] Acceptance tests").label).toBe("QA");
+    expect(storyRole("[backend] Task CRUD").label).toBe("Dev");
+    expect(storyRole("[frontend] Task list UI").label).toBe("Dev");
+  });
+  it("defaults to Dev when there is no phase tag", () => {
+    expect(storyRole("Add task feature").label).toBe("Dev");
+    expect(storyRole("").label).toBe("Dev");
   });
 });

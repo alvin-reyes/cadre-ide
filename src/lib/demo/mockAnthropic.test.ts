@@ -29,7 +29,7 @@
 
 import { describe, it, expect } from "vitest";
 import { makeMockAnthropic, type MockStreamParams, type MockCreateParams } from "./mockAnthropic";
-import { DEMO_PRD, DEMO_ARCHITECTURE, DEMO_UX, DEMO_DOCS, DEMO_OPS, DEMO_BACKLOG, DEMO_STORY } from "./demoContent";
+import { DEMO_PRD, DEMO_ARCHITECTURE, DEMO_UX, DEMO_BACKLOG, DEMO_STORY } from "./demoContent";
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -137,39 +137,6 @@ describe("mockAnthropic — messages.stream (write_document)", () => {
     }
   });
 
-  it("Technical Writer turn: write_document returns DEMO_DOCS", async () => {
-    const client = makeMockAnthropic();
-    const stream = client.messages.stream(
-      makeStreamParams({
-        tools: [{ name: "write_document" }],
-        system: "You are a pragmatic Technical Writer",
-      })
-    );
-    const msg = await stream.finalMessage();
-    const writeDoc = msg.content.find((b) => b.type === "tool_use" && b.name === "write_document");
-    expect(writeDoc).toBeDefined();
-    if (writeDoc?.type === "tool_use") {
-      const input = writeDoc.input as { markdown?: string };
-      expect(input.markdown).toBe(DEMO_DOCS);
-    }
-  });
-
-  it("DevOps turn: write_document returns DEMO_OPS", async () => {
-    const client = makeMockAnthropic();
-    const stream = client.messages.stream(
-      makeStreamParams({
-        tools: [{ name: "write_document" }],
-        system: "You are a pragmatic DevOps / Release Engineer",
-      })
-    );
-    const msg = await stream.finalMessage();
-    const writeDoc = msg.content.find((b) => b.type === "tool_use" && b.name === "write_document");
-    expect(writeDoc).toBeDefined();
-    if (writeDoc?.type === "tool_use") {
-      const input = writeDoc.input as { markdown?: string };
-      expect(input.markdown).toBe(DEMO_OPS);
-    }
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -301,7 +268,7 @@ describe("mockAnthropic — messages.stream (handoff + suggest_replies)", () => 
     expect(toolBlock).toBeDefined();
     if (toolBlock?.type === "tool_use") {
       const input = toolBlock.input as { role: string; note?: string };
-      const validRoles = ["analyst", "architect", "design", "techwriter", "devops"];
+      const validRoles = ["architect", "design"];
       expect(validRoles).toContain(input.role);
     }
   });
