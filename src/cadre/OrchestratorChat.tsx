@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Bot, X, ArrowUp, Plus, ScrollText, Play, PanelRight, Maximize2, Minimize2 } from "lucide-react";
+import { Bot, X, ArrowUp, Plus, ScrollText, Play, PanelRight, Maximize2, Minimize2, Square } from "lucide-react";
 import { type ChatMessage } from "../lib/planning/planningChat";
 import { orchestratorTurn } from "../lib/planning/orchestratorTurn";
 import { runOrchestratorTool, type OrchestratorActions } from "../lib/planning/orchestratorTools";
@@ -70,6 +70,7 @@ export function OrchestratorChat() {
   const dispatchReady = useCadre((s) => s.dispatchReady);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
@@ -180,6 +181,9 @@ export function OrchestratorChat() {
         }
       : null;
 
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
       const res = await orchestratorTurn({
         apiKey: auth.apiKey,
@@ -187,6 +191,7 @@ export function OrchestratorChat() {
         model,
         systemPrompt: `${ORCHESTRATOR_SYSTEM_PROMPT}\n\n## Live project state\n${ctx}`,
         messages: base,
+        signal: controller.signal,
         onText: (d) => {
           acc += d;
           // Render any accumulated tool lines as a prefix above the streamed text.
@@ -219,9 +224,16 @@ export function OrchestratorChat() {
       const prefix = toolLines.length > 0 ? toolLines.join("\n") + "\n\n" : "";
       setLast(prefix + ((res.reply || acc).trim() || "(no reply)"));
     } catch (e) {
+      // A user-initiated stop is a clean exit — do NOT surface as an error toast.
+      if ((e as { name?: string })?.name === "AbortError" || controller.signal.aborted) {
+        const prefix = toolLines.length > 0 ? toolLines.join("\n") + "\n\n" : "";
+        setLast((prefix + (acc || "")).trimEnd() + " _(stopped)_");
+        return;
+      }
       setLast(`Error: ${String(e)}`);
       reportError("orchestrator", e);
     } finally {
+      abortRef.current = null;
       setThinking(false);
     }
   }
@@ -384,14 +396,25 @@ export function OrchestratorChat() {
             disabled={!planAuth.ready}
             style={{ flex: 1, resize: "none", maxHeight: 90, background: "transparent", border: "none", outline: "none", color: "var(--c-text)", fontSize: "var(--c-fs-sm)", fontFamily: "var(--c-font-ui)", lineHeight: 1.5, padding: "3px 0" }}
           />
-          <button
-            onClick={() => send(draft)}
-            disabled={!draft.trim() || thinking || !planAuth.ready}
-            aria-label="Send"
-            style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: "var(--c-radius-sm)", background: draft.trim() && !thinking ? "var(--c-accent)" : "var(--c-surface-3)", color: draft.trim() && !thinking ? "var(--c-on-accent)" : "var(--c-text-muted)", border: "none", cursor: draft.trim() && !thinking ? "pointer" : "default", flexShrink: 0 }}
-          >
-            <ArrowUp size={15} strokeWidth={2.5} />
-          </button>
+          {thinking ? (
+            <button
+              onClick={() => abortRef.current?.abort()}
+              aria-label="Stop generation"
+              title="Stop"
+              style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: "var(--c-radius-sm)", background: "var(--c-surface-3)", color: "var(--c-text)", border: "1px solid var(--c-border-strong)", cursor: "pointer", flexShrink: 0 }}
+            >
+              <Square size={13} strokeWidth={2} />
+            </button>
+          ) : (
+            <button
+              onClick={() => send(draft)}
+              disabled={!draft.trim() || !planAuth.ready}
+              aria-label="Send"
+              style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: "var(--c-radius-sm)", background: draft.trim() ? "var(--c-accent)" : "var(--c-surface-3)", color: draft.trim() ? "var(--c-on-accent)" : "var(--c-text-muted)", border: "none", cursor: draft.trim() ? "pointer" : "default", flexShrink: 0 }}
+            >
+              <ArrowUp size={15} strokeWidth={2.5} />
+            </button>
+          )}
         </div>
       </div>
     </div>

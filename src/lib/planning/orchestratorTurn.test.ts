@@ -176,4 +176,49 @@ describe("runToolLoop", () => {
     expect(client._streamCalls).toHaveLength(1);
     expect(opts.onToolCall).not.toHaveBeenCalled();
   });
+
+  it("stops cleanly when the signal is aborted after the first onToolCall and does not throw", async () => {
+    // The client always returns a tool_use so the loop would run indefinitely
+    // without an abort. We abort after the first onToolCall fires.
+    const toolUseBlock: ContentBlock = {
+      type: "tool_use",
+      id: "tu_abort1",
+      name: "dispatch_story",
+      input: { epic: 1, story: 1 },
+    };
+
+    const controller = new AbortController();
+
+    // Track stream calls so we can assert the loop stopped early.
+    let streamCallCount = 0;
+    const client = {
+      _streamCalls: [] as unknown[][],
+      messages: {
+        stream(params: { messages: unknown[] }) {
+          streamCallCount++;
+          client._streamCalls.push(params.messages);
+          return fakeStream("", [toolUseBlock]);
+        },
+      },
+    };
+
+    const onToolCall = vi.fn().mockImplementation(async () => {
+      // Abort after the first tool call completes — simulates the user pressing Stop
+      // mid-turn while a tool is running.
+      controller.abort();
+      return { ok: true, message: "done" };
+    });
+
+    const opts = baseOpts({ onToolCall, signal: controller.signal, maxIterations: 8 });
+    // Must not throw — abort is a clean stop.
+    const result = await runToolLoop(client, opts);
+
+    // The loop made at most 2 stream calls (1 for the first iteration, at most
+    // 1 more if the second iteration started before the abort-check ran).
+    expect(streamCallCount).toBeLessThanOrEqual(2);
+    // onToolCall was called at most once (the iteration that triggered the abort).
+    expect(onToolCall).toHaveBeenCalledTimes(1);
+    // Returns the accumulated reply (may be empty) without hanging or throwing.
+    expect(result).toHaveProperty("reply");
+  });
 });

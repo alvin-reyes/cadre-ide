@@ -121,6 +121,11 @@ export async function runToolLoop(
   let currentModel = opts.model;
 
   for (let i = 0; i < maxIterations; i++) {
+    // ------------------------------------------------------------------
+    // 0. Check if the caller has aborted before making another model call.
+    // ------------------------------------------------------------------
+    if (opts.signal?.aborted) break;
+
     const isFirstIteration = i === 0;
 
     // ------------------------------------------------------------------
@@ -146,12 +151,24 @@ export async function runToolLoop(
       return stream.finalMessage();
     };
 
+    const isAbortError = (e: unknown): boolean =>
+      (e as { name?: string })?.name === "AbortError" || !!opts.signal?.aborted;
+
     try {
       final = await doStream(currentModel);
     } catch (e) {
+      if (isAbortError(e)) {
+        // Caller cancelled — return whatever we've accumulated so far, cleanly.
+        break;
+      }
       if (isFirstIteration && isModelError(e) && currentModel !== fallbackModel(currentModel)) {
-        currentModel = fallbackModel(currentModel);
-        final = await doStream(currentModel);
+        try {
+          currentModel = fallbackModel(currentModel);
+          final = await doStream(currentModel);
+        } catch (e2) {
+          if (isAbortError(e2)) break;
+          throw e2;
+        }
       } else {
         throw e;
       }
