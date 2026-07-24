@@ -13,6 +13,8 @@ import { planningTurn, type ChatMessage, type Attachment } from "../lib/planning
 import { PM_SYSTEM_PROMPT, ARCHITECT_SYSTEM_PROMPT, DESIGN_SYSTEM_PROMPT, ANALYST_SYSTEM_PROMPT, TECHWRITER_SYSTEM_PROMPT, ADVERSARIAL_REVIEW_PROMPTS, PLAN_VALIDATION_PROMPT } from "../lib/planning/personas";
 import { reviewArtifact, type ReviewResult, type Severity, type Finding } from "../lib/planning/review";
 import { reportError } from "../lib/reportError";
+import { resolvePlanningAuth } from "../lib/planning/planningAuth";
+import { secretGet } from "../lib/secrets";
 
 /** Read a pasted/dropped File as text. */
 function readFileText(file: File): Promise<string> {
@@ -100,9 +102,19 @@ const paneHead: CSSProperties = {
 };
 
 export function PlanningStudio() {
-  const apiKey = useSettingsStore((s) => s.anthropicApiKey);
+  const anthropicKey = useSettingsStore((s) => s.anthropicApiKey);
+  const authProvider = useSettingsStore((s) => s.authProvider);
+  const dispatchUseLogin = useSettingsStore((s) => s.dispatchUseLogin);
   const setApiKey = useSettingsStore((s) => s.setAnthropicApiKey);
   const planningModel = useSettingsStore((s) => s.planningModel) || MODEL;
+
+  // Resolved planning auth — drives the send gate and shows the not-ready reason.
+  const [planAuth, setPlanAuth] = useState<{ ready: boolean; apiKey: string; baseUrl?: string; reason?: string }>({ ready: false, apiKey: "" });
+  useEffect(() => {
+    resolvePlanningAuth(authProvider, dispatchUseLogin, secretGet).then((a) =>
+      setPlanAuth({ ready: a.ready, apiKey: a.apiKey, baseUrl: a.baseUrl, reason: a.reason })
+    );
+  }, [authProvider, dispatchUseLogin, anthropicKey]);
 
   const prd = useCadre((s) => s.prd);
   const architecture = useCadre((s) => s.architecture);
@@ -228,14 +240,17 @@ export function PlanningStudio() {
   }
 
   async function runReview() {
-    if (!apiKey || !doc.trim() || review.status === "reviewing") return;
+    if (!planAuth.ready || !doc.trim() || review.status === "reviewing") return;
+    const auth = await resolvePlanningAuth(authProvider, dispatchUseLogin, secretGet);
+    if (!auth.ready) { reportError("planning", new Error(auth.reason ?? "planning credential missing")); return; }
     const active = persona;
     setReviews((r) => ({ ...r, [active]: { status: "reviewing" } }));
     try {
       // Reviewers hold the artifact against its upstream (the PRD), except the PM's own.
       const context = active === "pm" ? undefined : prd.trim() || undefined;
       const result = await reviewArtifact({
-        apiKey,
+        apiKey: auth.apiKey,
+        baseUrl: auth.baseUrl,
         model: planningModel,
         systemPrompt: ADVERSARIAL_REVIEW_PROMPTS[active],
         artifact: doc,
@@ -255,7 +270,9 @@ export function PlanningStudio() {
   // the WHOLE plan (coverage vs goals, testable ACs, gaps) to assist your sign-off.
   const [poCheck, setPoCheck] = useState<{ status: "idle" | "reviewing" | "done"; result?: ReviewResult }>({ status: "idle" });
   async function runPoValidation() {
-    if (!apiKey || poCheck.status === "reviewing") return;
+    if (!planAuth.ready || poCheck.status === "reviewing") return;
+    const auth = await resolvePlanningAuth(authProvider, dispatchUseLogin, secretGet);
+    if (!auth.ready) { reportError("planning", new Error(auth.reason ?? "planning credential missing")); return; }
     setPoCheck({ status: "reviewing" });
     try {
       const plan = [
@@ -266,7 +283,8 @@ export function PlanningStudio() {
         .filter(Boolean)
         .join("\n\n---\n\n");
       const result = await reviewArtifact({
-        apiKey,
+        apiKey: auth.apiKey,
+        baseUrl: auth.baseUrl,
         model: planningModel,
         systemPrompt: PLAN_VALIDATION_PROMPT,
         artifact: plan,
@@ -321,7 +339,7 @@ export function PlanningStudio() {
     setDiagramOpen(false);
   }
   const canApprove = prd.trim().length > 0 && architecture.trim().length > 0;
-  const canSend = (draft.trim().length > 0 || attachments.length > 0) && !!apiKey && !thinking;
+  const canSend = (draft.trim().length > 0 || attachments.length > 0) && planAuth.ready && !thinking;
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -421,7 +439,9 @@ export function PlanningStudio() {
   // `override` lets a quick-reply chip send its text directly.
   async function send(override?: string, target?: PersonaId) {
     const text = (override ?? draft).trim();
-    if ((!text && attachments.length === 0) || thinking || !apiKey) return;
+    if ((!text && attachments.length === 0) || thinking || !planAuth.ready) return;
+    const auth = await resolvePlanningAuth(authProvider, dispatchUseLogin, secretGet);
+    if (!auth.ready) { reportError("planning", new Error(auth.reason ?? "planning credential missing")); return; }
     const active = target ?? persona;
     // Routing to another persona (e.g. "solve gaps"): switch to it, keep it open,
     // and don't drag the current composer's attachments along.
@@ -455,7 +475,8 @@ export function PlanningStudio() {
     let acc = "";
     try {
       const result = await planningTurn({
-        apiKey,
+        apiKey: auth.apiKey,
+        baseUrl: auth.baseUrl,
         model: planningModel,
         systemPrompt: systemPromptFor(active),
         messages: base,
@@ -582,7 +603,7 @@ export function PlanningStudio() {
             <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)", paddingLeft: 2 }}>{meta.sub}</span>
           </div>
 
-          {!apiKey && (
+          {!planAuth.ready && (
             <div
               style={{
                 display: "flex",
@@ -596,24 +617,30 @@ export function PlanningStudio() {
               }}
             >
               <KeyRound size={14} style={{ color: "var(--c-warning)", flexShrink: 0 }} />
-              <input
-                value={keyDraft}
-                onChange={(e) => setKeyDraft(e.target.value)}
-                placeholder="Paste your Anthropic API key to start"
-                type="password"
-                style={{
-                  flex: 1,
-                  background: "transparent",
-                  border: "none",
-                  outline: "none",
-                  color: "var(--c-text)",
-                  fontSize: "var(--c-fs-sm)",
-                  fontFamily: "var(--c-font-mono)",
-                }}
-              />
-              <button onClick={() => keyDraft.trim() && setApiKey(keyDraft.trim())} style={miniBtn}>
-                Save
-              </button>
+              {planAuth.reason ? (
+                <span style={{ flex: 1, fontSize: "var(--c-fs-sm)", color: "var(--c-text-secondary)" }}>{planAuth.reason}</span>
+              ) : (
+                <>
+                  <input
+                    value={keyDraft}
+                    onChange={(e) => setKeyDraft(e.target.value)}
+                    placeholder="Paste your Anthropic API key to start"
+                    type="password"
+                    style={{
+                      flex: 1,
+                      background: "transparent",
+                      border: "none",
+                      outline: "none",
+                      color: "var(--c-text)",
+                      fontSize: "var(--c-fs-sm)",
+                      fontFamily: "var(--c-font-mono)",
+                    }}
+                  />
+                  <button onClick={() => keyDraft.trim() && setApiKey(keyDraft.trim())} style={miniBtn}>
+                    Save
+                  </button>
+                </>
+              )}
             </div>
           )}
 
@@ -623,7 +650,7 @@ export function PlanningStudio() {
                 analyzing={!!busy}
                 output={brownfieldLog}
                 onAnalyze={() => documentProject()}
-                disabled={!apiKey || !!busy}
+                disabled={!planAuth.ready || !!busy}
               />
             ) : messages.length === 0 ? (
               <div style={{ margin: "auto 0" }}>
@@ -751,7 +778,7 @@ export function PlanningStudio() {
             >
               <button
                 onClick={attachFromClipboard}
-                disabled={!apiKey || thinking}
+                disabled={!planAuth.ready || thinking}
                 title="Attach a document from the clipboard"
                 style={{
                   display: "inline-flex",
@@ -763,7 +790,7 @@ export function PlanningStudio() {
                   background: "transparent",
                   border: "none",
                   color: "var(--c-text-muted)",
-                  cursor: apiKey && !thinking ? "pointer" : "default",
+                  cursor: planAuth.ready && !thinking ? "pointer" : "default",
                   flexShrink: 0,
                 }}
               >
@@ -771,7 +798,7 @@ export function PlanningStudio() {
               </button>
               <button
                 onClick={() => setDiagramOpen(true)}
-                disabled={!apiKey || thinking}
+                disabled={!planAuth.ready || thinking}
                 title="Sketch an app flow as a Mermaid diagram for the agent to analyze"
                 aria-label="Diagram"
                 style={{
@@ -784,7 +811,7 @@ export function PlanningStudio() {
                   background: "transparent",
                   border: "none",
                   color: "var(--c-text-muted)",
-                  cursor: apiKey && !thinking ? "pointer" : "default",
+                  cursor: planAuth.ready && !thinking ? "pointer" : "default",
                   flexShrink: 0,
                 }}
               >
@@ -797,8 +824,8 @@ export function PlanningStudio() {
                 onChange={(e) => setDraft(e.target.value)}
                 onPaste={onPaste}
                 onKeyDown={onInputKeyDown}
-                placeholder={apiKey ? `Talk to the ${meta.label}…  (Enter to send · Shift+Enter for a new line · paste a doc to attach)` : "Add your API key above to start"}
-                disabled={!apiKey}
+                placeholder={planAuth.ready ? `Talk to the ${meta.label}…  (Enter to send · Shift+Enter for a new line · paste a doc to attach)` : (planAuth.reason ?? "Add your API key above to start")}
+                disabled={!planAuth.ready}
                 style={{
                   flex: 1,
                   resize: "none",

@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { recordUsage } from "../../stores/usageStore";
-import { fallbackModel, isModelError } from "./planningChat";
+import { fallbackModel, isModelError, makeAnthropic } from "./planningChat";
 
 /**
  * Adversarial review (§3.11): every artifact is critiqued by a same-discipline
@@ -73,6 +73,8 @@ export interface ReviewResult {
 
 export async function reviewArtifact(opts: {
   apiKey: string;
+  /** optional provider base URL (e.g. Kimi / DeepSeek Anthropic-compatible endpoint) */
+  baseUrl?: string;
   model: string;
   /** the adversarial same-role reviewer system prompt */
   systemPrompt: string;
@@ -81,7 +83,7 @@ export async function reviewArtifact(opts: {
   /** upstream context the reviewer should hold it against (e.g. the PRD) */
   context?: string;
 }): Promise<ReviewResult> {
-  const client = new Anthropic({ apiKey: opts.apiKey, dangerouslyAllowBrowser: true });
+  const client = makeAnthropic(opts.apiKey, opts.baseUrl);
   const userPrompt = [
     opts.context ? `## Upstream context (hold the artifact against this)\n${opts.context}\n` : "",
     "## Artifact under review\n",

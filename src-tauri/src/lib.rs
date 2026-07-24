@@ -176,6 +176,39 @@ fn whoami() -> String {
         .unwrap_or_default()
 }
 
+/// Advisory, non-blocking check: does the `claude` CLI appear to have a stored login?
+/// Checks known credential file locations on disk only — never spawns a process,
+/// never touches the network, never hangs.
+/// Returns Ok(true) if a plausible non-empty credential file is found, Ok(false) otherwise.
+/// All IO errors are swallowed and treated as "not found" so the app is never blocked.
+#[tauri::command]
+fn claude_auth_status() -> Result<bool, String> {
+    let home = get_home_dir();
+
+    // Candidate paths where the Claude CLI may store credentials
+    let candidates = [
+        // claude CLI credentials file (primary location used by recent claude-code)
+        format!("{}/.claude/.credentials.json", home),
+        // legacy / alternate: single-file config at ~/.claude.json
+        format!("{}/.claude.json", home),
+        // XDG-style config fallback
+        format!("{}/.config/claude/credentials.json", home),
+    ];
+
+    for path in &candidates {
+        let p = std::path::Path::new(path);
+        if p.exists() {
+            // Treat as "logged in" only if the file is non-empty (> a few bytes)
+            match std::fs::metadata(p) {
+                Ok(meta) if meta.len() > 4 => return Ok(true),
+                _ => {}
+            }
+        }
+    }
+
+    Ok(false)
+}
+
 #[tauri::command]
 fn check_claude_plugin(plugin_name: String) -> Result<bool, String> {
     let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
@@ -508,6 +541,7 @@ pub fn run() {
             watcher::unwatch_directory,
             check_command_exists,
             check_claude_plugin,
+            claude_auth_status,
             create_directory,
             write_text_file,
             save_temp_image,

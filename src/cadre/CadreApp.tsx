@@ -12,6 +12,7 @@ import { AiLog } from "./AiLog";
 import { OrchestratorChat } from "./OrchestratorChat";
 import { Toaster } from "./Toaster";
 import { Welcome } from "./Welcome";
+import { SignIn, useHasCredential } from "./SignIn";
 import { ProjectTabs } from "./ProjectTabs";
 import { useBmadStore } from "../stores/bmadStore";
 import { useSettingsStore } from "../stores/settingsStore";
@@ -32,6 +33,8 @@ export function CadreApp() {
   const showSettings = useSettingsStore((s) => s.showSettings);
   const setShowSettings = useSettingsStore((s) => s.setShowSettings);
   const [preview, setPreview] = useState(false);
+  const [signInDone, setSignInDone] = useState(false);
+  const { checked: credChecked, hasCredential } = useHasCredential();
   const [view, setView] = useState<MainView>("orchestrator");
   // Files/Terminal mount on first visit and stay mounted (hidden) so editor buffers
   // and terminal PTY sessions survive switching away.
@@ -121,7 +124,15 @@ export function CadreApp() {
     return () => window.removeEventListener("keydown", onKey);
   }, [projectRoot, termMounted]);
 
+  // Show SignIn when: credential check is done, no usable credential, and user
+  // hasn't completed sign-in yet. An existing Anthropic-key user skips this entirely
+  // because hasCredential will be true from hydrateSecrets loading on mount.
+  // While credChecked is false we render nothing briefly to avoid a flash of signin.
   if (!projectRoot && !preview) {
+    if (!credChecked) return null;
+    if (!hasCredential && !signInDone) {
+      return <SignIn onDone={() => setSignInDone(true)} />;
+    }
     return <Welcome onPreview={() => setPreview(true)} />;
   }
 

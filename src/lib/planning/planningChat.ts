@@ -2,6 +2,20 @@ import Anthropic from "@anthropic-ai/sdk";
 import { recordUsage } from "../../stores/usageStore";
 
 /**
+ * Construct an Anthropic SDK client. When `baseUrl` is provided it is forwarded
+ * as `baseURL` so calls target an Anthropic-compatible third-party endpoint
+ * (e.g. Kimi, DeepSeek). When omitted the client defaults to the native
+ * Anthropic base URL — identical behaviour to before this helper existed.
+ */
+export function makeAnthropic(apiKey: string, baseUrl?: string): Anthropic {
+  return new Anthropic({
+    apiKey,
+    ...(baseUrl ? { baseURL: baseUrl } : {}),
+    dangerouslyAllowBrowser: true,
+  });
+}
+
+/**
  * If the configured model id doesn't resolve on the account, fall back once to a
  * known-good DATED id of the same tier (Opus→Opus, Sonnet→Sonnet). Keeps calls
  * alive despite model-alias drift.
@@ -152,6 +166,8 @@ export interface PlanningTurnResult {
 
 export async function planningTurn(opts: {
   apiKey: string;
+  /** optional provider base URL (e.g. Kimi / DeepSeek Anthropic-compatible endpoint) */
+  baseUrl?: string;
   model: string;
   systemPrompt: string;
   messages: ChatMessage[];
@@ -164,10 +180,7 @@ export async function planningTurn(opts: {
   /** streamed assistant text deltas (Claude-style progressive rendering) */
   onText?: (delta: string) => void;
 }): Promise<PlanningTurnResult> {
-  const client = new Anthropic({
-    apiKey: opts.apiKey,
-    dangerouslyAllowBrowser: true,
-  });
+  const client = makeAnthropic(opts.apiKey, opts.baseUrl);
 
   const tools = [
     WRITE_DOCUMENT_TOOL,
@@ -252,15 +265,14 @@ export async function planningTurn(opts: {
 /** Force a single tool call (used by the SM's create_story). Returns the tool input. */
 export async function callTool(opts: {
   apiKey: string;
+  /** optional provider base URL (e.g. Kimi / DeepSeek Anthropic-compatible endpoint) */
+  baseUrl?: string;
   model: string;
   systemPrompt: string;
   userPrompt: string;
   tool: unknown;
 }): Promise<unknown> {
-  const client = new Anthropic({
-    apiKey: opts.apiKey,
-    dangerouslyAllowBrowser: true,
-  });
+  const client = makeAnthropic(opts.apiKey, opts.baseUrl);
   const tool = opts.tool as Anthropic.Tool;
   const runCreate = (model: string) =>
     client.messages.create({
