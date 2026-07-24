@@ -16,6 +16,7 @@ import {
 import { Modal } from "./components/Modal";
 import { useCadre } from "./useCadre";
 import { useBmadStore } from "../stores/bmadStore";
+import { useSettingsStore } from "../stores/settingsStore";
 
 /**
  * The Team view — the CTO's org chart of the agent fleet: who's on the team, what
@@ -114,6 +115,11 @@ export function Team({ onClose }: { onClose: () => void }) {
   const techDocs = useCadre((s) => s.techDocs);
   const stories = useBmadStore((s) => s.stories);
 
+  // Team pool
+  const useTeamPool = useSettingsStore((s) => s.useTeamPool);
+  const teamSize = useSettingsStore((s) => s.teamSize);
+  const agentSlots = useCadre((s) => s.agentSlots);
+
   const planningLive = (name: string): Live | undefined => {
     const ready = (has: boolean): Live => (has ? { label: "ready", kind: "done" } : { label: "idle", kind: "idle" });
     if (name === "PM") return prd.trim() ? { label: "PRD ready", kind: "done" } : { label: "idle", kind: "idle" };
@@ -175,21 +181,71 @@ export function Team({ onClose }: { onClose: () => void }) {
 
           <div>
             <div style={sectionLabel}>Fleet — they build & ship (per story)</div>
-            <div style={{ display: "flex", gap: 12, padding: "0 2px 6px", fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)" }}>
-              {stories.length === 0 ? (
-                <span>No stories yet.</span>
-              ) : (
-                <>
-                  <span>{stories.length} stories</span>
-                  {counts.building > 0 && <span style={{ color: "var(--c-accent)" }}>{counts.building} building</span>}
-                  {counts.blocked > 0 && <span style={{ color: "var(--c-warning)" }}>{counts.blocked} blocked</span>}
-                  {counts.done > 0 && <span style={{ color: "var(--c-success)" }}>{counts.done} done</span>}
-                </>
-              )}
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {FLEET.map((m) => <MemberRow key={m.name} m={m} />)}
-            </div>
+            {useTeamPool ? (
+              /* ── Team-pool mode: list agent slots ── */
+              (() => {
+                // Show live slots if dispatched, else placeholder slots from teamSize
+                const slotsToShow = agentSlots.length > 0
+                  ? agentSlots
+                  : Array.from({ length: teamSize }, (_, i) => ({
+                      agentId: `agent-${i}`,
+                      currentStory: null as string | null,
+                      status: "idle" as "idle" | "working" | "verifying",
+                    }));
+
+                function agentLabel(agentId: string): string {
+                  const m = agentId.match(/^agent-(\d+)$/);
+                  if (m) return `Agent ${Number(m[1]) + 1}`;
+                  return agentId;
+                }
+
+                function slotLive(status: "idle" | "working" | "verifying"): Live {
+                  if (status === "working") return { label: "working", kind: "active" };
+                  if (status === "verifying") return { label: "verifying", kind: "active" };
+                  return { label: "idle", kind: "idle" };
+                }
+
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {slotsToShow.map((slot) => {
+                      const storyCard = slot.currentStory
+                        ? stories.find((s) => s.id === slot.currentStory)
+                        : null;
+                      const assignment = storyCard
+                        ? `${storyCard.epic}.${storyCard.story} · ${storyCard.title ?? slot.currentStory}`
+                        : "No task assigned";
+
+                      const m: Member = {
+                        name: agentLabel(slot.agentId),
+                        role: assignment,
+                        icon: Code2,
+                        tier: "Sonnet",
+                      };
+                      return <MemberRow key={slot.agentId} m={m} live={slotLive(slot.status)} />;
+                    })}
+                  </div>
+                );
+              })()
+            ) : (
+              /* ── Classic mode: existing static fleet rows ── */
+              <>
+                <div style={{ display: "flex", gap: 12, padding: "0 2px 6px", fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)" }}>
+                  {stories.length === 0 ? (
+                    <span>No stories yet.</span>
+                  ) : (
+                    <>
+                      <span>{stories.length} stories</span>
+                      {counts.building > 0 && <span style={{ color: "var(--c-accent)" }}>{counts.building} building</span>}
+                      {counts.blocked > 0 && <span style={{ color: "var(--c-warning)" }}>{counts.blocked} blocked</span>}
+                      {counts.done > 0 && <span style={{ color: "var(--c-success)" }}>{counts.done} done</span>}
+                    </>
+                  )}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {FLEET.map((m) => <MemberRow key={m.name} m={m} />)}
+                </div>
+              </>
+            )}
           </div>
         </div>
     </Modal>
