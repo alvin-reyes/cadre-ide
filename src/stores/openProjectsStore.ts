@@ -40,6 +40,7 @@ interface OpenProjectsState extends Persisted {
   open: (root: string, name: string) => void;
   close: (root: string) => void;
   setActive: (root: string) => void;
+  rename: (root: string, name: string) => void;
 }
 
 export const useOpenProjects = create<OpenProjectsState>((set) => ({
@@ -47,8 +48,22 @@ export const useOpenProjects = create<OpenProjectsState>((set) => ({
   open: (root, name) => {
     set((s) => {
       const roots = addRoot(s.roots, root);
-      const names = { ...s.names, [root]: name };
+      // Preserve a user's custom tab name across re-opens; only seed the
+      // default (folder basename) the first time a project is opened.
+      const names = { ...s.names, [root]: s.names[root] ?? name };
       const st = { roots, activeRoot: root, names };
+      persist(st);
+      return st;
+    });
+  },
+  rename: (root, name) => {
+    set((s) => {
+      const trimmed = name.trim();
+      // Empty rename clears the custom name, falling back to the basename.
+      const names = { ...s.names };
+      if (trimmed) names[root] = trimmed;
+      else delete names[root];
+      const st = { roots: s.roots, activeRoot: s.activeRoot, names };
       persist(st);
       return st;
     });
