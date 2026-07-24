@@ -798,6 +798,14 @@ export const useCadre = create<CadreState>((set, get) => {
       }
       if (!silent) patchRoot(root, { busy: null });
       if (res.status === "Done") {
+        // Team pool: the agent has built + the engine verified; it's now in
+        // review/merge — reflect that on its slot so the org chart shows "verifying".
+        if (agentId && useSettingsStore.getState().useTeamPool) {
+          const slots = get().projects[root]?.agentSlots ?? [];
+          patchRoot(root, {
+            agentSlots: slots.map((s) => (s.agentId === agentId ? { ...s, status: "verifying" } : s)),
+          });
+        }
         // QA gate: run the adversarial code-review fleet on the worktree BEFORE
         // integrating. If it blocks, quarantine the story (Blocked) and don't merge
         // — the review has real authority, not just an advisory badge. Toggleable.
@@ -971,7 +979,13 @@ export const useCadre = create<CadreState>((set, get) => {
 
         const picks = pickAssignable(remainingReady, inFlightFiles, freeSlots);
         if (picks.length === 0 && inFlight === 0) {
-          // No picks and nothing running — stuck (should not happen with valid input).
+          // No picks and nothing running, yet stories remain — an impossible state
+          // for valid input (with nothing in flight, inFlightFiles is empty and any
+          // ready story is pickable). Surface it instead of silently dropping the
+          // queue, then resolve to avoid a hang.
+          if (remainingReady.length > 0) {
+            reportError("team pool", new Error(`${remainingReady.length} ready stor${remainingReady.length === 1 ? "y" : "ies"} could not be assigned to any agent`));
+          }
           resolveAll();
           return;
         }
