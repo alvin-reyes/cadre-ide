@@ -250,18 +250,23 @@ function GitTrackerSection() {
   useEffect(() => {
     if (!root) return;
     void load(root);
-    void checkGh();
+    void checkGh(root);
   }, [root, load, checkGh]);
 
   async function handleSyncAll() {
     if (!root) return;
     setSyncing(true);
     try {
+      // Read the frozen verification command once for this root and pass it to
+      // every story sync so the Done comment cites the actual command (Finding 2).
+      const verification = useCadre.getState().projects[root]?.verification;
+      const verifyCmd = (verification ?? []).filter(Boolean).join(" && ") || undefined;
       await syncAll(
         root,
         stories.map((s) => ({
           story: { epic: s.epic, story: s.story, title: s.title ?? `Story ${s.epic}.${s.story}` },
           status: s.status,
+          verifyCmd,
         }))
       );
     } finally {

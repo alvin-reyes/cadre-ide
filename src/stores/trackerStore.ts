@@ -9,6 +9,13 @@ import {
 import { reportError } from "../lib/reportError";
 
 // ---------------------------------------------------------------------------
+// Per-story in-flight promise map — serializes concurrent syncStory calls for
+// the same story key so the second call sees the issue number written by the
+// first, avoiding duplicate issue creation.
+// ---------------------------------------------------------------------------
+const inflight = new Map<string, Promise<void>>();
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -104,8 +111,8 @@ interface TrackerState {
   /** Update the repo and persist. */
   setRepo: (root: string, repo: string) => Promise<void>;
 
-  /** Run `gh auth status` and update ghReady. */
-  checkGh: () => Promise<void>;
+  /** Run `gh auth status` in the project root and update ghReady. */
+  checkGh: (root: string) => Promise<void>;
 
   /**
    * Sync a single story to GitHub Issues.
@@ -183,14 +190,14 @@ export const useTrackerStore = create<TrackerState>((set, get) => ({
     }
   },
 
-  checkGh: async () => {
+  checkGh: async (root: string) => {
     try {
       const result = await invoke<{
         stdout: string;
         stderr: string;
         exit_code: number | null;
         timed_out: boolean;
-      }>("run_gh", { cwd: ".", args: ["auth", "status"] });
+      }>("run_gh", { cwd: root, args: ["auth", "status"] });
       set({ ghReady: result.exit_code === 0 });
     } catch (e) {
       reportError("github tracker", e);
@@ -198,49 +205,70 @@ export const useTrackerStore = create<TrackerState>((set, get) => ({
     }
   },
 
-  syncStory: async (
+  syncStory: (
     root: string,
     story: TrackerStory,
     status: TrackerStatus,
     verifyCmd?: string
-  ) => {
-    const { config, issues } = get();
-    if (!config.enabled || !config.repo) return;
+  ): Promise<void> => {
+    const { config } = get();
+    if (!config.enabled || !config.repo) return Promise.resolve();
 
-    const key = `${story.epic}.${story.story}`;
-    const issueNumber = issues[key];
+    const storyKey = `${root}::${story.epic}.${story.story}`;
 
-    const gh: GhRunner = (args: string[]) =>
-      invoke<{
-        stdout: string;
-        stderr: string;
-        exit_code: number | null;
-        timed_out: boolean;
-      }>("run_gh", { cwd: root, args }).then((r) => ({
-        stdout: r.stdout,
-        stderr: r.stderr,
-        exitCode: r.exit_code ?? 1,
-      }));
+    // Chain onto any in-flight promise for this exact story key.
+    // This ensures concurrent calls (e.g. streamed transitions) never both see
+    // issueNumber===undefined and race to create duplicate GitHub issues.
+    const prev = inflight.get(storyKey) ?? Promise.resolve();
+    const next: Promise<void> = prev.then(async () => {
+      // Re-read state AFTER the previous in-flight settled so we see the
+      // persisted issue number (if the prior call created one).
+      const { config: cfg, issues } = get();
+      if (!cfg.enabled || !cfg.repo) return;
 
-    try {
-      const result = await coreSyncStory(gh, {
-        repo: config.repo,
-        story,
-        status,
-        verifyCmd,
-        issueNumber,
-      });
+      const key = `${story.epic}.${story.story}`;
+      const issueNumber = issues[key];
 
-      // Persist the (possibly new) issue number
-      const nextIssues = { ...issues, [key]: result.issueNumber };
-      await writeTrackerFile(root, {
-        ...config,
-        issues: nextIssues,
-      });
-      set({ issues: nextIssues });
-    } catch (e) {
-      reportError("github tracker", e);
-    }
+      const gh: GhRunner = (args: string[]) =>
+        invoke<{
+          stdout: string;
+          stderr: string;
+          exit_code: number | null;
+          timed_out: boolean;
+        }>("run_gh", { cwd: root, args }).then((r) => ({
+          stdout: r.stdout,
+          stderr: r.stderr,
+          exitCode: r.exit_code ?? 1,
+        }));
+
+      try {
+        const result = await coreSyncStory(gh, {
+          repo: cfg.repo,
+          story,
+          status,
+          verifyCmd,
+          issueNumber,
+        });
+
+        // Persist the (possibly new) issue number
+        const nextIssues = { ...get().issues, [key]: result.issueNumber };
+        await writeTrackerFile(root, {
+          ...cfg,
+          issues: nextIssues,
+        });
+        set({ issues: nextIssues });
+      } catch (e) {
+        reportError("github tracker", e);
+      }
+    }).finally(() => {
+      // Only clear our own entry — a newer call may have already replaced it.
+      if (inflight.get(storyKey) === next) {
+        inflight.delete(storyKey);
+      }
+    });
+
+    inflight.set(storyKey, next);
+    return next;
   },
 
   syncAll: async (
