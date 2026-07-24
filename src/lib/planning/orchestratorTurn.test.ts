@@ -221,4 +221,59 @@ describe("runToolLoop", () => {
     // Returns the accumulated reply (may be empty) without hanging or throwing.
     expect(result).toHaveProperty("reply");
   });
+
+  it("inner tool-loop skips remaining blocks when signal is aborted mid-iteration", async () => {
+    // One iteration returns TWO tool_use blocks. The onToolCall for the first block
+    // aborts the controller. The second block must NOT trigger onToolCall.
+    // This validates the inner-loop abort check (Finding 1).
+    const block1: ContentBlock = {
+      type: "tool_use",
+      id: "tu_multi_1",
+      name: "dispatch_story",
+      input: { epic: 1, story: 1 },
+    };
+    const block2: ContentBlock = {
+      type: "tool_use",
+      id: "tu_multi_2",
+      name: "dispatch_story",
+      input: { epic: 1, story: 2 },
+    };
+
+    const controller = new AbortController();
+
+    const client = {
+      messages: {
+        stream(_params: { messages: unknown[] }) {
+          // Return both blocks in a single turn; a second call would return an
+          // end_turn response — but the abort should prevent a second call.
+          return fakeStream("", [block1, block2]);
+        },
+      },
+    };
+
+    const onToolCall = vi.fn().mockImplementation(async () => {
+      // Abort after the FIRST tool block fires — the second block must be skipped.
+      controller.abort();
+      return { ok: true, message: "done" };
+    });
+
+    const opts = baseOpts({ onToolCall, signal: controller.signal, maxIterations: 8 });
+    // Must not throw.
+    const result = await runToolLoop(client, opts);
+
+    // Only the first of the two blocks ran.
+    expect(onToolCall).toHaveBeenCalledTimes(1);
+    expect(onToolCall).toHaveBeenCalledWith("dispatch_story", { epic: 1, story: 1 });
+    // Loop returns cleanly with aborted === true (Finding 2).
+    expect(result.aborted).toBe(true);
+  });
+
+  it("normal (non-aborted) completion has aborted === false", async () => {
+    const client = makeFakeClient([
+      { text: "Done!", content: [{ type: "text", text: "Done!" }] },
+    ]);
+    const result = await runToolLoop(client, baseOpts());
+    expect(result.aborted).toBe(false);
+    expect(result.reply).toContain("Done!");
+  });
 });

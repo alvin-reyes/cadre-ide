@@ -37,10 +37,6 @@ export const ORCHESTRATOR_TOOLS: Anthropic.Tool[] = [
           type: "integer" as const,
           description: "The 1-based epic index whose backlog to shard. Defaults to 1.",
         },
-        repo: {
-          type: "string" as const,
-          description: "Target code repo id in a polyrepo project; omit for the default.",
-        },
       },
       required: [],
     },

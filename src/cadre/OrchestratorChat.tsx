@@ -128,6 +128,9 @@ export function OrchestratorChat() {
     };
 
     // Read the verified board status for a single story after dispatch.
+    // NOTE: reading the store synchronously here is correct ONLY because dispatchStory
+    // (and dispatchReady) await the full engine run through verification before resolving.
+    // A future fire-and-forget refactor would reintroduce optimistic/"status unknown" reporting.
     const storyOutcome = (epic: number, story: number): string => {
       const id = `${epic}.${story}`;
       const card = useBmadStore.getState().stories.find((c) => c.id === id);
@@ -222,9 +225,19 @@ export function OrchestratorChat() {
         },
       });
       const prefix = toolLines.length > 0 ? toolLines.join("\n") + "\n\n" : "";
-      setLast(prefix + ((res.reply || acc).trim() || "(no reply)"));
+      const finalText = (res.reply || acc).trim() || "(no reply)";
+      // Finding 2: abort is observable via res.aborted; append the stop marker on
+      // the success path so the user always sees it (the catch-branch AbortError
+      // path is rarely reached since runToolLoop handles abort internally).
+      if (res.aborted || controller.signal.aborted) {
+        setLast((prefix + finalText).trimEnd() + " _(stopped)_");
+      } else {
+        setLast(prefix + finalText);
+      }
     } catch (e) {
       // A user-initiated stop is a clean exit — do NOT surface as an error toast.
+      // This branch is a defensive guard; the primary abort path is the success
+      // branch above (res.aborted). Kept minimal: no reportError for aborts.
       if ((e as { name?: string })?.name === "AbortError" || controller.signal.aborted) {
         const prefix = toolLines.length > 0 ? toolLines.join("\n") + "\n\n" : "";
         setLast((prefix + (acc || "")).trimEnd() + " _(stopped)_");
