@@ -58,6 +58,7 @@ vi.mock("../stores/settingsStore", () => ({
       gateOnReview: false,
       autoResolveMerge: false,
       authProvider: "claude",
+      maxDevAgents: 4,
     }),
   },
 }));

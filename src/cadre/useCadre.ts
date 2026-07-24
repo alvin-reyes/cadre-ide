@@ -24,9 +24,10 @@ import { nextStoryNumber, parseStoryFiles, parseStoryRepo, shardStory } from "..
 import { parseRepos, resolveRepoPath, findRepo } from "../lib/engine/repos";
 import { useRepos } from "../stores/reposStore";
 import { CREATE_BACKLOG_TOOL, backlogFromTool } from "../lib/planning/storyTool";
-import { scheduleParallel } from "../lib/engine/schedule";
-import { reconcileSlots } from "../lib/engine/agentSlots";
+import { composeRoster, QA_AGENT_ID, DEVOPS_AGENT_ID } from "../lib/engine/agentSlots";
 import { detectVerifyCommand } from "../lib/engine/detectVerify";
+import { storyRole } from "../lib/engine/kanban";
+import { pickAssignable, partitionByRole, type ReadyStory } from "../lib/engine/pool";
 import { integrateStory } from "../lib/engine/integrate";
 import { getProvider, resolveAgentEnv, type Provider } from "../lib/engine/providers";
 import { secretGet } from "../lib/secrets";
@@ -41,7 +42,6 @@ import {
   type CadreSlice,
 } from "../lib/engine/projectSlices";
 import { resolveAgentSession } from "../lib/engine/teamSessions";
-import { pickAssignable, type ReadyStory } from "../lib/engine/pool";
 
 /**
  * useCadre: the app-level orchestration seam. It holds the plan the Planning
@@ -688,8 +688,8 @@ export const useCadre = create<CadreState>((set, get) => {
       const next = prev + chunk;
       const capped = next.length > 200_000 ? next.slice(next.length - 200_000) : next;
       const patch: Partial<CadreSlice> = { logs: { ...(get().projects[root]?.logs ?? {}), [key]: capped } };
-      // When running in pool mode with an agent, also stream to the agent log.
-      if (agentId && useSettingsStore.getState().useTeamPool) {
+      // When running with an agent, also stream to the agent log.
+      if (agentId) {
         const agentPrev = get().projects[root]?.agentLogs?.[agentId] ?? "";
         const agentNext = agentPrev + chunk;
         const agentCapped = agentNext.length > 200_000 ? agentNext.slice(agentNext.length - 200_000) : agentNext;
@@ -738,7 +738,7 @@ export const useCadre = create<CadreState>((set, get) => {
         readFile: (p: string) => invoke<string>("read_file", { path: p }),
         writeFile: (p: string, c: string) => invoke("write_text_file", { path: p, content: c }).then(() => {}),
       };
-      if (settings.useTeamPool && agentId) {
+      if (agentId) {
         // Agent-keyed session: carries context across tasks; resets after sessionResetK tasks.
         const sess = await resolveAgentSession(
           fileDeps,
@@ -805,9 +805,9 @@ export const useCadre = create<CadreState>((set, get) => {
       }
       if (!silent) patchRoot(root, { busy: null });
       if (res.status === "Done") {
-        // Team pool: the agent has built + the engine verified; it's now in
+        // The agent has built + the engine verified; it's now in
         // review/merge — reflect that on its slot so the org chart shows "verifying".
-        if (agentId && useSettingsStore.getState().useTeamPool) {
+        if (agentId) {
           const slots = get().projects[root]?.agentSlots ?? [];
           patchRoot(root, {
             agentSlots: slots.map((s) => (s.agentId === agentId ? { ...s, status: "verifying" } : s)),
@@ -883,8 +883,8 @@ export const useCadre = create<CadreState>((set, get) => {
       const active = { ...(get().projects[root]?.active ?? {}) };
       delete active[key];
       const finalPatch: Partial<CadreSlice> = { active };
-      // Reset the agent slot back to idle when pool mode is active.
-      if (agentId && useSettingsStore.getState().useTeamPool) {
+      // Reset the agent slot back to idle when an agent is assigned.
+      if (agentId) {
         const currentSlots = get().projects[root]?.agentSlots ?? [];
         finalPatch.agentSlots = currentSlots.map((s) =>
           s.agentId === agentId ? { ...s, currentStory: null, status: "idle" } : s
@@ -920,111 +920,144 @@ export const useCadre = create<CadreState>((set, get) => {
       // Load the shared Context Store once and reuse it for every agent.
       const context = await loadSharedContext(root);
 
-      const { useTeamPool, teamSize } = useSettingsStore.getState();
-
-      if (!useTeamPool) {
-        // ---- OFF PATH: existing scheduleParallel batch loop — byte-identical behavior ----
-        const batches = scheduleParallel(scheduled, 4);
-        let done = 0;
-        for (let b = 0; b < batches.length; b++) {
-          const batch = batches[b];
-          patchRoot(root, {
-            busy: `Building ${batch.length} stor${batch.length === 1 ? "y" : "ies"} in parallel — batch ${b + 1}/${batches.length}…`,
-            error: null,
-          });
-          await Promise.all(
-            batch.map((id) => {
-              const c = byId.get(id)!;
-              return get().dispatchStory(c.epic, c.story, { silent: true, context });
-            })
-          );
-          done += batch.length;
-        }
-        patchRoot(root, { busy: null });
-        toast(`Dispatched ${done} stor${done === 1 ? "y" : "ies"} across ${batches.length} batch${batches.length === 1 ? "" : "es"}`, "success");
-        return;
-      }
-
-      // ---- ON PATH: team-pool worker-pump ----
-      // Ensure teamSize agent slots exist in the slice (idempotent — preserve existing state).
-      // reconcileSlots clamps teamSize to [1,8], so a malformed persisted teamSize:0
-      // can no longer produce zero slots (which would hang the pump on `await allDone`).
+      // ---- Role pool: always-on dispatch ----
+      const maxDev = useSettingsStore.getState().maxDevAgents;
       const existingSlots = get().projects[root]?.agentSlots ?? [];
-      const slots = reconcileSlots(teamSize, existingSlots);
+      const slots = composeRoster(maxDev, existingSlots);
       patchRoot(root, { agentSlots: slots, error: null });
 
-      // Mutable pump state (local to this dispatchReady invocation).
-      let remainingReady: ReadyStory[] = [...scheduled];
-      const inFlightFiles = new Set<string>();
-      // agentId pool — initially all idle.
-      const idleAgents: string[] = slots.map((s) => s.agentId);
+      // Build role map from story titles
+      const titleMap = new Map(ready.map((c) => [c.id, c.title ?? ""]));
+      const roleOf = (id: string): "dev" | "qa" | "devops" => {
+        const title = titleMap.get(id) ?? "";
+        const { kind } = storyRole(title);
+        // docs and dev both go to dev pool
+        return kind === "qa" ? "qa" : kind === "devops" ? "devops" : "dev";
+      };
 
-      // Deferred completion: resolves when remainingReady is empty AND inFlight === 0.
-      // We use a counter + deferred rather than Promise.all(array) because re-pump
-      // dispatches are created inside .finally callbacks — after Promise.all has already
-      // captured its snapshot — so they would not be tracked by a static Promise.all call.
+      const { dev: devReady, qa: qaReady, devops: devopsReady } = partitionByRole(scheduled, roleOf);
+
+      // Mutable pump state
+      let remainingDev: ReadyStory[] = [...devReady];
+      let remainingQa: ReadyStory[] = [...qaReady];
+      let remainingDevops: ReadyStory[] = [...devopsReady];
+      const inFlightFiles = new Set<string>();
+      const idleDevAgents: string[] = slots.filter((s) => s.role === "dev").map((s) => s.agentId);
+
       let inFlight = 0;
       let resolveAll!: () => void;
       const allDone = new Promise<void>((res) => { resolveAll = res; });
 
+      const totalStories = scheduled.length;
       patchRoot(root, {
-        busy: `Team pool: dispatching ${remainingReady.length} stor${remainingReady.length === 1 ? "y" : "ies"} across ${teamSize} agents…`,
+        busy: `Fleet: dispatching ${totalStories} stor${totalStories === 1 ? "y" : "ies"} (QA · DevOps · ${maxDev} Dev max)…`,
       });
 
-      // pump() fires as many stories as possible right now (limited by free slots
-      // and file-disjoint safety). Each fired dispatch removes itself from
-      // remainingReady and schedules a re-pump on completion.
-      // Resolves allDone when nothing remains and nothing is in flight.
+      // Helper: is a slot currently idle (check live agentSlots state)
+      const isSlotIdle = (agentId: string): boolean => {
+        const currentSlots = get().projects[root]?.agentSlots ?? [];
+        const slot = currentSlots.find((s) => s.agentId === agentId);
+        return !slot || slot.status === "idle";
+      };
+
       function pump() {
-        const freeSlots = idleAgents.length;
-        if (remainingReady.length === 0 && inFlight === 0) {
+        const allEmpty = remainingDev.length === 0 && remainingQa.length === 0 && remainingDevops.length === 0;
+        if (allEmpty && inFlight === 0) {
           resolveAll();
           return;
         }
-        if (freeSlots === 0 || remainingReady.length === 0) return;
 
-        const picks = pickAssignable(remainingReady, inFlightFiles, freeSlots);
-        if (picks.length === 0 && inFlight === 0) {
-          // No picks and nothing running, yet stories remain — an impossible state
-          // for valid input (with nothing in flight, inFlightFiles is empty and any
-          // ready story is pickable). Surface it instead of silently dropping the
-          // queue, then resolve to avoid a hang.
-          if (remainingReady.length > 0) {
-            reportError("team pool", new Error(`${remainingReady.length} ready stor${remainingReady.length === 1 ? "y" : "ies"} could not be assigned to any agent`));
-          }
-          resolveAll();
-          return;
-        }
-        for (const pick of picks) {
-          // Take this story out of the remaining queue — synchronous, no races.
-          remainingReady = remainingReady.filter((r) => r.id !== pick.id);
-          // Claim an idle agent.
-          const agentId = idleAgents.shift()!;
-          // Mark its files as in-flight.
-          pick.files.forEach((f) => inFlightFiles.add(f));
-          inFlight++;
-
-          const card = byId.get(pick.id)!;
-          get()
-            .dispatchStory(card.epic, card.story, { silent: true, agentId, context })
-            .finally(() => {
-              // Release: free the agent and its files, then re-pump.
+        // ── QA track (one at a time on agent-qa) ──
+        if (remainingQa.length > 0 && isSlotIdle(QA_AGENT_ID)) {
+          // Pick the first QA story that is file-disjoint from inFlightFiles
+          const pick = remainingQa.find((s) => s.files.length === 0 ? inFlightFiles.size === 0 : !s.files.some((f) => inFlightFiles.has(f)));
+          if (pick) {
+            remainingQa = remainingQa.filter((s) => s.id !== pick.id);
+            pick.files.forEach((f) => inFlightFiles.add(f));
+            inFlight++;
+            const card = byId.get(pick.id)!;
+            get().dispatchStory(card.epic, card.story, { silent: true, agentId: QA_AGENT_ID, context }).finally(() => {
               inFlight--;
-              idleAgents.push(agentId);
               pick.files.forEach((f) => inFlightFiles.delete(f));
               pump();
             });
+          }
+        }
+
+        // ── DevOps track (one at a time on agent-devops) ──
+        if (remainingDevops.length > 0 && isSlotIdle(DEVOPS_AGENT_ID)) {
+          const pick = remainingDevops.find((s) => s.files.length === 0 ? inFlightFiles.size === 0 : !s.files.some((f) => inFlightFiles.has(f)));
+          if (pick) {
+            remainingDevops = remainingDevops.filter((s) => s.id !== pick.id);
+            pick.files.forEach((f) => inFlightFiles.add(f));
+            inFlight++;
+            const card = byId.get(pick.id)!;
+            get().dispatchStory(card.epic, card.story, { silent: true, agentId: DEVOPS_AGENT_ID, context }).finally(() => {
+              inFlight--;
+              pick.files.forEach((f) => inFlightFiles.delete(f));
+              pump();
+            });
+          }
+        }
+
+        // ── Dev track (up to maxDev parallel, file-disjoint) ──
+        // Fallback: any QA/DevOps story whose role-agent is busy may be picked by a Dev slot
+        const qaAgentBusy = !isSlotIdle(QA_AGENT_ID);
+        const devopsAgentBusy = !isSlotIdle(DEVOPS_AGENT_ID);
+
+        // Build the dev candidate list: dev stories + fallback qa/devops stories
+        const devCandidates: ReadyStory[] = [
+          ...remainingDev,
+          ...(qaAgentBusy ? remainingQa : []),
+          ...(devopsAgentBusy ? remainingDevops : []),
+        ];
+
+        if (idleDevAgents.length > 0 && devCandidates.length > 0) {
+          const picks = pickAssignable(devCandidates, inFlightFiles, idleDevAgents.length);
+          for (const pick of picks) {
+            // Remove from whichever list it came from
+            const wasQa = remainingQa.some((s) => s.id === pick.id);
+            const wasDevops = remainingDevops.some((s) => s.id === pick.id);
+            if (wasQa) remainingQa = remainingQa.filter((s) => s.id !== pick.id);
+            else if (wasDevops) remainingDevops = remainingDevops.filter((s) => s.id !== pick.id);
+            else remainingDev = remainingDev.filter((s) => s.id !== pick.id);
+
+            const agentId = idleDevAgents.shift()!;
+            pick.files.forEach((f) => inFlightFiles.add(f));
+            inFlight++;
+
+            const card = byId.get(pick.id)!;
+            get().dispatchStory(card.epic, card.story, { silent: true, agentId, context }).finally(() => {
+              inFlight--;
+              idleDevAgents.push(agentId);
+              pick.files.forEach((f) => inFlightFiles.delete(f));
+              pump();
+            });
+          }
+        }
+
+        // Safety: nothing could be dispatched and nothing is in flight → resolve to avoid hang
+        const nowEmpty = remainingDev.length === 0 && remainingQa.length === 0 && remainingDevops.length === 0;
+        if (nowEmpty && inFlight === 0) {
+          resolveAll();
+          return;
+        }
+        if (inFlight === 0 && !nowEmpty) {
+          // Stories remain but nothing can be dispatched right now (all files conflicting OR
+          // no dev slots + role agents busy). This should not happen for valid input,
+          // but surface it rather than hanging.
+          const total = remainingDev.length + remainingQa.length + remainingDevops.length;
+          reportError("role pool", new Error(`${total} ready stor${total === 1 ? "y" : "ies"} could not be assigned to any agent`));
+          resolveAll();
         }
       }
 
       pump();
-
-      // Wait for the deferred to resolve (fires when remainingReady is empty AND inFlight===0).
       await allDone;
 
       patchRoot(root, { busy: null });
       const total = scheduled.length;
-      toast(`Team pool: dispatched ${total} stor${total === 1 ? "y" : "ies"} across ${teamSize} agents`, "success");
+      toast(`Fleet: dispatched ${total} stor${total === 1 ? "y" : "ies"} (QA · DevOps · Dev)`, "success");
     } catch (e) {
       const root = get().activeRoot;
       if (root) patchRoot(root, { error: String(e), busy: null });
