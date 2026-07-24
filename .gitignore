@@ -13,3 +13,4 @@ src-tauri/gen/
 .env
 .env.local
 Carde Brand Design System.zip
+.smoke/
