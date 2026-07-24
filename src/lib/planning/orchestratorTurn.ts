@@ -28,6 +28,8 @@ export interface OrchestratorTurnOpts {
 
 export interface OrchestratorTurnResult {
   reply: string;
+  /** True when the loop was stopped early because opts.signal was aborted. */
+  aborted: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -119,8 +121,14 @@ export async function runToolLoop(
 
   let reply = "";
   let currentModel = opts.model;
+  let aborted = false;
 
   for (let i = 0; i < maxIterations; i++) {
+    // ------------------------------------------------------------------
+    // 0. Check if the caller has aborted before making another model call.
+    // ------------------------------------------------------------------
+    if (opts.signal?.aborted) { aborted = true; break; }
+
     const isFirstIteration = i === 0;
 
     // ------------------------------------------------------------------
@@ -146,12 +154,25 @@ export async function runToolLoop(
       return stream.finalMessage();
     };
 
+    const isAbortError = (e: unknown): boolean =>
+      (e as { name?: string })?.name === "AbortError" || !!opts.signal?.aborted;
+
     try {
       final = await doStream(currentModel);
     } catch (e) {
+      if (isAbortError(e)) {
+        // Caller cancelled — return whatever we've accumulated so far, cleanly.
+        aborted = true;
+        break;
+      }
       if (isFirstIteration && isModelError(e) && currentModel !== fallbackModel(currentModel)) {
-        currentModel = fallbackModel(currentModel);
-        final = await doStream(currentModel);
+        try {
+          currentModel = fallbackModel(currentModel);
+          final = await doStream(currentModel);
+        } catch (e2) {
+          if (isAbortError(e2)) { aborted = true; break; }
+          throw e2;
+        }
       } else {
         throw e;
       }
@@ -190,6 +211,10 @@ export async function runToolLoop(
     const toolResults: ToolResultContentBlock[] = [];
 
     for (const block of toolUseBlocks) {
+      // Finding 1: check abort before each tool block so a mid-turn stop skips
+      // the remaining tools in this iteration, not just the next model call.
+      if (opts.signal?.aborted) { aborted = true; break; }
+
       const name = block.name;
       const input = block.input;
 
@@ -213,7 +238,7 @@ export async function runToolLoop(
     working.push({ role: "user", content: toolResults });
   }
 
-  return { reply };
+  return { reply, aborted };
 }
 
 // ---------------------------------------------------------------------------

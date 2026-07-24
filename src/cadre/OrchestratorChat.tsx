@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Bot, X, ArrowUp, Plus, ScrollText, Play, PanelRight, Maximize2, Minimize2 } from "lucide-react";
+import { Bot, X, ArrowUp, Plus, ScrollText, Play, PanelRight, Maximize2, Minimize2, Square } from "lucide-react";
 import { type ChatMessage } from "../lib/planning/planningChat";
 import { orchestratorTurn } from "../lib/planning/orchestratorTurn";
 import { runOrchestratorTool, type OrchestratorActions } from "../lib/planning/orchestratorTools";
@@ -70,6 +70,7 @@ export function OrchestratorChat() {
   const dispatchReady = useCadre((s) => s.dispatchReady);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
@@ -116,18 +117,64 @@ export function OrchestratorChat() {
     // Use clearError() (patchRoots the active project's SLICE) rather than setState —
     // `error` is now a per-project mirror field, so setState would clear only the mirror
     // and a syncCadreMirror during the action could resurface a stale slice error.
-    const runAction = async (fn: () => Promise<void>) => {
+    // runAction returns the string from fn() so that honest board-status messages
+    // flow all the way through to runOrchestratorTool → onToolCall → onToolEvent.
+    const runAction = async (fn: () => Promise<string>): Promise<string> => {
       useCadre.getState().clearError();
-      await fn();
+      const result = await fn();
       const err = useCadre.getState().error;
       if (err) throw new Error(err);
+      return result;
     };
+
+    // Read the verified board status for a single story after dispatch.
+    // NOTE: reading the store synchronously here is correct ONLY because dispatchStory
+    // (and dispatchReady) await the full engine run through verification before resolving.
+    // A future fire-and-forget refactor would reintroduce optimistic/"status unknown" reporting.
+    const storyOutcome = (epic: number, story: number): string => {
+      const id = `${epic}.${story}`;
+      const card = useBmadStore.getState().stories.find((c) => c.id === id);
+      if (!card) return `Story ${id}: dispatched (status unknown)`;
+      return `Story ${id}: ${card.status}`;
+    };
+
     const actions: OrchestratorActions = {
-      shardStory: (e) => runAction(() => useCadre.getState().shardNextStory(e)),
-      shardBacklog: (e) => runAction(() => useCadre.getState().shardBacklog(e)),
-      approveStory: (e, s) => runAction(() => useCadre.getState().approveStory(e, s)),
-      dispatchStory: (e, s) => runAction(() => useCadre.getState().dispatchStory(e, s)),
-      dispatchReady: () => runAction(() => useCadre.getState().dispatchReady()),
+      shardStory: (e, repoId) =>
+        runAction(async () => {
+          await useCadre.getState().shardNextStory(e, repoId);
+          return "Sharded the next story.";
+        }),
+      shardBacklog: (e, _repoId) =>
+        runAction(async () => {
+          // useCadre.shardBacklog does not yet accept repoId; repo threading is a no-op here.
+          await useCadre.getState().shardBacklog(e);
+          return "Sharded the lifecycle backlog.";
+        }),
+      approveStory: (e, s) =>
+        runAction(async () => {
+          await useCadre.getState().approveStory(e, s);
+          return `Approved story ${e}.${s}.`;
+        }),
+      dispatchStory: (e, s) =>
+        runAction(async () => {
+          await useCadre.getState().dispatchStory(e, s);
+          return storyOutcome(e, s);
+        }),
+      dispatchReady: () =>
+        runAction(async () => {
+          // Capture the IDs of stories that are about to be dispatched (Approved or Failed retry).
+          const beforeStories = useBmadStore.getState().stories;
+          const ids = beforeStories
+            .filter((c) => c.status === "Approved" || c.status === "Failed")
+            .map((c) => c.id);
+          await useCadre.getState().dispatchReady();
+          // Read final board status to report honest outcomes.
+          const afterStories = useBmadStore.getState().stories;
+          const final = afterStories.filter((c) => ids.includes(c.id));
+          const by = (st: string) => final.filter((c) => c.status === st).length;
+          const total = ids.length;
+          return `Dispatched ${total} stor${total === 1 ? "y" : "ies"}: ${by("Done")} Done, ${by("Failed")} Failed, ${by("Blocked")} Blocked.`;
+        }),
     };
 
     const sessionDeps = root
@@ -137,6 +184,9 @@ export function OrchestratorChat() {
         }
       : null;
 
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
       const res = await orchestratorTurn({
         apiKey: auth.apiKey,
@@ -144,6 +194,7 @@ export function OrchestratorChat() {
         model,
         systemPrompt: `${ORCHESTRATOR_SYSTEM_PROMPT}\n\n## Live project state\n${ctx}`,
         messages: base,
+        signal: controller.signal,
         onText: (d) => {
           acc += d;
           // Render any accumulated tool lines as a prefix above the streamed text.
@@ -174,11 +225,28 @@ export function OrchestratorChat() {
         },
       });
       const prefix = toolLines.length > 0 ? toolLines.join("\n") + "\n\n" : "";
-      setLast(prefix + ((res.reply || acc).trim() || "(no reply)"));
+      const finalText = (res.reply || acc).trim() || "(no reply)";
+      // Finding 2: abort is observable via res.aborted; append the stop marker on
+      // the success path so the user always sees it (the catch-branch AbortError
+      // path is rarely reached since runToolLoop handles abort internally).
+      if (res.aborted || controller.signal.aborted) {
+        setLast((prefix + finalText).trimEnd() + " _(stopped)_");
+      } else {
+        setLast(prefix + finalText);
+      }
     } catch (e) {
+      // A user-initiated stop is a clean exit — do NOT surface as an error toast.
+      // This branch is a defensive guard; the primary abort path is the success
+      // branch above (res.aborted). Kept minimal: no reportError for aborts.
+      if ((e as { name?: string })?.name === "AbortError" || controller.signal.aborted) {
+        const prefix = toolLines.length > 0 ? toolLines.join("\n") + "\n\n" : "";
+        setLast((prefix + (acc || "")).trimEnd() + " _(stopped)_");
+        return;
+      }
       setLast(`Error: ${String(e)}`);
       reportError("orchestrator", e);
     } finally {
+      abortRef.current = null;
       setThinking(false);
     }
   }
@@ -341,14 +409,25 @@ export function OrchestratorChat() {
             disabled={!planAuth.ready}
             style={{ flex: 1, resize: "none", maxHeight: 90, background: "transparent", border: "none", outline: "none", color: "var(--c-text)", fontSize: "var(--c-fs-sm)", fontFamily: "var(--c-font-ui)", lineHeight: 1.5, padding: "3px 0" }}
           />
-          <button
-            onClick={() => send(draft)}
-            disabled={!draft.trim() || thinking || !planAuth.ready}
-            aria-label="Send"
-            style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: "var(--c-radius-sm)", background: draft.trim() && !thinking ? "var(--c-accent)" : "var(--c-surface-3)", color: draft.trim() && !thinking ? "var(--c-on-accent)" : "var(--c-text-muted)", border: "none", cursor: draft.trim() && !thinking ? "pointer" : "default", flexShrink: 0 }}
-          >
-            <ArrowUp size={15} strokeWidth={2.5} />
-          </button>
+          {thinking ? (
+            <button
+              onClick={() => abortRef.current?.abort()}
+              aria-label="Stop generation"
+              title="Stop"
+              style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: "var(--c-radius-sm)", background: "var(--c-surface-3)", color: "var(--c-text)", border: "1px solid var(--c-border-strong)", cursor: "pointer", flexShrink: 0 }}
+            >
+              <Square size={13} strokeWidth={2} />
+            </button>
+          ) : (
+            <button
+              onClick={() => send(draft)}
+              disabled={!draft.trim() || !planAuth.ready}
+              aria-label="Send"
+              style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: "var(--c-radius-sm)", background: draft.trim() ? "var(--c-accent)" : "var(--c-surface-3)", color: draft.trim() ? "var(--c-on-accent)" : "var(--c-text-muted)", border: "none", cursor: draft.trim() ? "pointer" : "default", flexShrink: 0 }}
+            >
+              <ArrowUp size={15} strokeWidth={2.5} />
+            </button>
+          )}
         </div>
       </div>
     </div>
