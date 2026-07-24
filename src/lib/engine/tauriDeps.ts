@@ -4,6 +4,7 @@ import type { OrchestratorDeps } from "./orchestrator";
 import type { ReviewFleetDeps } from "./reviewFleet";
 import type { PlanApproval } from "./planApproval";
 import type { Status } from "./status";
+import type { ResolveDeps } from "./resolveConflict";
 import { ExitRegistry } from "./exitRegistry";
 
 /**
@@ -95,6 +96,16 @@ async function runGit(args: string[], cwd: string): Promise<void> {
   }
 }
 
+/** Non-throwing variant — returns exit code + stdout without throwing on non-zero.
+ * Used when a non-zero exit is expected (e.g. a conflicting merge). */
+async function runGitQuery(
+  args: string[],
+  cwd: string
+): Promise<{ exitCode: number | null; stdout: string }> {
+  const res = await invoke<RustRunResult>("run_git", { cwd, args });
+  return { exitCode: res.exit_code, stdout: res.stdout };
+}
+
 function makeRunVerification(onOutput?: OutputSink) {
   return async function runVerification(
     cwd: string,
@@ -157,5 +168,18 @@ export function tauriReviewFleetDeps(onOutput?: OutputSink): ReviewFleetDeps {
     spawnAgent: makeSpawnAgent(onOutput),
     waitForExit,
     readFile: (path: string) => invoke<string>("read_file", { path }),
+  };
+}
+
+/** Merge-conflict resolver deps backed by Tauri. Pass `onOutput` to stream
+ * the resolver agent's PTY output and re-verification output to the UI. */
+export function tauriResolveConflictDeps(onOutput?: OutputSink): ResolveDeps {
+  return {
+    runGit,
+    runGitQuery,
+    spawnAgent: makeSpawnAgent(onOutput),
+    waitForExit,
+    killAgent: (id: number) => invoke("kill_pty", { id }).then(() => {}),
+    runVerification: makeRunVerification(onOutput),
   };
 }

@@ -31,6 +31,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
   const setFleetModel = useSettingsStore((s) => s.setFleetModel);
   const gateOnReview = useSettingsStore((s) => s.gateOnReview);
   const setGateOnReview = useSettingsStore((s) => s.setGateOnReview);
+  const autoResolveMerge = useSettingsStore((s) => s.autoResolveMerge);
+  const setAutoResolveMerge = useSettingsStore((s) => s.setAutoResolveMerge);
   const agentTimeoutMins = useSettingsStore((s) => s.agentTimeoutMins);
   const setAgentTimeoutMins = useSettingsStore((s) => s.setAgentTimeoutMins);
   const dispatchUseLogin = useSettingsStore((s) => s.dispatchUseLogin);
@@ -116,6 +118,21 @@ export function Settings({ onClose }: { onClose: () => void }) {
               <span style={{ fontSize: "var(--c-fs-sm)", fontWeight: 550 as const, color: "var(--c-text-secondary)" }}>Gate merge on code review</span>
               <span style={{ display: "block", fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)" }}>
                 Run the adversarial review after each story verifies; block the merge (Blocked) if it fails. More thorough, more agent runs.
+              </span>
+            </span>
+          </label>
+
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 9, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={autoResolveMerge}
+              onChange={(e) => setAutoResolveMerge(e.target.checked)}
+              style={{ marginTop: 3, accentColor: "var(--c-accent)", cursor: "pointer", flexShrink: 0 }}
+            />
+            <span>
+              <span style={{ fontSize: "var(--c-fs-sm)", fontWeight: 550 as const, color: "var(--c-text-secondary)" }}>Auto-resolve merge conflicts</span>
+              <span style={{ display: "block", fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)" }}>
+                On a merge conflict, an agent resolves it and the engine re-verifies before integrating. If it can't, the story is Blocked (as before).
               </span>
             </span>
           </label>

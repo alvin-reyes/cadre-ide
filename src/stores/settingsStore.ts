@@ -297,6 +297,8 @@ interface Settings {
   fleetModel: string;
   /** When true, the adversarial code review must pass before a story merges to main. */
   gateOnReview: boolean;
+  /** When true, an agent attempts to auto-resolve merge conflicts before marking the story Blocked. */
+  autoResolveMerge: boolean;
   /** Kill a Dev agent that hasn't finished after this many minutes (0 = no cap). */
   agentTimeoutMins: number;
   /** When true, native-Claude dispatch uses the claude CLI login (no API key in env). */
@@ -330,6 +332,7 @@ interface SettingsStore extends Settings {
   setPlanningModel: (model: string) => void;
   setFleetModel: (model: string) => void;
   setGateOnReview: (on: boolean) => void;
+  setAutoResolveMerge: (on: boolean) => void;
   setAgentTimeoutMins: (mins: number) => void;
   setDispatchUseLogin: (on: boolean) => void;
   setResumeSessions: (on: boolean) => void;
@@ -387,6 +390,7 @@ const defaults: Settings = {
   planningModel: "claude-opus-4-8",
   fleetModel: "",
   gateOnReview: true,
+  autoResolveMerge: true,
   agentTimeoutMins: 20,
   dispatchUseLogin: false,
   resumeSessions: true,
@@ -488,6 +492,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
   setGateOnReview: (gateOnReview) => {
     set({ gateOnReview });
+    persistSettings(get());
+  },
+
+  setAutoResolveMerge: (autoResolveMerge) => {
+    set({ autoResolveMerge });
     persistSettings(get());
   },
 
