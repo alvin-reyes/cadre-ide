@@ -14,6 +14,7 @@ import { documentProject as documentProjectFleet, BROWNFIELD_DOC_PATH } from "..
 import { CODE_REVIEW_LENSES } from "../lib/planning/review";
 import { tauriOrchestratorDeps, tauriReviewFleetDeps, tauriResolveConflictDeps } from "../lib/engine/tauriDeps";
 import { composeDispatchPrompt, storyBranch, type AlwaysFile } from "../lib/engine/dispatch";
+import { ADR_DECISIONS_DIR } from "../lib/engine/adr";
 import { resolveMergeConflict, composeResolverPrompt } from "../lib/engine/resolveConflict";
 import { reportError } from "../lib/reportError";
 import { appendSessionEntry, SESSION_LOG_PATH } from "../lib/engine/sessionLog";
@@ -81,7 +82,9 @@ Think across every LAYER (frontend/UI, backend/API, database) and the WHOLE life
 
 const DEV_SYSTEM_PROMPT = `You are the Dev agent. Implement the assigned story test-first: write the failing test, then the minimal code to make it pass. Follow the project's standards. Do NOT mark the story done — Cadre runs the verification command and decides.
 
-SHARED CONTEXT: other stories build in parallel with you. If you create or change something other stories must agree on — a shared interface, type, API contract, config key, or an important decision — record it in a short Markdown file under \`.cadre/context/\` (e.g. \`.cadre/context/auth-api.md\`). Keep those files small and factual. Before inventing a shared contract, check what's already in \`.cadre/context/\` and reuse it. This is how parallel and later agents stay consistent.`;
+SHARED CONTEXT: other stories build in parallel with you. If you create or change something other stories must agree on — a shared interface, type, API contract, config key, or an important decision — record it in a short Markdown file under \`.cadre/context/\` (e.g. \`.cadre/context/auth-api.md\`). Keep those files small and factual. Before inventing a shared contract, check what's already in \`.cadre/context/\` and reuse it. This is how parallel and later agents stay consistent.
+
+DECISION MEMORY (ADRs): significant architectural or cross-cutting decisions — a technology, pattern, contract, or trade-off other stories depend on — are recorded as Architecture Decision Records under \`.cadre/context/decisions/NNNN-slug.md\`, each with \`## Status\` (Accepted), \`## Context\`, \`## Decision\`, and \`## Consequences\`. Before diverging from an existing decision, READ the ADRs already in \`.cadre/context/decisions/\` and follow them — do not silently re-decide. When you make such a decision, add a new ADR (next number) so later agents inherit it.`;
 
 interface DirEntry {
   name: string;
@@ -286,6 +289,19 @@ async function loadSharedContext(root: string): Promise<AlwaysFile[]> {
     }
   } catch {
     /* no Context Store yet */
+  }
+  // ADRs (durable decision records) live in a subdir of the Context Store. Inject
+  // them too so every agent consults prior decisions before re-deciding. Tolerant
+  // of absence — a project with no decisions/ dir behaves exactly as before.
+  try {
+    const decisions = await invoke<DirEntry[]>("list_directory", { path: `${root}/${ADR_DECISIONS_DIR}` });
+    for (const e of decisions) {
+      if (e.is_dir || !e.name.endsWith(".md")) continue;
+      const c = await invoke<string>("read_file", { path: e.path }).catch(() => "");
+      if (c.trim()) files.push({ path: `${ADR_DECISIONS_DIR}/${e.name}`, content: c });
+    }
+  } catch {
+    /* no decisions yet */
   }
   return files;
 }
