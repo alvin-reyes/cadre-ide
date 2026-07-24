@@ -22,6 +22,10 @@ export interface RunStoryDeps {
 
 export interface RunStoryInput {
   root: string;
+  /** the filesystem path to the story's code repo (may differ from root in multi-repo) */
+  repoPath: string;
+  /** the logical repo id for the story's code repo (e.g. "main", "backend", "mobile") */
+  repoId: string;
   epic: number;
   story: number;
   /** composed agent prompt (see composeDispatchPrompt) */
@@ -58,6 +62,8 @@ export async function runStory(
     { runGit: deps.runGit, spawnAgent: deps.spawnAgent },
     {
       root: input.root,
+      repoPath: input.repoPath,
+      repoId: input.repoId,
       epic: input.epic,
       story: input.story,
       prompt: input.prompt,

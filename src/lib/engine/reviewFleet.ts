@@ -1,5 +1,5 @@
 import type { DispatchDeps } from "./dispatch";
-import { storyWorktreePath } from "./dispatch";
+import { repoWorktreePath } from "./repos";
 
 /**
  * The adversarial code-review fleet (§3.11). Each reviewer is a real **Claude
@@ -38,6 +38,8 @@ export interface ReviewFleetDeps {
 
 export interface ReviewFleetInput {
   root: string;
+  /** the logical repo id for the story's code repo (e.g. "main", "backend", "mobile") */
+  repoId: string;
   epic: number;
   story: number;
   lenses: ReviewLens[];
@@ -84,7 +86,7 @@ export async function reviewStory(
   deps: ReviewFleetDeps,
   input: ReviewFleetInput
 ): Promise<LensReview[]> {
-  const worktree = storyWorktreePath(input.root, input.epic, input.story);
+  const worktree = repoWorktreePath(input.root, input.repoId, input.epic, input.story);
 
   return Promise.all(
     input.lenses.map(async (lens): Promise<LensReview> => {

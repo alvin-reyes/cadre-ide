@@ -38,6 +38,10 @@ pub struct PlanApproval {
     pub approved: bool,
     /// verification steps to run at the QA gate (project command + pack checks)
     pub verification: Vec<String>,
+    /// per-repo verification steps; falls back to `verification` for repos not listed here.
+    /// `#[serde(default)]` ensures old plan.json files (without this field) still load.
+    #[serde(default, rename = "repoVerification")]
+    pub repo_verification: HashMap<String, Vec<String>>,
 }
 
 /// Legal next statuses per §5 (mirrors `src/lib/engine/transitions.ts`). Enforced
@@ -149,10 +153,11 @@ impl CadreState {
     }
 
     /// Approve the PLAN gate, freezing the human-confirmed verification steps.
-    pub fn approve_plan(&self, verification: Vec<String>) -> Result<(), String> {
+    pub fn approve_plan(&self, verification: Vec<String>, repo_verification: HashMap<String, Vec<String>>) -> Result<(), String> {
         let approval = PlanApproval {
             approved: true,
             verification,
+            repo_verification,
         };
         let json = serde_json::to_string_pretty(&approval).map_err(|e| e.to_string())?;
         self.atomic_write(&self.plan_path(), &json)
@@ -242,10 +247,11 @@ pub fn approve_plan(
     engine: tauri::State<'_, CadreEngine>,
     root: String,
     verification: Vec<String>,
+    repo_verification: HashMap<String, Vec<String>>,
 ) -> Result<(), String> {
     let guard = engine.states.lock().unwrap();
     let state = guard.get(&PathBuf::from(&root)).ok_or("project not open")?;
-    state.approve_plan(verification)
+    state.approve_plan(verification, repo_verification)
 }
 
 #[tauri::command]
@@ -350,11 +356,33 @@ mod tests {
         let root = tmp_root("plan");
         let s = CadreState::new(&root);
         assert_eq!(s.get_plan_approval().unwrap(), None); // not approved yet
-        s.approve_plan(vec!["pnpm test".into(), "slither .".into()])
+        s.approve_plan(vec!["pnpm test".into(), "slither .".into()], HashMap::new())
             .unwrap();
         let approval = s.get_plan_approval().unwrap().unwrap();
         assert!(approval.approved);
         assert_eq!(approval.verification, vec!["pnpm test", "slither ."]);
+    }
+
+    #[test]
+    fn approve_plan_persists_per_repo_verification() {
+        let state = CadreState::new(tmp_root("repo-verify"));
+        let mut map = std::collections::HashMap::new();
+        map.insert("api".to_string(), vec!["go test ./...".to_string()]);
+        state.approve_plan(vec!["npm test".to_string()], map.clone()).unwrap();
+        let got = state.get_plan_approval().unwrap().unwrap();
+        assert_eq!(got.verification, vec!["npm test".to_string()]);
+        assert_eq!(got.repo_verification.get("api"), Some(&vec!["go test ./...".to_string()]));
+    }
+
+    #[test]
+    fn old_plan_json_without_repo_verification_still_loads() {
+        // Backward compat: a plan.json written before Task 5 (no repoVerification field)
+        // must still deserialize successfully due to #[serde(default)].
+        let old_json = r#"{"approved":true,"verification":["pnpm test"]}"#;
+        let approval: PlanApproval = serde_json::from_str(old_json).unwrap();
+        assert!(approval.approved);
+        assert_eq!(approval.verification, vec!["pnpm test"]);
+        assert!(approval.repo_verification.is_empty());
     }
 
     #[test]

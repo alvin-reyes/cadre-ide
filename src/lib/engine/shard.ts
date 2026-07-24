@@ -9,6 +9,8 @@
  * effect (writeFile) is injected, so the core is unit-testable with a fake.
  */
 
+import { DEFAULT_REPO_ID } from "./repos";
+
 /**
  * The next story number within `epic`, given existing story ids like
  * ["1.1","1.2","2.1"] (e.g. epic 1 → 3, epic 3 → 1).
@@ -50,12 +52,21 @@ export interface StoryContent {
   epic: number;
   story: number;
   title: string;
+  /** the code repo this story targets (registry id); defaults to the main repo. */
+  repo?: string;
   userStory: UserStory;
   acceptanceCriteria: string[];
   tasks: string[];
   devNotes: string;
   /** repo-relative files this story is expected to touch (parallel scheduling). */
   files: string[];
+}
+
+/** Read the "## Repo" section (a bare repo id), or the default repo when absent. */
+export function parseStoryRepo(markdown: string): string {
+  const m = markdown.match(/^##\s*Repo[^\n]*\n+([^\n]+)/m);
+  const id = m?.[1]?.trim();
+  return id && id.length > 0 ? id : DEFAULT_REPO_ID;
 }
 
 /** Parse the "## Files" section of a story markdown back into a list of paths. */
@@ -79,6 +90,10 @@ export function composeStoryFile(input: StoryContent): string {
   const parts: string[] = [];
 
   parts.push(`# Story ${epic}.${story}: ${title}`);
+  parts.push("");
+  parts.push("## Repo");
+  parts.push("");
+  parts.push(input.repo ?? DEFAULT_REPO_ID);
   parts.push("");
   parts.push("## Status");
   parts.push("");

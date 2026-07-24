@@ -1,8 +1,12 @@
+import { useState, useEffect } from "react";
 import { ShieldCheck, ShieldAlert, Gavel } from "lucide-react";
 import type { StoryCard } from "../../lib/engine/board";
 import { StatusPill } from "./StatusPill";
 import { useCadre, isInterrupted } from "../useCadre";
+import { useRepos } from "../../stores/reposStore";
 import { aggregateReviews } from "../../lib/engine/reviewFleet";
+import { parseStoryRepo } from "../../lib/engine/shard";
+import { DEFAULT_REPO_ID } from "../../lib/engine/repos";
 
 /** Compact adversarial-review verdict for a story card (review fleet, at a glance). */
 function ReviewBadge({ storyId }: { storyId: string }) {
@@ -23,6 +27,49 @@ function ReviewBadge({ storyId }: { storyId: string }) {
     </span>
   ) : (
     <ShieldCheck size={12} strokeWidth={2.5} style={{ color: "var(--c-success)" }} />
+  );
+}
+
+/**
+ * Async repo chip: loads the story's markdown once and shows its repo id.
+ * Hidden when only one repo is registered (single-repo projects look unchanged).
+ */
+function RepoChip({ epic, story }: { epic: number; story: number }) {
+  const repos = useRepos((s) => s.repos);
+  const getStoryMarkdown = useCadre((s) => s.getStoryMarkdown);
+  const [repoId, setRepoId] = useState<string | null>(null);
+
+  // Only show when there are multiple repos
+  const multiRepo = repos.length > 1;
+
+  useEffect(() => {
+    if (!multiRepo) return;
+    let alive = true;
+    getStoryMarkdown(epic, story).then((md) => {
+      if (alive) setRepoId(parseStoryRepo(md));
+    });
+    return () => { alive = false; };
+  }, [epic, story, multiRepo, getStoryMarkdown]);
+
+  if (!multiRepo || !repoId || repoId === DEFAULT_REPO_ID) return null;
+
+  return (
+    <span
+      style={{
+        fontSize: 9,
+        fontFamily: "var(--c-font-mono)",
+        fontWeight: 600 as const,
+        color: "var(--c-accent)",
+        background: "var(--c-accent-subtle)",
+        border: "1px solid var(--c-accent-ring)",
+        borderRadius: "var(--c-radius-full)",
+        padding: "1px 6px",
+        flexShrink: 0,
+        lineHeight: 1.6,
+      }}
+    >
+      {repoId}
+    </span>
   );
 }
 
@@ -100,7 +147,10 @@ export function FleetBoard({
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "space-between" }}>
               <StatusPill status={card.status} interrupted={isInterrupted(card.status, active, card.epic, card.story)} />
-              <ReviewBadge storyId={card.id} />
+              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <RepoChip epic={card.epic} story={card.story} />
+                <ReviewBadge storyId={card.id} />
+              </div>
             </div>
           </button>
         );

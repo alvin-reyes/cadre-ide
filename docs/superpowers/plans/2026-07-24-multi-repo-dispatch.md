@@ -321,9 +321,10 @@ Update `integrate.test.ts`: pass `repoPath` and assert the merge/abort `cwd` is 
 - `runApprovedStory` selects the verify commands for the story's repo: `const commands = approval.repoVerification?.[input.repoId] ?? approval.verification;` (the `repoVerification` field lands in Task 5; until then this is `?? approval.verification`, i.e. unchanged behavior).
 
 - [ ] **Step 1: Update runStory.test.ts** — the fake deps' `dispatchStory` path now receives `repoPath`; add `repoPath: "/proj", repoId: "main"` to the test input and assert the worktree/commit `cwd` still resolves. (The existing tests build `RunStoryInput`; add the two fields.) Run — expect FAIL on the missing fields (tsc) or on assertions.
-- [ ] **Step 2: Implement** — add `repoPath`/`repoId` to both input interfaces; in `runStory`, pass `repoPath`, `repoId` into the `dispatchStory({...})` call (the `add -A`/`commit` in the worktree already uses `dispatch.worktree` as cwd — unchanged and correct). In `orchestrator.ts`, forward both fields into `runStory` and select `commands = approval.repoVerification?.[input.repoId] ?? approval.verification`.
-- [ ] **Step 3: Run — expect PASS.** `npx vitest run src/lib/engine`
-- [ ] **Step 4: Commit** — `git commit -am "feat(engine): thread repoPath + per-repo verify through runStory/orchestrator"`
+- [ ] **Step 2: Implement** — add `repoPath`/`repoId` to both input interfaces; in `runStory`, pass `repoPath`, `repoId` into the `dispatchStory({...})` call (the `add -A`/`commit` in the worktree already uses `dispatch.worktree` as cwd — unchanged and correct). Remove the Task-3 shim (`repoPath: input.root, repoId: "main"`) — the values now come from the input. In `orchestrator.ts`, forward both fields into `runStory` and select `commands = approval.repoVerification?.[input.repoId] ?? approval.verification`.
+- [ ] **Step 3: Close the reviewFleet worktree gap (REQUIRED — a Task-3 reviewer caught this).** `reviewFleet.ts` currently hardcodes `"main"` when computing the review worktree path (`repoWorktreePath(input.root, "main", …)` ~line 88), so a non-`main` story would be reviewed in the WRONG worktree. Add `repoId: string` to `ReviewFleetInput` and replace the `"main"` literal with `input.repoId`. Update `reviewFleet.test.ts` to pass `repoId` and assert the namespaced worktree path. (The `useCadre.reviewStory` call site is wired in Task 6.) Grep `\brepoWorktreePath\(.*"main"` and `"main"` in `reviewFleet.ts` to confirm no hardcode remains.
+- [ ] **Step 4: Run — expect PASS.** `npx vitest run src/lib/engine`
+- [ ] **Step 5: Commit** — `git commit -am "feat(engine): thread repoPath + per-repo verify + review repoId through the engine"`
 
 ---
 
@@ -412,8 +413,11 @@ const repoId = parseStoryRepo(storyMarkdown);
 const repos = parseRepos(await readManifest(root));
 const repoPath = resolveRepoPath(root, findRepo(repos, repoId).path);
 // pass into runApprovedStory: repoPath, repoId
-// pass into integrateStory: { root, repoPath, epic, story }
+// pass into integrateStory: { root, repoPath, epic, story }  (removes the Task-3 shim)
+// pass the captured repoId into the review gate: get().reviewStory(epic, story, root, repoId)
 ```
+
+- [ ] **Step 2b: Thread `repoId` into `reviewStory` (closes the reviewFleet gap).** `reviewStory(epic, story, root?, repoId?)`: resolve `const rid = repoId ?? parseStoryRepo(await getStoryMarkdown(epic, story))` so a foreground (UI-triggered) review also finds the right worktree, and pass `repoId: rid` into the `reviewStoryFleet({ root, epic, story, repoId: rid })` call (the `ReviewFleetInput.repoId` field added in Task 4). The dispatch gate (Step 2) passes its captured `repoId` so a background review never re-resolves against the foreground.
 - [ ] **Step 3: In `approvePlan`**, build `repoVerification` from the registry and pass it to the invoke:
 ```ts
 const repos = parseRepos(await readManifest(root));
@@ -474,7 +478,7 @@ it("removeRepoFromList drops by id", () => {
 - [ ] **Step 1: `RepoRegistry.tsx`** — a panel listing `useRepos().repos` with add (id/name/path/verify), remove, and inline verify edit; reuses the token styles from `TerminalTabs`/`Settings`. Reachable from Settings or a project menu.
 - [ ] **Step 2: Repo chip on board cards** — render `parseStoryRepo(storyMarkdown)` (or a `repo` field on `StoryCard`) as a small chip; hide the chip when there is only the single `main` repo (so single-repo projects look unchanged).
 - [ ] **Step 3: Shard repo selector** — in the shard toolbar (beside the epic selector), a repo `<select>` shown only when `repos.length > 1`; the chosen repo id is passed into story generation so `composeStoryFile` writes the right `## Repo` (thread it through `shardNextStory`/the story tool like the epic number already is).
-- [ ] **Step 4: Per-repo verify at approval** — when `repos.length > 1`, the approval control shows one verify input per repo (pre-filled from each repo's registry `verify`); these populate the `repoVerification` map passed to `approve_plan` (Task 6 Step 3).
+- [ ] **Step 4: Per-repo verify at approval (REQUIRED — closes a Task-6 reviewer finding)** — when `repos.length > 1`, the approval control shows one verify input per repo (pre-filled from each repo's registry `verify`); these populate the `repoVerification` map passed to `approve_plan` (Task 6 Step 3). **Every registered repo MUST have a non-empty verify command before the plan can be approved** (disable/block "Approve" until each repo has one, with an inline "set a verify command for <repo>" message). Rationale: a non-`main` repo with no frozen per-repo verify falls back to the GLOBAL `approval.verification` (which is the `main` repo's command, since `detectProjectVerify` reads only the project root) — so its stories would be silently judged against the WRONG repo's tests. Requiring a per-repo verify eliminates that fallback for real multi-repo projects. (Single-repo is unaffected: the lone `main` repo uses the global verify exactly as today; the requirement only applies when `repos.length > 1`.)
 - [ ] **Step 5: Verify** — `npx tsc --noEmit && npx vitest run && npm run build` all green.
 - [ ] **Step 6: Manual checklist (document for the human):** create a Cadre project; register a second repo at `../other`; shard a story targeting it; dispatch; confirm the worktree is created under `{project}/.cadre/worktrees/<id>/…` as a worktree of `../other`, the frozen per-repo verify runs, and merge-back lands in `../other` — with the code repo otherwise untouched. Confirm a single-repo project (no `repos`) behaves exactly as before.
 - [ ] **Step 7: Commit** — `git commit -am "feat(ui): repo registry, board repo chips, shard repo selector, per-repo verify"`

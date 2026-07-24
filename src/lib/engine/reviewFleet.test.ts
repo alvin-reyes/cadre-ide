@@ -42,13 +42,31 @@ describe("review fleet: reviewers are dispatched agent loops", () => {
         "story-fit": JSON.stringify({ verdict: "accept", findings: [] }),
       },
     });
-    await reviewStory(deps, { root: "/proj", epic: 1, story: 2, lenses: LENSES });
+    await reviewStory(deps, { root: "/proj", repoId: "main", epic: 1, story: 2, lenses: LENSES });
 
     expect(spawns).toHaveLength(3);
     for (const s of spawns) {
       expect(s.args).toContain("-p");
       expect(s.args[0]).toBe("--dangerously-skip-permissions");
-      expect(s.cwd).toBe("/proj/.cadre/worktrees/1.2");
+      // repoId is threaded through — worktree path uses input.repoId, not a hardcoded "main"
+      expect(s.cwd).toBe("/proj/.cadre/worktrees/main/1.2");
+    }
+  });
+
+  it("dispatches reviewers into the correct worktree when repoId differs from 'main'", async () => {
+    const { deps, spawns } = makeDeps({
+      markers: {
+        correctness: JSON.stringify({ verdict: "accept", findings: [] }),
+        security: JSON.stringify({ verdict: "accept", findings: [] }),
+        "story-fit": JSON.stringify({ verdict: "accept", findings: [] }),
+      },
+    });
+    await reviewStory(deps, { root: "/proj", repoId: "backend", epic: 2, story: 3, lenses: LENSES });
+
+    expect(spawns).toHaveLength(3);
+    for (const s of spawns) {
+      // Must use repoId "backend", NOT "main"
+      expect(s.cwd).toBe("/proj/.cadre/worktrees/backend/2.3");
     }
   });
 
@@ -66,7 +84,7 @@ describe("review fleet: reviewers are dispatched agent loops", () => {
         }),
       },
     });
-    const reviews = await reviewStory(deps, { root: "/p", epic: 1, story: 1, lenses: LENSES });
+    const reviews = await reviewStory(deps, { root: "/p", repoId: "main", epic: 1, story: 1, lenses: LENSES });
 
     const correctness = reviews.find((r) => r.lens === "correctness")!;
     expect(correctness.verdict).toBe("block");
@@ -81,7 +99,7 @@ describe("review fleet: reviewers are dispatched agent loops", () => {
         // security + story-fit write nothing → readFile throws
       },
     });
-    const reviews = await reviewStory(deps, { root: "/p", epic: 1, story: 1, lenses: LENSES });
+    const reviews = await reviewStory(deps, { root: "/p", repoId: "main", epic: 1, story: 1, lenses: LENSES });
     const security = reviews.find((r) => r.lens === "security")!;
     expect(security.verdict).toBe("block");
     expect(security.findings[0].title).toMatch(/no findings file/i);
@@ -98,7 +116,7 @@ describe("review fleet: reviewers are dispatched agent loops", () => {
         "story-fit": JSON.stringify({ verdict: "accept", findings: [] }),
       },
     });
-    const reviews = await reviewStory(deps, { root: "/p", epic: 1, story: 1, lenses: LENSES });
+    const reviews = await reviewStory(deps, { root: "/p", repoId: "main", epic: 1, story: 1, lenses: LENSES });
     expect(reviews.find((r) => r.lens === "correctness")!.findings[0].severity).toBe("major");
   });
 
