@@ -1,5 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { recordUsage } from "../../stores/usageStore";
+import { isDemoMode } from "../demo/demoMode";
+import { makeMockAnthropic } from "../demo/mockAnthropic";
 
 /**
  * Construct an Anthropic SDK client. When `baseUrl` is provided it is forwarded
@@ -8,6 +10,7 @@ import { recordUsage } from "../../stores/usageStore";
  * Anthropic base URL — identical behaviour to before this helper existed.
  */
 export function makeAnthropic(apiKey: string, baseUrl?: string): Anthropic {
+  if (isDemoMode()) return makeMockAnthropic() as unknown as Anthropic;
   return new Anthropic({
     apiKey,
     ...(baseUrl ? { baseURL: baseUrl } : {}),

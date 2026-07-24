@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { Eye, EyeOff, Check, LogIn } from "lucide-react";
+import { Eye, EyeOff, Check, LogIn, Zap } from "lucide-react";
 import { BrandLogo } from "./BrandLogo";
 import { invoke } from "@tauri-apps/api/core";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre } from "./useCadre";
 import { secretGet, secretSet, secretHas, isTauri } from "../lib/secrets";
+import { reportError } from "../lib/reportError";
 
 /**
  * Sign-In screen — shown when no usable credential is detected on first launch.
@@ -52,6 +53,11 @@ export function SignIn({ onDone }: { onDone: () => void }) {
   const [reveal, setReveal] = useState(false);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(false);
+
+  // Detect whether this is a real Tauri build (before any mock is installed).
+  // We snapshot it once on mount so the button doesn't flicker after demo starts.
+  const [isRealTauri] = useState(() => isTauri());
 
   // Advisory Claude-login status (null = unchecked, true/false = result)
   const [claudeLoginStatus, setClaudeLoginStatus] = useState<boolean | null>(null);
@@ -118,6 +124,21 @@ export function SignIn({ onDone }: { onDone: () => void }) {
       onDone();
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleDemo() {
+    if (demoLoading) return;
+    setDemoLoading(true);
+    try {
+      const { enterDemoMode } = await import("../lib/demo/demoMode");
+      await enterDemoMode();
+      onDone();
+    } catch (e) {
+      console.error("[demo] enterDemoMode failed:", e);
+      // Surface as toast + AI Log entry (project error convention).
+      reportError("demo entry", e);
+      setDemoLoading(false);
     }
   }
 
@@ -345,6 +366,36 @@ export function SignIn({ onDone }: { onDone: () => void }) {
         <div style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-faint)", textAlign: "center", lineHeight: 1.45 }}>
           You can change providers later in <b style={{ color: "var(--c-text-muted)" }}>Settings</b>.
         </div>
+
+        {/* Demo button — only shown in browser (not real Tauri) */}
+        {!isRealTauri && (
+          <div style={{ borderTop: "1px solid var(--c-border)", paddingTop: "var(--c-space-4)", display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--c-space-2)" }}>
+            <button
+              onClick={handleDemo}
+              disabled={demoLoading}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "8px 18px",
+                borderRadius: "var(--c-radius)",
+                background: "transparent",
+                border: "1px solid var(--c-border-strong)",
+                color: "var(--c-text-secondary)",
+                fontSize: "var(--c-fs-xs)",
+                fontWeight: 550,
+                cursor: demoLoading ? "default" : "pointer",
+                opacity: demoLoading ? 0.6 : 1,
+              }}
+            >
+              <Zap size={13} strokeWidth={2} />
+              {demoLoading ? "Loading demo…" : "Try the demo (no key required)"}
+            </button>
+            <div style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-faint)", textAlign: "center" }}>
+              Explore all screens with a pre-seeded project — no sign-in needed.
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
