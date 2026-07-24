@@ -107,6 +107,10 @@ const BRIEF_PATH = "docs/brief.md";
 const TECHDOCS_PATH = "docs/documentation.md";
 const OPS_PATH = "docs/ops.md";
 
+/** Byte budget for ADRs inlined into a dispatched agent's prompt (the decision
+ *  log is append-only and unbounded; newest ADRs win, the rest are summarized). */
+const ADR_INJECT_BUDGET_BYTES = 24_000;
+
 interface CadreState {
   // --- per-project map (Task 5) ---
   /** every open project's fleet state, keyed by root */
@@ -293,12 +297,32 @@ async function loadSharedContext(root: string): Promise<AlwaysFile[]> {
   // ADRs (durable decision records) live in a subdir of the Context Store. Inject
   // them too so every agent consults prior decisions before re-deciding. Tolerant
   // of absence — a project with no decisions/ dir behaves exactly as before.
+  //
+  // The decision log is append-only and grows for the life of a project, so bound
+  // what we inline into the `claude -p` argv: newest ADRs first, up to a byte
+  // budget. If any are dropped, say so explicitly rather than silently truncating.
   try {
     const decisions = await invoke<DirEntry[]>("list_directory", { path: `${root}/${ADR_DECISIONS_DIR}` });
-    for (const e of decisions) {
-      if (e.is_dir || !e.name.endsWith(".md")) continue;
+    const mdFiles = decisions
+      .filter((e) => !e.is_dir && e.name.endsWith(".md"))
+      .sort((a, b) => b.name.localeCompare(a.name)); // zero-padded NNNN- prefix → newest first
+    let used = 0;
+    let injected = 0;
+    for (const e of mdFiles) {
       const c = await invoke<string>("read_file", { path: e.path }).catch(() => "");
-      if (c.trim()) files.push({ path: `${ADR_DECISIONS_DIR}/${e.name}`, content: c });
+      if (!c.trim()) continue;
+      // Always inject at least the newest ADR; stop once the budget is exceeded.
+      if (used + c.length > ADR_INJECT_BUDGET_BYTES && injected > 0) break;
+      files.push({ path: `${ADR_DECISIONS_DIR}/${e.name}`, content: c });
+      used += c.length;
+      injected += 1;
+    }
+    const omitted = mdFiles.length - injected;
+    if (omitted > 0) {
+      files.push({
+        path: `${ADR_DECISIONS_DIR}/_index.md`,
+        content: `# Decision log (truncated)\n\nThe ${injected} most-recent ADR(s) are inlined above; ${omitted} older ADR(s) were omitted to bound prompt size. Read \`${ADR_DECISIONS_DIR}/\` directly for the full history before diverging from a settled decision.`,
+      });
     }
   } catch {
     /* no decisions yet */

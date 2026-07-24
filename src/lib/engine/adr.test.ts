@@ -49,8 +49,41 @@ describe("adr", () => {
     });
   });
 
+  it("round-trips bodies that contain subheadings and multiple paragraphs (lossless)", () => {
+    const rich: Adr = {
+      number: 7,
+      title: "Adopt event sourcing",
+      status: "Accepted",
+      date: "2026-07-24",
+      context:
+        "We need an audit trail.\n\n## Options considered\n\n- CRUD + audit log\n- Event sourcing\n\nBoth were prototyped.",
+      decision: "Go with event sourcing.\n\n# Rationale\n\nReplayability wins.",
+      consequences: "Higher complexity.\n\n## Mitigations\n\nUse a mature library.",
+    };
+    const back = parseAdr(composeAdr(rich));
+    // Every section body must survive verbatim, including its inner `#`/`##` lines.
+    expect(back).toMatchObject({
+      number: 7,
+      title: "Adopt event sourcing",
+      status: "Accepted",
+      context: rich.context,
+      decision: rich.decision,
+      consequences: rich.consequences,
+    });
+  });
+
+  it("round-trips all three statuses", () => {
+    for (const status of ["Proposed", "Accepted", "Superseded"] as const) {
+      expect(parseAdr(composeAdr({ ...sample, status }))?.status).toBe(status);
+    }
+  });
+
   it("parseAdr returns null for non-ADR markdown", () => {
     expect(parseAdr("# Just a doc\n\nnope")).toBeNull();
+  });
+
+  it("parseAdr rejects a changelog-style heading with no Status section", () => {
+    expect(parseAdr("# 1. Fixed a bug\n\nsome notes")).toBeNull();
   });
 
   it("parseAdrIndex reads number+slug from filenames, sorted", () => {

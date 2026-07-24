@@ -95,7 +95,13 @@ export function composeAdr(adr: Adr): string {
 
 /**
  * Extract the text of a section delimited by `## {heading}`.
- * Returns the trimmed content between that heading and the next `##`/`#` or end-of-file.
+ * Returns the trimmed content between that heading and the NEXT known ADR section
+ * heading (Status/Context/Decision/Consequences) or end-of-file.
+ *
+ * The terminator is anchored to the known section headings — NOT to any `##`/`#`
+ * line — so a section body may itself contain subheadings, bulleted options, or
+ * fenced code with `#` comments without being silently truncated (round-trip is
+ * then lossless for real prose).
  *
  * NOTE: Do NOT use the `m` flag here — with `m`, `$` matches end-of-line (always
  * true), which causes the lazy `[\s\S]*?` to collapse to empty.  Instead we use
@@ -103,7 +109,7 @@ export function composeAdr(adr: Adr): string {
  */
 function extractSection(markdown: string, heading: string): string {
   const re = new RegExp(
-    `(?:^|\\n)##\\s*${heading}[^\\n]*\\n([\\s\\S]*?)(?=\\n##\\s|\\n#\\s|$)`
+    `(?:^|\\n)##\\s*${heading}[^\\n]*\\n([\\s\\S]*?)(?=\\n##\\s+(?:Status|Context|Decision|Consequences)\\b|$)`
   );
   const m = markdown.match(re);
   return m ? m[1].trim() : "";
@@ -117,6 +123,11 @@ export function parseAdr(markdown: string): Adr | null {
   // Match heading: "# 2. Use Postgres"
   const titleMatch = markdown.match(/^#\s+(\d+)\.\s+(.+)$/m);
   if (!titleMatch) return null;
+
+  // A real ADR always carries a Status section (composeAdr emits one). Requiring
+  // it rejects non-ADR docs that merely open with "# N. text" — e.g. a changelog
+  // entry like "# 1. Fixed bug" — which would otherwise parse as an empty ADR.
+  if (!/(?:^|\n)##\s+Status\b/.test(markdown)) return null;
 
   const number = Number(titleMatch[1]);
   const title = titleMatch[2].trim();
