@@ -146,11 +146,14 @@ export function PlanningStudio() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [thinking, setThinking] = useState(false);
   const [keyDraft, setKeyDraft] = useState("");
-  const [verifyCmd, setVerifyCmd] = useState("npm test");
+  // Starts EMPTY — the sign-off command comes from the Architect (suggest_verification)
+  // or manifest auto-detection, never a presumptuous hardcoded default. canSign gates on
+  // a non-empty command, so the CTO can't sign off an unset verify by accident.
+  const [verifyCmd, setVerifyCmd] = useState("");
   const verifyTouched = useRef(false);
   const detectedVerify = useCadre((s) => s.detectedVerify);
   // Brownfield: pre-fill the sign-off command with the project's real test command —
-  // but never clobber one the CTO already typed.
+  // but never clobber one the CTO (or the Architect) already set.
   useEffect(() => {
     if (detectedVerify && !verifyTouched.current) setVerifyCmd(detectedVerify);
   }, [detectedVerify]);
@@ -1166,7 +1169,7 @@ export function PlanningStudio() {
                 setVerifyCmd(e.target.value);
                 setVerifySuggested(false);
               }}
-              placeholder="npm test"
+              placeholder="e.g. npm test · pytest · cargo test · make verify"
               style={{
                 flex: 1,
                 minWidth: 100,
