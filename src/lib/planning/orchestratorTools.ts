@@ -18,6 +18,10 @@ export const ORCHESTRATOR_TOOLS: Anthropic.Tool[] = [
           type: "integer" as const,
           description: "The 1-based epic index to shard. Defaults to 1.",
         },
+        repo: {
+          type: "string" as const,
+          description: "Target code repo id in a polyrepo project; omit for the default.",
+        },
       },
       required: [],
     },
@@ -32,6 +36,10 @@ export const ORCHESTRATOR_TOOLS: Anthropic.Tool[] = [
         epic: {
           type: "integer" as const,
           description: "The 1-based epic index whose backlog to shard. Defaults to 1.",
+        },
+        repo: {
+          type: "string" as const,
+          description: "Target code repo id in a polyrepo project; omit for the default.",
         },
       },
       required: [],
@@ -88,11 +96,11 @@ export const ORCHESTRATOR_TOOLS: Anthropic.Tool[] = [
 ];
 
 export interface OrchestratorActions {
-  shardStory: (epic: number) => Promise<void>;
-  shardBacklog: (epic: number) => Promise<void>;
-  approveStory: (epic: number, story: number) => Promise<void>;
-  dispatchStory: (epic: number, story: number) => Promise<void>;
-  dispatchReady: () => Promise<void>;
+  shardStory: (epic: number, repoId?: string) => Promise<string>;
+  shardBacklog: (epic: number, repoId?: string) => Promise<string>;
+  approveStory: (epic: number, story: number) => Promise<string>;
+  dispatchStory: (epic: number, story: number) => Promise<string>;
+  dispatchReady: () => Promise<string>;
 }
 
 export interface ToolOutcome {
@@ -130,16 +138,18 @@ export async function runOrchestratorTool(
         const epicRaw = args.epic !== undefined ? args.epic : 1;
         const epic = asInt(epicRaw);
         if (epic === null) return { ok: false, message: `shard_story: epic must be an integer, got ${String(epicRaw)}` };
-        await actions.shardStory(epic);
-        return { ok: true, message: `sharded story for epic ${epic}` };
+        const repo = args.repo !== undefined ? String(args.repo) : undefined;
+        const message = await actions.shardStory(epic, repo);
+        return { ok: true, message };
       }
 
       case "shard_backlog": {
         const epicRaw = args.epic !== undefined ? args.epic : 1;
         const epic = asInt(epicRaw);
         if (epic === null) return { ok: false, message: `shard_backlog: epic must be an integer, got ${String(epicRaw)}` };
-        await actions.shardBacklog(epic);
-        return { ok: true, message: `sharded backlog for epic ${epic}` };
+        const repo = args.repo !== undefined ? String(args.repo) : undefined;
+        const message = await actions.shardBacklog(epic, repo);
+        return { ok: true, message };
       }
 
       case "approve_story": {
@@ -147,8 +157,8 @@ export async function runOrchestratorTool(
         const story = asInt(args.story);
         if (epic === null) return { ok: false, message: "approve_story: epic (integer) is required" };
         if (story === null) return { ok: false, message: "approve_story: story (integer) is required" };
-        await actions.approveStory(epic, story);
-        return { ok: true, message: `approved story ${epic}.${story}` };
+        const message = await actions.approveStory(epic, story);
+        return { ok: true, message };
       }
 
       case "dispatch_story": {
@@ -156,13 +166,13 @@ export async function runOrchestratorTool(
         const story = asInt(args.story);
         if (epic === null) return { ok: false, message: "dispatch_story: epic (integer) is required" };
         if (story === null) return { ok: false, message: "dispatch_story: story (integer) is required" };
-        await actions.dispatchStory(epic, story);
-        return { ok: true, message: `dispatched story ${epic}.${story}` };
+        const message = await actions.dispatchStory(epic, story);
+        return { ok: true, message };
       }
 
       case "dispatch_ready": {
-        await actions.dispatchReady();
-        return { ok: true, message: "dispatched all ready stories" };
+        const message = await actions.dispatchReady();
+        return { ok: true, message };
       }
 
       default:

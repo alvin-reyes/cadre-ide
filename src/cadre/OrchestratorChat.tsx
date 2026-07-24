@@ -116,18 +116,61 @@ export function OrchestratorChat() {
     // Use clearError() (patchRoots the active project's SLICE) rather than setState —
     // `error` is now a per-project mirror field, so setState would clear only the mirror
     // and a syncCadreMirror during the action could resurface a stale slice error.
-    const runAction = async (fn: () => Promise<void>) => {
+    // runAction returns the string from fn() so that honest board-status messages
+    // flow all the way through to runOrchestratorTool → onToolCall → onToolEvent.
+    const runAction = async (fn: () => Promise<string>): Promise<string> => {
       useCadre.getState().clearError();
-      await fn();
+      const result = await fn();
       const err = useCadre.getState().error;
       if (err) throw new Error(err);
+      return result;
     };
+
+    // Read the verified board status for a single story after dispatch.
+    const storyOutcome = (epic: number, story: number): string => {
+      const id = `${epic}.${story}`;
+      const card = useBmadStore.getState().stories.find((c) => c.id === id);
+      if (!card) return `Story ${id}: dispatched (status unknown)`;
+      return `Story ${id}: ${card.status}`;
+    };
+
     const actions: OrchestratorActions = {
-      shardStory: (e) => runAction(() => useCadre.getState().shardNextStory(e)),
-      shardBacklog: (e) => runAction(() => useCadre.getState().shardBacklog(e)),
-      approveStory: (e, s) => runAction(() => useCadre.getState().approveStory(e, s)),
-      dispatchStory: (e, s) => runAction(() => useCadre.getState().dispatchStory(e, s)),
-      dispatchReady: () => runAction(() => useCadre.getState().dispatchReady()),
+      shardStory: (e, repoId) =>
+        runAction(async () => {
+          await useCadre.getState().shardNextStory(e, repoId);
+          return "Sharded the next story.";
+        }),
+      shardBacklog: (e, _repoId) =>
+        runAction(async () => {
+          // useCadre.shardBacklog does not yet accept repoId; repo threading is a no-op here.
+          await useCadre.getState().shardBacklog(e);
+          return "Sharded the lifecycle backlog.";
+        }),
+      approveStory: (e, s) =>
+        runAction(async () => {
+          await useCadre.getState().approveStory(e, s);
+          return `Approved story ${e}.${s}.`;
+        }),
+      dispatchStory: (e, s) =>
+        runAction(async () => {
+          await useCadre.getState().dispatchStory(e, s);
+          return storyOutcome(e, s);
+        }),
+      dispatchReady: () =>
+        runAction(async () => {
+          // Capture the IDs of stories that are about to be dispatched (Approved or Failed retry).
+          const beforeStories = useBmadStore.getState().stories;
+          const ids = beforeStories
+            .filter((c) => c.status === "Approved" || c.status === "Failed")
+            .map((c) => c.id);
+          await useCadre.getState().dispatchReady();
+          // Read final board status to report honest outcomes.
+          const afterStories = useBmadStore.getState().stories;
+          const final = afterStories.filter((c) => ids.includes(c.id));
+          const by = (st: string) => final.filter((c) => c.status === st).length;
+          const total = ids.length;
+          return `Dispatched ${total} stor${total === 1 ? "y" : "ies"}: ${by("Done")} Done, ${by("Failed")} Failed, ${by("Blocked")} Blocked.`;
+        }),
     };
 
     const sessionDeps = root
