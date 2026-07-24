@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { pickAssignable, ReadyStory } from "./pool";
+import { pickAssignable, partitionByRole, ReadyStory } from "./pool";
 
 describe("pickAssignable", () => {
   // Helper to build ReadyStory objects
@@ -107,5 +107,89 @@ describe("pickAssignable", () => {
       pickAssignable([s("A", ["a.ts"])], inFlight, 10);
       expect(inFlight).toEqual(before);
     });
+  });
+});
+
+// ── partitionByRole ───────────────────────────────────────────────────────────
+
+describe("partitionByRole", () => {
+  const s = (id: string, files: string[]): ReadyStory => ({ id, files });
+
+  // A simple roleOf map for test setups.
+  const roleMap: Record<string, "dev" | "qa" | "devops"> = {
+    "story-dev-1": "dev",
+    "story-dev-2": "dev",
+    "story-qa-1": "qa",
+    "story-ops-1": "devops",
+    "story-ops-2": "devops",
+  };
+  const roleOf = (id: string): "dev" | "qa" | "devops" => roleMap[id] ?? "dev";
+
+  it("partitions a mixed list into the correct buckets", () => {
+    const ready = [
+      s("story-dev-1", ["a.ts"]),
+      s("story-qa-1", ["qa.ts"]),
+      s("story-ops-1", ["ops.ts"]),
+      s("story-dev-2", ["b.ts"]),
+      s("story-ops-2", ["ops2.ts"]),
+    ];
+    const { dev, qa, devops } = partitionByRole(ready, roleOf);
+    expect(dev.map((r) => r.id)).toEqual(["story-dev-1", "story-dev-2"]);
+    expect(qa.map((r) => r.id)).toEqual(["story-qa-1"]);
+    expect(devops.map((r) => r.id)).toEqual(["story-ops-1", "story-ops-2"]);
+  });
+
+  it("preserves input order within each bucket", () => {
+    const ready = [
+      s("story-dev-2", ["b.ts"]),
+      s("story-dev-1", ["a.ts"]),
+    ];
+    const { dev } = partitionByRole(ready, roleOf);
+    expect(dev.map((r) => r.id)).toEqual(["story-dev-2", "story-dev-1"]);
+  });
+
+  it("returns all three empty buckets for an empty input", () => {
+    const { dev, qa, devops } = partitionByRole([], roleOf);
+    expect(dev).toEqual([]);
+    expect(qa).toEqual([]);
+    expect(devops).toEqual([]);
+  });
+
+  it("puts all stories in dev when all map to dev", () => {
+    const ready = [s("story-dev-1", ["a.ts"]), s("story-dev-2", ["b.ts"])];
+    const { dev, qa, devops } = partitionByRole(ready, roleOf);
+    expect(dev).toHaveLength(2);
+    expect(qa).toHaveLength(0);
+    expect(devops).toHaveLength(0);
+  });
+
+  it("puts all stories in qa when all map to qa", () => {
+    const ready = [s("story-qa-1", ["q.ts"])];
+    const { dev, qa, devops } = partitionByRole(ready, () => "qa");
+    expect(qa).toHaveLength(1);
+    expect(dev).toHaveLength(0);
+    expect(devops).toHaveLength(0);
+  });
+
+  it("puts all stories in devops when all map to devops", () => {
+    const ready = [s("story-ops-1", ["o.ts"]), s("story-ops-2", ["p.ts"])];
+    const { dev, qa, devops } = partitionByRole(ready, () => "devops");
+    expect(devops).toHaveLength(2);
+    expect(dev).toHaveLength(0);
+    expect(qa).toHaveLength(0);
+  });
+
+  it("does not mutate the input array", () => {
+    const ready = [s("story-dev-1", ["a.ts"]), s("story-qa-1", ["b.ts"])];
+    const copy = ready.map((r) => ({ ...r, files: [...r.files] }));
+    partitionByRole(ready, roleOf);
+    expect(ready).toEqual(copy);
+  });
+
+  it("does not mutate the story objects", () => {
+    const story = s("story-dev-1", ["a.ts"]);
+    partitionByRole([story], roleOf);
+    expect(story.id).toBe("story-dev-1");
+    expect(story.files).toEqual(["a.ts"]);
   });
 });

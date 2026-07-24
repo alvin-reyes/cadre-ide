@@ -7,6 +7,8 @@ export interface AgentSlot {
   agentId: string;
   currentStory: string | null;
   status: "idle" | "working" | "verifying";
+  /** Role assigned to this slot. Legacy numeric slots (agent-0…) are implicitly "dev". */
+  role?: "dev" | "qa" | "devops";
 }
 
 export interface BmadSlice {
