@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Hexagon, Eye, EyeOff, Check, LogIn } from "lucide-react";
+import { Eye, EyeOff, Check, LogIn } from "lucide-react";
+import { BrandLogo } from "./BrandLogo";
 import { invoke } from "@tauri-apps/api/core";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre } from "./useCadre";
@@ -145,9 +146,8 @@ export function SignIn({ onDone }: { onDone: () => void }) {
       >
         {/* Header */}
         <div style={{ textAlign: "center" }}>
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 9, marginBottom: "var(--c-space-2)" }}>
-            <Hexagon size={24} strokeWidth={2} style={{ color: "var(--c-accent)" }} />
-            <span className="cadre-wordmark" style={{ fontSize: "var(--c-fs-xl)" }}>cadre</span>
+          <div style={{ display: "inline-flex", alignItems: "center", marginBottom: "var(--c-space-2)" }}>
+            <BrandLogo size={34} />
           </div>
           <div style={{ fontSize: "var(--c-fs-md)", fontWeight: 600, color: "var(--c-text)", marginBottom: 4 }}>
             Choose your AI provider
