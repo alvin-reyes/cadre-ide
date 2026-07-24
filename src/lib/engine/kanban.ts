@@ -16,7 +16,6 @@
  */
 
 import type { Status } from "./status";
-import type { StoryCard } from "./board";
 
 export type KanbanColumn = "backlog" | "inProgress" | "qa" | "completed";
 
@@ -73,21 +72,6 @@ export function rollupCounts(cards: { status: Status }[]): RollupCounts {
     counts[statusColumn(card.status)]++;
   }
   return counts;
-}
-
-/**
- * Select stories that have a live agent running this session.
- * A story is "running" if it is actively mid-build/review (InProgress | InReview)
- * OR a dispatch is in-flight (active[s.id] === true) — the Approved→InProgress
- * window before the engine flips the status.
- */
-export function selectRunningAgents(
-  stories: StoryCard[],
-  active: Record<string, boolean>
-): StoryCard[] {
-  return stories.filter(
-    (s) => active[s.id] || s.status === "InProgress" || s.status === "InReview"
-  );
 }
 
 /**

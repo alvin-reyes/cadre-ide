@@ -313,6 +313,8 @@ interface Settings {
   teamSize: number;
   /** Reset an agent's Claude session after this many tasks (fresh context window). */
   sessionResetK: number;
+  /** Maximum number of parallel Dev agent slots in the role fleet (1–8). */
+  maxDevAgents: number;
   orchestratorModel: string;
   ollamaEndpoint: string;
   ollamaModel: string;
@@ -348,6 +350,7 @@ interface SettingsStore extends Settings {
   setUseTeamPool: (on: boolean) => void;
   setTeamSize: (n: number) => void;
   setSessionResetK: (k: number) => void;
+  setMaxDevAgents: (n: number) => void;
   /** Load secrets (API key) from the OS keychain into the store (desktop only). */
   hydrateSecrets: () => Promise<void>;
   setOrchestratorModel: (model: string) => void;
@@ -410,6 +413,7 @@ const defaults: Settings = {
   useTeamPool: false,
   teamSize: 4,
   sessionResetK: 5,
+  maxDevAgents: 4,
   orchestratorModel: "claude-opus-4-20250514",
   ollamaEndpoint: "http://localhost:11434",
   ollamaModel: "deepseek-r1",
@@ -548,6 +552,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
   setSessionResetK: (sessionResetK) => {
     set({ sessionResetK: Math.max(1, Math.floor(sessionResetK) || 1) });
+    persistSettings(get());
+  },
+
+  setMaxDevAgents: (maxDevAgents) => {
+    set({ maxDevAgents: Math.max(1, Math.min(8, Math.floor(maxDevAgents) || 1)) });
     persistSettings(get());
   },
 

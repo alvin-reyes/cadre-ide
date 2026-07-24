@@ -1,5 +1,6 @@
 /**
  * Pool-pull assignment strategy for the persistent team-pool dispatch loop.
+ * Task 1: also exports partitionByRole for role-aware story routing.
  *
  * Given the stories that are ready to run, the files currently being modified
  * by in-flight assignments, and how many agent slots are free, returns the
@@ -74,4 +75,36 @@ export function pickAssignable(
   }
 
   return picks;
+}
+
+// ── partitionByRole ───────────────────────────────────────────────────────────
+
+/**
+ * Split a list of ready stories into three role buckets: dev, qa, and devops.
+ *
+ * The caller supplies a `roleOf` function that maps a story id to its role.
+ * (In practice the caller wraps `storyRole(storyTitle)` from kanban.ts, looking
+ * up the title from the story id externally — ReadyStory only carries `id` and
+ * `files`.)
+ *
+ * - Preserves input order within each bucket.
+ * - Does NOT mutate the input array or its elements.
+ * - Returns an object with three arrays; each may be empty.
+ */
+export function partitionByRole(
+  ready: ReadyStory[],
+  roleOf: (id: string) => "dev" | "qa" | "devops"
+): { dev: ReadyStory[]; qa: ReadyStory[]; devops: ReadyStory[] } {
+  const dev: ReadyStory[] = [];
+  const qa: ReadyStory[] = [];
+  const devops: ReadyStory[] = [];
+
+  for (const story of ready) {
+    const role = roleOf(story.id);
+    if (role === "qa") qa.push(story);
+    else if (role === "devops") devops.push(story);
+    else dev.push(story);
+  }
+
+  return { dev, qa, devops };
 }
