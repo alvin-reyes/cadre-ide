@@ -129,6 +129,7 @@ export function PlanningStudio() {
   const uxSpec = useCadre((s) => s.uxSpec);
   const mockupHtml = useCadre((s) => s.mockupHtml);
   const projectContext = useCadre((s) => s.projectContext);
+  const analyzingBrownfield = useCadre((s) => s.analyzingBrownfield);
   const documentProject = useCadre((s) => s.documentProject);
   const isBrownfield = useCadre((s) => s.isBrownfield);
   const brownfieldLog = useCadre((s) => s.logs["brownfield"] ?? "");
@@ -668,7 +669,7 @@ export function PlanningStudio() {
           <div ref={scrollRef} style={{ flex: 1, overflow: "auto", padding: "var(--c-space-4)", display: "flex", flexDirection: "column" }}>
             {brownfieldOnboarding ? (
               <BrownfieldOnboard
-                analyzing={!!busy}
+                analyzing={analyzingBrownfield}
                 output={brownfieldLog}
                 onAnalyze={() => documentProject()}
                 disabled={!planAuth.ready || !!busy}

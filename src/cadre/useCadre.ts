@@ -136,6 +136,8 @@ interface CadreState {
   projectContext: string;
   /** true when the opened project has existing code but no Cadre plan yet */
   isBrownfield: boolean;
+  /** true only while the brownfield analysis agent runs (drives the onboard spinner) */
+  analyzingBrownfield: boolean;
   /** verify command auto-detected from the project's manifests ("" = none) */
   detectedVerify: string;
   /** the frozen verification command(s) once the plan is approved */
@@ -414,6 +416,7 @@ export const useCadre = create<CadreState>((set, get) => {
   poValidation: "",
   projectContext: "",
   isBrownfield: false,
+  analyzingBrownfield: false,
   detectedVerify: "",
   verification: [],
   needsReplan: false,
@@ -953,7 +956,7 @@ export const useCadre = create<CadreState>((set, get) => {
       reportError("document project", e, { toastMessage: "Project analysis failed" });
       return;
     }
-    patchRoot(root, { busy: "Analyzing the existing project (2 passes)…", error: null });
+    patchRoot(root, { busy: "Analyzing the existing project (2 passes)…", analyzingBrownfield: true, error: null });
     const onOutput = (chunk: string) => {
       aiLog("analysis", chunk);
       const prev = get().projects[root]?.logs?.["brownfield"] ?? "";
@@ -977,10 +980,10 @@ export const useCadre = create<CadreState>((set, get) => {
         (await invoke<string>("read_file", { path: `${root}/${BROWNFIELD_DOC_PATH}` }).catch(() => ""));
       // Auto-detect the project's real test command to pre-fill sign-off later.
       const detectedVerify = await detectProjectVerify(root).catch(() => "");
-      patchRoot(root, { projectContext: content, isBrownfield: false, detectedVerify, busy: null });
+      patchRoot(root, { projectContext: content, isBrownfield: false, analyzingBrownfield: false, detectedVerify, busy: null });
       toast("Project analyzed — the PM now has context", "success");
     } catch (e) {
-      patchRoot(root, { error: String(e), busy: null });
+      patchRoot(root, { error: String(e), analyzingBrownfield: false, busy: null });
       reportError("document project", e, { toastMessage: "Project analysis failed" });
     }
   },
