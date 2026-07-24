@@ -113,8 +113,11 @@ export function OrchestratorChat() {
     // and resolve normally. So the copilot doesn't falsely claim success, run each
     // action through a guard that clears `error` first and rethrows if the action set
     // it — turning a silent store failure into an `ok:false` tool outcome the model sees.
+    // Use clearError() (patchRoots the active project's SLICE) rather than setState —
+    // `error` is now a per-project mirror field, so setState would clear only the mirror
+    // and a syncCadreMirror during the action could resurface a stale slice error.
     const runAction = async (fn: () => Promise<void>) => {
-      useCadre.setState({ error: null });
+      useCadre.getState().clearError();
       await fn();
       const err = useCadre.getState().error;
       if (err) throw new Error(err);
