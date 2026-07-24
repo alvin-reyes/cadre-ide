@@ -4,10 +4,12 @@ import {
   slugify,
   storyFilename,
   composeStoryFile,
+  parseStoryRepo,
   shardStory,
   type ShardDeps,
   type StoryContent,
 } from "./shard";
+import { DEFAULT_REPO_ID } from "./repos";
 
 describe("nextStoryNumber", () => {
   it("starts at 1 when the epic has no stories", () => {
@@ -99,6 +101,30 @@ describe("composeStoryFile", () => {
     expect(md).toContain("## QA Results");
     // No content between the Dev Agent Record heading and QA Results heading.
     expect(md).toMatch(/## Dev Agent Record\n\n## QA Results/);
+  });
+});
+
+describe("parseStoryRepo", () => {
+  it("composeStoryFile writes a Repo section and parseStoryRepo reads it", () => {
+    const md = composeStoryFile({
+      epic: 1, story: 2, title: "Auth", repo: "api",
+      userStory: { role: "u", action: "a", benefit: "b" },
+      acceptanceCriteria: ["x"], tasks: ["t"], devNotes: "n", files: [],
+    });
+    expect(md).toContain("## Repo");
+    expect(parseStoryRepo(md)).toBe("api");
+  });
+
+  it("parseStoryRepo defaults to the main repo when absent", () => {
+    expect(parseStoryRepo("# Story 1.1\n\n## Status\n\nDraft\n")).toBe(DEFAULT_REPO_ID);
+  });
+
+  it("composeStoryFile defaults the repo section to main", () => {
+    const md = composeStoryFile({
+      epic: 1, story: 1, title: "T", userStory: { role: "u", action: "a", benefit: "b" },
+      acceptanceCriteria: [], tasks: [], devNotes: "", files: [],
+    });
+    expect(parseStoryRepo(md)).toBe(DEFAULT_REPO_ID);
   });
 });
 
