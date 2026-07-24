@@ -22,17 +22,70 @@ import {
   ChevronUp,
   RefreshCw,
   Loader2,
+  Gavel,
 } from "lucide-react";
 import { useBmadStore } from "../stores/bmadStore";
 import { useCadre, isInterrupted } from "./useCadre";
 import { useRepos } from "../stores/reposStore";
 import { parseEpics } from "../lib/planning/epics";
 import { parseDefinitionOfDone } from "../lib/engine/shard";
-import { KANBAN_COLUMNS, statusColumn, isAttention } from "../lib/engine/kanban";
+import { KANBAN_COLUMNS, statusColumn, isAttention, rollupCounts, groupIntoLanes } from "../lib/engine/kanban";
+import { FleetBoard } from "./components/FleetBoard";
 import { StatusPill } from "./components/StatusPill";
 import { stateInfo, LiveTerminal, FleetModelPicker } from "./agentShared";
 import type { StoryCard } from "../lib/engine/board";
 import type { Epic } from "../lib/planning/epics";
+
+// ── RollupPill — compact count badge ─────────────────────────────────────────
+function RollupPill({
+  count,
+  label,
+  variant,
+}: {
+  count: number;
+  label: string;
+  variant: "done" | "active" | "qa" | "backlog";
+}) {
+  if (count === 0) return null;
+  const styles: Record<string, { bg: string; color: string; border: string }> = {
+    done: {
+      bg: "color-mix(in srgb, var(--c-success) 15%, transparent)",
+      color: "var(--c-success)",
+      border: "1px solid color-mix(in srgb, var(--c-success) 30%, transparent)",
+    },
+    active: {
+      bg: "color-mix(in srgb, var(--c-accent) 15%, transparent)",
+      color: "var(--c-accent)",
+      border: "1px solid color-mix(in srgb, var(--c-accent) 30%, transparent)",
+    },
+    qa: {
+      bg: "color-mix(in srgb, var(--c-warning) 15%, transparent)",
+      color: "var(--c-warning)",
+      border: "1px solid color-mix(in srgb, var(--c-warning) 30%, transparent)",
+    },
+    backlog: {
+      bg: "var(--c-surface-3)",
+      color: "var(--c-text-muted)",
+      border: "1px solid var(--c-border)",
+    },
+  };
+  const s = styles[variant];
+  return (
+    <span
+      style={{
+        fontSize: "9px",
+        fontWeight: 600 as const,
+        padding: "1px 5px",
+        borderRadius: "var(--c-radius-sm)",
+        background: s.bg,
+        color: s.color,
+        border: s.border,
+      }}
+    >
+      {count} {label}
+    </span>
+  );
+}
 
 // ── KanbanCard — individual story card ────────────────────────────────────────
 function KanbanCard({ card, preview }: { card: StoryCard; preview: boolean }) {
@@ -45,7 +98,7 @@ function KanbanCard({ card, preview }: { card: StoryCard; preview: boolean }) {
 
   const [expanded, setExpanded] = useState(false);
   const [dod, setDod] = useState<string[]>([]);
-  const [dodLoading, setDodLoading] = useState(false);
+  const [dodState, setDodState] = useState<"idle" | "loading" | "loaded">("idle");
 
   const attention = isAttention(card.status);
   const info = stateInfo(card.status);
@@ -61,23 +114,35 @@ function KanbanCard({ card, preview }: { card: StoryCard; preview: boolean }) {
 
   const canResume = !preview && !busy && !needsReplan && interrupted;
 
-  // Fetch DoD on expand; cache in component state (reset on card change)
+  const canApprove =
+    !preview &&
+    !busy &&
+    card.status === "Draft";
+
+  const codeReview = useCadre((s) => s.codeReviews[card.id]);
+  const canReview =
+    !preview &&
+    !busy &&
+    (card.status === "InReview" || card.status === "Done" || card.status === "Failed");
+
+  // Reset DoD state when card changes (so we re-fetch on expand for the new card)
   useEffect(() => {
     setDod([]);
-    setDodLoading(false);
+    setDodState("idle");
   }, [card.epic, card.story]);
 
+  // Fetch DoD exactly once per card per expand — idle→loading→loaded (even for [])
   useEffect(() => {
-    if (!expanded || preview || dod.length > 0 || dodLoading) return;
-    setDodLoading(true);
+    if (!expanded || preview || dodState !== "idle") return;
+    setDodState("loading");
     let alive = true;
     getStoryMarkdown(card.epic, card.story).then((md) => {
       if (!alive) return;
       setDod(parseDefinitionOfDone(md));
-      setDodLoading(false);
+      setDodState("loaded");
     });
     return () => { alive = false; };
-  }, [expanded, preview, card.epic, card.story, getStoryMarkdown, dod.length, dodLoading]);
+  }, [expanded, preview, dodState, card.epic, card.story, getStoryMarkdown]);
 
   // Parse [phase] chip from title
   const phaseMatch = card.title?.match(/^\[([^\]]+)\]\s*(.*)/);
@@ -171,7 +236,7 @@ function KanbanCard({ card, preview }: { card: StoryCard; preview: boolean }) {
       </button>
 
       {/* Per-card action buttons (visible without expanding) */}
-      {(canDispatch || canResume) && (
+      {(canApprove || canDispatch || canResume || canReview) && (
         <div
           style={{
             padding: "0 var(--c-space-3) var(--c-space-2)",
@@ -179,6 +244,30 @@ function KanbanCard({ card, preview }: { card: StoryCard; preview: boolean }) {
             gap: "var(--c-space-2)",
           }}
         >
+          {canApprove && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                void useCadre.getState().approveStory(card.epic, card.story);
+              }}
+              title="Approve this draft story — it will become dispatchable"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: "var(--c-fs-xs)",
+                fontWeight: 550 as const,
+                padding: "3px 9px",
+                borderRadius: "var(--c-radius-sm)",
+                background: "var(--c-accent)",
+                color: "var(--c-on-accent)",
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              Approve
+            </button>
+          )}
           {canDispatch && (
             <button
               onClick={(e) => {
@@ -233,6 +322,31 @@ function KanbanCard({ card, preview }: { card: StoryCard; preview: boolean }) {
               Resume
             </button>
           )}
+          {canReview && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                void useCadre.getState().reviewStory(card.epic, card.story);
+              }}
+              title="Run the adversarial code-review fleet on this story"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: "var(--c-fs-xs)",
+                fontWeight: 550 as const,
+                padding: "3px 9px",
+                borderRadius: "var(--c-radius-sm)",
+                background: codeReview?.status === "reviewing" ? "var(--c-surface-3)" : "var(--c-surface-2)",
+                color: codeReview?.status === "reviewing" ? "var(--c-text-muted)" : "var(--c-text)",
+                border: "1px solid var(--c-border-strong)",
+                cursor: codeReview?.status === "reviewing" ? "default" : "pointer",
+              }}
+            >
+              <Gavel size={10} strokeWidth={2} />
+              {codeReview?.status === "reviewing" ? "Reviewing…" : "Review"}
+            </button>
+          )}
         </div>
       )}
 
@@ -281,7 +395,7 @@ function KanbanCard({ card, preview }: { card: StoryCard; preview: boolean }) {
             >
               Definition of Done
             </div>
-            {dodLoading ? (
+            {dodState === "loading" ? (
               <div
                 style={{
                   display: "flex",
@@ -307,42 +421,54 @@ function KanbanCard({ card, preview }: { card: StoryCard; preview: boolean }) {
                   : "No Definition of Done found in this story."}
               </div>
             ) : (
-              <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
-                {dod.map((item, i) => (
-                  <li
-                    key={i}
-                    style={{
-                      display: "flex",
-                      alignItems: "flex-start",
-                      gap: 6,
-                      fontSize: "var(--c-fs-xs)",
-                      color: "var(--c-text-secondary)",
-                      lineHeight: 1.5,
-                      marginBottom: 3,
-                    }}
-                  >
-                    <span
+              <>
+                <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
+                  {dod.map((item, i) => (
+                    <li
+                      key={i}
                       style={{
-                        width: 10,
-                        height: 10,
-                        borderRadius: 2,
-                        border: "1.5px solid",
-                        borderColor:
-                          card.status === "Done"
-                            ? "var(--c-success)"
-                            : "var(--c-border-strong)",
-                        background:
-                          card.status === "Done"
-                            ? "var(--c-success)"
-                            : "transparent",
-                        flexShrink: 0,
-                        marginTop: 2,
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: 6,
+                        fontSize: "var(--c-fs-xs)",
+                        color: "var(--c-text-secondary)",
+                        lineHeight: 1.5,
+                        marginBottom: 3,
                       }}
-                    />
-                    {item}
-                  </li>
-                ))}
-              </ul>
+                    >
+                      <span
+                        style={{
+                          width: 10,
+                          height: 10,
+                          borderRadius: 2,
+                          border: "1.5px solid",
+                          borderColor:
+                            card.status === "Done"
+                              ? "var(--c-success)"
+                              : "var(--c-border-strong)",
+                          background:
+                            card.status === "Done"
+                              ? "var(--c-success)"
+                              : "transparent",
+                          flexShrink: 0,
+                          marginTop: 2,
+                        }}
+                      />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+                <p
+                  style={{
+                    margin: "var(--c-space-1) 0 0",
+                    fontSize: "var(--c-fs-xs)",
+                    color: "var(--c-text-faint)",
+                    fontStyle: "italic",
+                  }}
+                >
+                  All items are shown as verified when the engine marks this story Done.
+                </p>
+              </>
             )}
           </div>
 
@@ -367,6 +493,32 @@ function KanbanCard({ card, preview }: { card: StoryCard; preview: boolean }) {
               />
             </div>
           )}
+
+          {/* Code-review panel — reuse FleetBoard for InReview/Done/Failed cards */}
+          {canReview && codeReview && (
+            <div style={{ marginTop: "var(--c-space-3)" }}>
+              <div
+                style={{
+                  fontSize: "var(--c-fs-xs)",
+                  fontWeight: 600 as const,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                  color: "var(--c-text-muted)",
+                  marginBottom: "var(--c-space-2)",
+                }}
+              >
+                Code Review
+              </div>
+              {/* Wrap FleetBoard so it fits inline — override its fixed 232px width */}
+              <div style={{ overflow: "hidden", borderRadius: "var(--c-radius)", border: "1px solid var(--c-border)", maxWidth: "100%" }}>
+                <FleetBoard
+                  stories={[card]}
+                  selectedId={card.id}
+                  onSelect={() => {}}
+                />
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -388,13 +540,16 @@ function EpicLane({
   const [collapsed, setCollapsed] = useState(false);
   const busy = useCadre((s) => s.busy);
 
-  if (cards.length === 0) return null;
+  // Only hide the "Other" catch-all when empty; named epic lanes always render
+  // so you can shard into an empty epic via the "+ Shard story" button.
+  if (cards.length === 0 && epic === null) return null;
 
   // Status rollup counts
-  const doneCount = cards.filter((c) => statusColumn(c.status) === "completed").length;
-  const inProgressCount = cards.filter((c) => statusColumn(c.status) === "inProgress").length;
-  const qaCount = cards.filter((c) => statusColumn(c.status) === "qa").length;
-  const backlogCount = cards.filter((c) => statusColumn(c.status) === "backlog").length;
+  const counts = rollupCounts(cards);
+  const doneCount = counts.completed;
+  const inProgressCount = counts.inProgress;
+  const qaCount = counts.qa;
+  const backlogCount = counts.backlog;
 
   return (
     <div
@@ -495,66 +650,10 @@ function EpicLane({
 
           {/* Status rollup pills */}
           <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-            {doneCount > 0 && (
-              <span
-                style={{
-                  fontSize: "9px",
-                  fontWeight: 600 as const,
-                  padding: "1px 5px",
-                  borderRadius: "var(--c-radius-sm)",
-                  background: "color-mix(in srgb, var(--c-success) 15%, transparent)",
-                  color: "var(--c-success)",
-                  border: "1px solid color-mix(in srgb, var(--c-success) 30%, transparent)",
-                }}
-              >
-                {doneCount} done
-              </span>
-            )}
-            {inProgressCount > 0 && (
-              <span
-                style={{
-                  fontSize: "9px",
-                  fontWeight: 600 as const,
-                  padding: "1px 5px",
-                  borderRadius: "var(--c-radius-sm)",
-                  background: "color-mix(in srgb, var(--c-accent) 15%, transparent)",
-                  color: "var(--c-accent)",
-                  border: "1px solid color-mix(in srgb, var(--c-accent) 30%, transparent)",
-                }}
-              >
-                {inProgressCount} active
-              </span>
-            )}
-            {qaCount > 0 && (
-              <span
-                style={{
-                  fontSize: "9px",
-                  fontWeight: 600 as const,
-                  padding: "1px 5px",
-                  borderRadius: "var(--c-radius-sm)",
-                  background: "color-mix(in srgb, var(--c-warning) 15%, transparent)",
-                  color: "var(--c-warning)",
-                  border: "1px solid color-mix(in srgb, var(--c-warning) 30%, transparent)",
-                }}
-              >
-                {qaCount} QA
-              </span>
-            )}
-            {backlogCount > 0 && (
-              <span
-                style={{
-                  fontSize: "9px",
-                  fontWeight: 600 as const,
-                  padding: "1px 5px",
-                  borderRadius: "var(--c-radius-sm)",
-                  background: "var(--c-surface-3)",
-                  color: "var(--c-text-muted)",
-                  border: "1px solid var(--c-border)",
-                }}
-              >
-                {backlogCount} backlog
-              </span>
-            )}
+            <RollupPill count={doneCount} label="done" variant="done" />
+            <RollupPill count={inProgressCount} label="active" variant="active" />
+            <RollupPill count={qaCount} label="QA" variant="qa" />
+            <RollupPill count={backlogCount} label="backlog" variant="backlog" />
           </div>
         </div>
 
@@ -662,6 +761,8 @@ export function KanbanBoard() {
   const dispatchReady = useCadre((s) => s.dispatchReady);
   const busy = useCadre((s) => s.busy);
   const error = useCadre((s) => s.error);
+  const needsReplan = useCadre((s) => s.needsReplan);
+  const setPhase = useCadre((s) => s.setPhase);
 
   const repos = useRepos((s) => s.repos);
   const multiRepo = repos.length > 1;
@@ -680,21 +781,14 @@ export function KanbanBoard() {
   const readyCount = stories.filter(
     (c) => c.status === "Approved" || c.status === "Failed"
   ).length;
-  const canAutoExecute = !preview && !busy && readyCount > 0;
+  const canAutoExecute = !preview && !busy && !needsReplan && readyCount > 0;
 
   // Group cards into epic swimlanes; unmatched → otherCards
-  const epicMap = new Map<number, StoryCard[]>();
-  const otherCards: StoryCard[] = [];
-  for (const card of stories) {
-    const matched = epics.find((ep) => ep.number === card.epic);
-    if (matched) {
-      const arr = epicMap.get(matched.number) ?? [];
-      arr.push(card);
-      epicMap.set(matched.number, arr);
-    } else {
-      otherCards.push(card);
-    }
-  }
+  const { epicBuckets, otherCards } = groupIntoLanes(stories, epics);
+  const epicMap = epicBuckets;
+
+  // Fleet-wide rollup across ALL stories
+  const fleetCounts = rollupCounts(stories);
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
@@ -766,9 +860,11 @@ export function KanbanBoard() {
           title={
             preview
               ? "Open a project to auto-execute"
-              : readyCount === 0
-                ? "No Approved or Failed stories ready to dispatch"
-                : `Dispatch all ${readyCount} ready stor${readyCount === 1 ? "y" : "ies"} in parallel`
+              : needsReplan
+                ? "Re-approve the plan before dispatching — scope changed"
+                : readyCount === 0
+                  ? "No Approved or Failed stories ready to dispatch"
+                  : `Dispatch all ${readyCount} ready stor${readyCount === 1 ? "y" : "ies"} in parallel`
           }
           style={{
             display: "inline-flex",
@@ -802,6 +898,16 @@ export function KanbanBoard() {
               : `${stories.length} stor${stories.length === 1 ? "y" : "ies"}`)}
         </span>
 
+        {/* Fleet-wide rollup strip */}
+        {!preview && stories.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <RollupPill count={fleetCounts.completed} label="done" variant="done" />
+            <RollupPill count={fleetCounts.inProgress} label="active" variant="active" />
+            <RollupPill count={fleetCounts.qa} label="QA" variant="qa" />
+            <RollupPill count={fleetCounts.backlog} label="backlog" variant="backlog" />
+          </div>
+        )}
+
         <div style={{ flex: 1 }} />
 
         {/* Fleet model picker */}
@@ -822,6 +928,45 @@ export function KanbanBoard() {
       >
         Cards move when the engine verifies — you can&apos;t drag a task to Done.
       </div>
+
+      {/* ── Replan banner — shown when the PRD changed after approval ── */}
+      {needsReplan && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--c-space-3)",
+            padding: "8px var(--c-space-4)",
+            background: "var(--c-warning-subtle)",
+            borderBottom: "1px solid var(--c-border)",
+            flexShrink: 0,
+          }}
+        >
+          <AlertTriangle size={13} strokeWidth={2} style={{ color: "var(--c-warning)", flexShrink: 0 }} />
+          <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-secondary)", flex: 1 }}>
+            Scope changed since approval — dispatch is paused until the plan is re-approved.
+          </span>
+          <button
+            onClick={() => setPhase("PLAN")}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              fontSize: "var(--c-fs-xs)",
+              fontWeight: 550 as const,
+              padding: "3px 9px",
+              borderRadius: "var(--c-radius-sm)",
+              background: "var(--c-surface-2)",
+              color: "var(--c-text)",
+              border: "1px solid var(--c-border-strong)",
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+          >
+            Go to Planning
+          </button>
+        </div>
+      )}
 
       {/* ── Column headers ── */}
       <div
@@ -862,7 +1007,7 @@ export function KanbanBoard() {
           padding: "var(--c-space-3) var(--c-space-4)",
         }}
       >
-        {stories.length === 0 ? (
+        {stories.length === 0 && epics.length === 0 ? (
           <div
             style={{
               display: "flex",
@@ -877,7 +1022,7 @@ export function KanbanBoard() {
           >
             {preview
               ? "Preview — open a project to view stories on the board."
-              : "No stories yet. Use \"Shard next story\" or \"Shard backlog\" to add stories."}
+              : "No stories yet. Use \"Shard story\" on an epic lane below, or \"Shard backlog\" to generate the full lifecycle backlog."}
           </div>
         ) : (
           <>
@@ -894,6 +1039,19 @@ export function KanbanBoard() {
             ))}
             {otherCards.length > 0 && (
               <EpicLane epic={null} cards={otherCards} preview={preview} />
+            )}
+            {stories.length === 0 && epics.length > 0 && (
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: "var(--c-space-4)",
+                  color: "var(--c-text-faint)",
+                  fontSize: "var(--c-fs-xs)",
+                  fontStyle: "italic",
+                }}
+              >
+                No stories yet — use &quot;Shard story&quot; on an epic above, or &quot;Shard backlog&quot; to generate the full lifecycle backlog.
+              </div>
             )}
           </>
         )}

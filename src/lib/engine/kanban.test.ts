@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { statusColumn, isAttention, KANBAN_COLUMNS, type KanbanColumn } from "./kanban";
+import { statusColumn, isAttention, rollupCounts, groupIntoLanes, KANBAN_COLUMNS, type KanbanColumn } from "./kanban";
 import type { Status } from "./status";
 
 // All statuses must be covered: Draft | Approved | InProgress | InReview | Done | Failed | Blocked
@@ -110,5 +110,111 @@ describe("isAttention", () => {
   it("covers every Status — only Failed and Blocked are attention", () => {
     const attentionStatuses = ALL_STATUSES.filter((s) => isAttention(s));
     expect(attentionStatuses.sort()).toEqual(["Blocked", "Failed"]);
+  });
+});
+
+// ── rollupCounts ──────────────────────────────────────────────────────────────
+
+describe("rollupCounts", () => {
+  it("returns all zeros for an empty array", () => {
+    expect(rollupCounts([])).toEqual({ backlog: 0, inProgress: 0, qa: 0, completed: 0 });
+  });
+
+  it("counts a single Done card as completed", () => {
+    expect(rollupCounts([{ status: "Done" }])).toEqual({ backlog: 0, inProgress: 0, qa: 0, completed: 1 });
+  });
+
+  it("counts InProgress correctly", () => {
+    expect(rollupCounts([{ status: "InProgress" }])).toEqual({ backlog: 0, inProgress: 1, qa: 0, completed: 0 });
+  });
+
+  it("counts InReview as qa", () => {
+    expect(rollupCounts([{ status: "InReview" }])).toEqual({ backlog: 0, inProgress: 0, qa: 1, completed: 0 });
+  });
+
+  it("counts Draft/Approved/Failed/Blocked as backlog", () => {
+    const cards = (["Draft", "Approved", "Failed", "Blocked"] as Status[]).map((s) => ({ status: s }));
+    expect(rollupCounts(cards)).toEqual({ backlog: 4, inProgress: 0, qa: 0, completed: 0 });
+  });
+
+  it("counts mixed statuses correctly", () => {
+    const cards = [
+      { status: "Done" as Status },
+      { status: "Done" as Status },
+      { status: "InProgress" as Status },
+      { status: "InReview" as Status },
+      { status: "Draft" as Status },
+      { status: "Approved" as Status },
+      { status: "Failed" as Status },
+    ];
+    expect(rollupCounts(cards)).toEqual({ backlog: 3, inProgress: 1, qa: 1, completed: 2 });
+  });
+});
+
+// ── groupIntoLanes ────────────────────────────────────────────────────────────
+
+describe("groupIntoLanes", () => {
+  const epics = [{ number: 1 }, { number: 2 }, { number: 3 }];
+
+  it("returns empty buckets and no otherCards when cards is empty", () => {
+    const { epicBuckets, otherCards } = groupIntoLanes([], epics);
+    expect(otherCards).toEqual([]);
+    expect(epicBuckets.get(1)).toEqual([]);
+    expect(epicBuckets.get(2)).toEqual([]);
+    expect(epicBuckets.get(3)).toEqual([]);
+  });
+
+  it("places a card with a matching epic into the correct bucket", () => {
+    const cards = [{ id: "1.1", epic: 1, story: 1 }];
+    const { epicBuckets, otherCards } = groupIntoLanes(cards, epics);
+    expect(epicBuckets.get(1)).toEqual([{ id: "1.1", epic: 1, story: 1 }]);
+    expect(epicBuckets.get(2)).toEqual([]);
+    expect(otherCards).toEqual([]);
+  });
+
+  it("places cards with unmatched epic into otherCards", () => {
+    const cards = [{ id: "9.1", epic: 9, story: 1 }];
+    const { epicBuckets, otherCards } = groupIntoLanes(cards, epics);
+    expect(otherCards).toEqual([{ id: "9.1", epic: 9, story: 1 }]);
+    expect(epicBuckets.get(1)).toEqual([]);
+  });
+
+  it("splits correctly when some cards match and some do not", () => {
+    const cards = [
+      { id: "1.1", epic: 1, story: 1 },
+      { id: "2.1", epic: 2, story: 1 },
+      { id: "9.1", epic: 9, story: 1 },
+      { id: "8.1", epic: 8, story: 1 },
+    ];
+    const { epicBuckets, otherCards } = groupIntoLanes(cards, epics);
+    expect(epicBuckets.get(1)).toHaveLength(1);
+    expect(epicBuckets.get(2)).toHaveLength(1);
+    expect(epicBuckets.get(3)).toHaveLength(0);
+    expect(otherCards).toHaveLength(2);
+    // No card is dropped or duplicated
+    const allCards = [...epicBuckets.get(1)!, ...epicBuckets.get(2)!, ...epicBuckets.get(3)!, ...otherCards];
+    expect(allCards).toHaveLength(4);
+    expect(allCards.map((c) => c.id).sort()).toEqual(["1.1", "2.1", "8.1", "9.1"]);
+  });
+
+  it("handles no epics — all cards go to otherCards", () => {
+    const cards = [{ id: "1.1", epic: 1, story: 1 }, { id: "2.1", epic: 2, story: 1 }];
+    const { epicBuckets, otherCards } = groupIntoLanes(cards, []);
+    expect(epicBuckets.size).toBe(0);
+    expect(otherCards).toHaveLength(2);
+  });
+
+  it("does not duplicate cards when multiple cards share an epic", () => {
+    const cards = [
+      { id: "1.1", epic: 1, story: 1 },
+      { id: "1.2", epic: 1, story: 2 },
+      { id: "1.3", epic: 1, story: 3 },
+    ];
+    const { epicBuckets, otherCards } = groupIntoLanes(cards, epics);
+    expect(epicBuckets.get(1)).toHaveLength(3);
+    expect(otherCards).toHaveLength(0);
+    // Total count intact
+    const total = [...epicBuckets.values()].reduce((s, a) => s + a.length, 0) + otherCards.length;
+    expect(total).toBe(3);
   });
 });

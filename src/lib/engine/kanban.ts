@@ -52,3 +52,51 @@ export function statusColumn(status: Status): KanbanColumn {
 export function isAttention(status: Status): boolean {
   return status === "Failed" || status === "Blocked";
 }
+
+// ── Pure helpers for the board UI ─────────────────────────────────────────────
+
+export interface RollupCounts {
+  backlog: number;
+  inProgress: number;
+  qa: number;
+  completed: number;
+}
+
+/**
+ * Roll up per-column counts from a set of cards.
+ * Used for per-epic pills and the fleet-wide header strip.
+ */
+export function rollupCounts(cards: { status: Status }[]): RollupCounts {
+  const counts: RollupCounts = { backlog: 0, inProgress: 0, qa: 0, completed: 0 };
+  for (const card of cards) {
+    counts[statusColumn(card.status)]++;
+  }
+  return counts;
+}
+
+/**
+ * Group story cards into per-epic buckets plus an "other" bucket for cards
+ * whose epic number has no matching entry in `epics`.
+ *
+ * Guarantees: no card is dropped, no card is duplicated. Cards are placed in
+ * exactly one bucket (named epic bucket if matched, "other" if not).
+ */
+export function groupIntoLanes<
+  C extends { epic: number },
+  E extends { number: number },
+>(
+  cards: C[],
+  epics: E[]
+): { epicBuckets: Map<number, C[]>; otherCards: C[] } {
+  const epicNumbers = new Set(epics.map((e) => e.number));
+  const epicBuckets = new Map<number, C[]>(epics.map((e) => [e.number, []]));
+  const otherCards: C[] = [];
+  for (const card of cards) {
+    if (epicNumbers.has(card.epic)) {
+      epicBuckets.get(card.epic)!.push(card);
+    } else {
+      otherCards.push(card);
+    }
+  }
+  return { epicBuckets, otherCards };
+}
