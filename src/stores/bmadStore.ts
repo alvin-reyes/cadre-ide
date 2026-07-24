@@ -17,6 +17,8 @@ import {
   updateSlice,
   type BmadSlice,
 } from "../lib/engine/projectSlices";
+import { useTrackerStore } from "./trackerStore";
+import { useCadre } from "../cadre/useCadre";
 
 /**
  * bmadStore: the live Fleet board. Opens a project, hydrates the board from the
@@ -142,6 +144,17 @@ export const useBmadStore = create<BmadState>((set, get) => {
       pushRoot(root, applyStatus(prev, epic, story, status));
       try {
         await invoke("story_set_status", { root, epic, story, status });
+        // Best-effort push to the GitHub tracker (no-op unless enabled for this project).
+        const tracker = useTrackerStore.getState();
+        if (tracker.config.enabled && tracker.config.repo) {
+          const st = get().projects[root]?.stories?.find((s) => s.epic === epic && s.story === story);
+          const title = st?.title ?? `Story ${epic}.${story}`;
+          // Compute the frozen verification command for this project so the Done
+          // comment cites the exact command that passed (Finding 2).
+          const verification = useCadre.getState().projects[root]?.verification;
+          const verifyCmd = (verification ?? []).filter(Boolean).join(" && ") || undefined;
+          void tracker.syncStory(root, { epic, story, title }, status, verifyCmd).catch(() => {});
+        }
       } catch (e) {
         // Rejected (e.g. an illegal edge): roll back so the board doesn't drift
         // ahead of the on-disk state that never changed.

@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
-import { KeyRound, Cpu, Eye, EyeOff, Check } from "lucide-react";
+import { KeyRound, Cpu, Eye, EyeOff, Check, GitBranch } from "lucide-react";
 import { Modal } from "./components/Modal";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre } from "./useCadre";
 import { PROVIDERS } from "../lib/engine/providers";
 import { secretGet, secretSet, isTauri } from "../lib/secrets";
 import { RepoSection } from "./RepoRegistry";
+import { useTrackerStore } from "../stores/trackerStore";
+import { useBmadStore } from "../stores/bmadStore";
 
 /**
  * Settings — the CTO's control panel for API keys and models. Keys are written to
@@ -182,6 +184,9 @@ export function Settings({ onClose }: { onClose: () => void }) {
         {/* Repos */}
         <RepoSection />
 
+        {/* GitHub tracker */}
+        <GitTrackerSection />
+
         <div style={{ height: "var(--c-space-4)" }} />
     </Modal>
   );
@@ -221,6 +226,133 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
       </div>
       {children}
     </div>
+  );
+}
+
+/**
+ * GitHub tracker settings section. Persists config to .cadre/tracker.json.
+ * One-way push (Cadre → GitHub Issues) via the gh CLI.
+ */
+function GitTrackerSection() {
+  const projectRoot = useBmadStore((s) => s.projectRoot);
+  const stories = useBmadStore((s) => s.stories);
+  const config = useTrackerStore((s) => s.config);
+  const ghReady = useTrackerStore((s) => s.ghReady);
+  const load = useTrackerStore((s) => s.load);
+  const setEnabled = useTrackerStore((s) => s.setEnabled);
+  const setRepo = useTrackerStore((s) => s.setRepo);
+  const checkGh = useTrackerStore((s) => s.checkGh);
+  const syncAll = useTrackerStore((s) => s.syncAll);
+  const [syncing, setSyncing] = useState(false);
+
+  const root = projectRoot;
+
+  useEffect(() => {
+    if (!root) return;
+    void load(root);
+    void checkGh(root);
+  }, [root, load, checkGh]);
+
+  async function handleSyncAll() {
+    if (!root) return;
+    setSyncing(true);
+    try {
+      // Read the frozen verification command once for this root and pass it to
+      // every story sync so the Done comment cites the actual command (Finding 2).
+      const verification = useCadre.getState().projects[root]?.verification;
+      const verifyCmd = (verification ?? []).filter(Boolean).join(" && ") || undefined;
+      await syncAll(
+        root,
+        stories.map((s) => ({
+          story: { epic: s.epic, story: s.story, title: s.title ?? `Story ${s.epic}.${s.story}` },
+          status: s.status,
+          verifyCmd,
+        }))
+      );
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  const canSyncAll = config.enabled && !!config.repo && !!ghReady && !!root;
+
+  return (
+    <Section icon={GitBranch} title="GitHub tracker" subtitle="Push engine-verified status to GitHub Issues (one-way).">
+      {!root ? (
+        <div style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text-muted)" }}>
+          Open a project to configure the GitHub tracker.
+        </div>
+      ) : (
+        <>
+          {/* Enable toggle */}
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 9, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={config.enabled}
+              onChange={(e) => void setEnabled(root, e.target.checked)}
+              style={{ marginTop: 3, accentColor: "var(--c-accent)", cursor: "pointer", flexShrink: 0 }}
+            />
+            <span>
+              <span style={{ fontSize: "var(--c-fs-sm)", fontWeight: 550 as const, color: "var(--c-text-secondary)" }}>Enable GitHub tracker</span>
+              <span style={{ display: "block", fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)" }}>
+                When enabled, status transitions are pushed to GitHub Issues after each engine write.
+              </span>
+            </span>
+          </label>
+
+          {/* Repo field */}
+          <Field label="Repository" hint="owner/repo — auto-detected from your git remote">
+            <input
+              value={config.repo}
+              onChange={(e) => void setRepo(root, e.target.value)}
+              placeholder="owner/repo"
+              style={inputStyle}
+            />
+          </Field>
+
+          {/* gh auth status */}
+          <div style={{ fontSize: "var(--c-fs-xs)" }}>
+            {ghReady === null ? (
+              <span style={{ color: "var(--c-text-muted)" }}>Checking gh auth…</span>
+            ) : ghReady ? (
+              <span style={{ color: "var(--c-success)" }}>gh authenticated ✓</span>
+            ) : (
+              <span style={{ color: "var(--c-danger)" }}>
+                Run <code style={{ fontFamily: "var(--c-font-mono)" }}>gh auth login</code> in your terminal
+              </span>
+            )}
+          </div>
+
+          {/* Sync all button */}
+          <div>
+            <button
+              onClick={handleSyncAll}
+              disabled={!canSyncAll || syncing}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                fontSize: "var(--c-fs-sm)",
+                fontWeight: 550 as const,
+                padding: "5px 14px",
+                borderRadius: "var(--c-radius)",
+                background: canSyncAll && !syncing ? "var(--c-accent)" : "var(--c-surface-3)",
+                color: canSyncAll && !syncing ? "var(--c-on-accent)" : "var(--c-text-muted)",
+                border: "none",
+                cursor: canSyncAll && !syncing ? "pointer" : "default",
+              }}
+            >
+              {syncing ? "Syncing…" : "Sync all stories"}
+            </button>
+            {!config.enabled && (
+              <span style={{ marginLeft: 10, fontSize: "var(--c-fs-xs)", color: "var(--c-text-faint)" }}>
+                Enable the tracker first.
+              </span>
+            )}
+          </div>
+        </>
+      )}
+    </Section>
   );
 }
 
