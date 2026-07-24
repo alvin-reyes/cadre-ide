@@ -71,3 +71,85 @@ export async function documentProject(
   const content = await deps.readFile(outAbs).catch(() => "");
   return { path: BROWNFIELD_DOC_PATH, passes, content };
 }
+
+// ---------------------------------------------------------------------------
+// Multi-repo orchestrator
+// ---------------------------------------------------------------------------
+
+/** A repo whose path has already been resolved to an absolute path. */
+export interface OnboardRepo {
+  id: string;
+  name: string;
+  /** Absolute path to the repo root. */
+  path: string;
+}
+
+export interface DocumentAllInput {
+  repos: OnboardRepo[];
+  passes?: number;
+  model?: string;
+  env?: Record<string, string>;
+}
+
+export interface DocumentAllDeps extends DocumentProjectDeps {
+  /** Auto-detect the verify command for a repo root. Returns null when unknown. */
+  detectVerify: (repoRoot: string) => Promise<string | null>;
+  /** Called before each repo is analyzed; useful for progress UI. */
+  onRepoStart?: (repo: OnboardRepo, index: number, total: number) => void;
+}
+
+export interface RepoAnalysis {
+  id: string;
+  name: string;
+  path: string;
+  analysis: string;
+  detectedVerify: string | null;
+}
+
+/**
+ * Analyze each registered repo by running `documentProject` per repo (which writes
+ * that repo's own `docs/brownfield-analysis.md`) and detecting its verify command.
+ * FAIL-SOFT: a repo that throws is captured as `{ analysis: "", detectedVerify: null }`
+ * so a single bad repo doesn't abort the whole run.
+ */
+export async function documentAllRepos(
+  deps: DocumentAllDeps,
+  input: DocumentAllInput
+): Promise<RepoAnalysis[]> {
+  const total = input.repos.length;
+  const results: RepoAnalysis[] = [];
+
+  for (let i = 0; i < total; i++) {
+    const repo = input.repos[i];
+    deps.onRepoStart?.(repo, i, total);
+    // Detect the verify command independently of the analysis agent: it only reads
+    // manifests, so a failing/expensive analysis pass shouldn't discard a good
+    // detection. FAIL-SOFT: an errored analysis is captured as "" but keeps its verify.
+    const verify = await deps.detectVerify(repo.path).catch(() => null);
+    let analysis = "";
+    try {
+      const res = await documentProject(deps, { root: repo.path, passes: input.passes, model: input.model, env: input.env });
+      analysis = res.content;
+    } catch {
+      /* analysis failed for this repo — keep going with an empty brief */
+    }
+    results.push({ id: repo.id, name: repo.name, path: repo.path, analysis, detectedVerify: verify });
+  }
+
+  return results;
+}
+
+/**
+ * Compose a single markdown string from per-repo analyses.
+ * - Single repo: returns its analysis verbatim (byte-identical to today's single-repo behavior).
+ * - Multiple repos: joins under a `# Project analysis (N repos)` header with per-repo `## Repo:` sections.
+ */
+export function composeAggregateAnalysis(analyses: RepoAnalysis[]): string {
+  if (analyses.length === 1) {
+    return analyses[0].analysis;
+  }
+  const sections = analyses.map(
+    (a) => `## Repo: ${a.name} (\`${a.path}\`)\n\n${a.analysis}`
+  );
+  return `# Project analysis (${analyses.length} repos)\n\n${sections.join("\n\n")}`;
+}

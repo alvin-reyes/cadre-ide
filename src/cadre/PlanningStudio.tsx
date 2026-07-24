@@ -129,6 +129,7 @@ export function PlanningStudio() {
   const uxSpec = useCadre((s) => s.uxSpec);
   const mockupHtml = useCadre((s) => s.mockupHtml);
   const projectContext = useCadre((s) => s.projectContext);
+  const analyzingBrownfield = useCadre((s) => s.analyzingBrownfield);
   const documentProject = useCadre((s) => s.documentProject);
   const isBrownfield = useCadre((s) => s.isBrownfield);
   const brownfieldLog = useCadre((s) => s.logs["brownfield"] ?? "");
@@ -447,7 +448,13 @@ export function PlanningStudio() {
       : id === "techwriter" ? TECHWRITER_SYSTEM_PROMPT
       : id === "devops" ? DEVOPS_SYSTEM_PROMPT
       : DESIGN_SYSTEM_PROMPT;
-    return prd.trim() ? `${base}\n\n## PRD (context)\n${prd}` : base;
+    let p = prd.trim() ? `${base}\n\n## PRD (context)\n${prd}` : base;
+    // Brownfield: every downstream specialist must design/plan to fit what already
+    // exists, not just the PRD — the same as-is analysis the PM is grounded in.
+    if (projectContext.trim()) {
+      p += `\n\n## Existing project analysis (this is a brownfield project — build on what exists)\n${projectContext}`;
+    }
+    return p;
   }
 
   // `override` lets a quick-reply chip send its text directly.
@@ -662,7 +669,7 @@ export function PlanningStudio() {
           <div ref={scrollRef} style={{ flex: 1, overflow: "auto", padding: "var(--c-space-4)", display: "flex", flexDirection: "column" }}>
             {brownfieldOnboarding ? (
               <BrownfieldOnboard
-                analyzing={!!busy}
+                analyzing={analyzingBrownfield}
                 output={brownfieldLog}
                 onAnalyze={() => documentProject()}
                 disabled={!planAuth.ready || !!busy}

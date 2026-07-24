@@ -10,7 +10,7 @@ import { ARCHITECT_SYSTEM_PROMPT, DESIGN_SYSTEM_PROMPT } from "../lib/planning/p
 import { generateStory } from "../lib/planning/generateStory";
 import { runApprovedStory } from "../lib/engine/orchestrator";
 import { reviewStory as reviewStoryFleet, aggregateReviews, type LensReview } from "../lib/engine/reviewFleet";
-import { documentProject as documentProjectFleet, BROWNFIELD_DOC_PATH } from "../lib/engine/brownfield";
+import { documentAllRepos, composeAggregateAnalysis, BROWNFIELD_DOC_PATH } from "../lib/engine/brownfield";
 import { CODE_REVIEW_LENSES } from "../lib/planning/review";
 import { tauriOrchestratorDeps, tauriReviewFleetDeps, tauriResolveConflictDeps } from "../lib/engine/tauriDeps";
 import { composeDispatchPrompt, storyBranch, type AlwaysFile } from "../lib/engine/dispatch";
@@ -21,6 +21,7 @@ import { appendSessionEntry, SESSION_LOG_PATH } from "../lib/engine/sessionLog";
 import { resolveStorySession } from "../lib/engine/agentSessions";
 import { nextStoryNumber, parseStoryFiles, parseStoryRepo, shardStory } from "../lib/engine/shard";
 import { parseRepos, resolveRepoPath, findRepo } from "../lib/engine/repos";
+import { useRepos } from "../stores/reposStore";
 import { CREATE_BACKLOG_TOOL, backlogFromTool } from "../lib/planning/storyTool";
 import { scheduleParallel } from "../lib/engine/schedule";
 import { detectVerifyCommand } from "../lib/engine/detectVerify";
@@ -111,6 +112,10 @@ const OPS_PATH = "docs/ops.md";
  *  log is append-only and unbounded; newest ADRs win, the rest are summarized). */
 const ADR_INJECT_BUDGET_BYTES = 24_000;
 
+/** Byte budget for the brownfield analysis inlined into a dispatched agent's prompt
+ *  (a multi-repo aggregate can be large; the full doc stays on disk). */
+const BROWNFIELD_INJECT_BUDGET_BYTES = 16_000;
+
 interface CadreState {
   // --- per-project map (Task 5) ---
   /** every open project's fleet state, keyed by root */
@@ -136,6 +141,8 @@ interface CadreState {
   projectContext: string;
   /** true when the opened project has existing code but no Cadre plan yet */
   isBrownfield: boolean;
+  /** true only while the brownfield analysis agent runs (drives the onboard spinner) */
+  analyzingBrownfield: boolean;
   /** verify command auto-detected from the project's manifests ("" = none) */
   detectedVerify: string;
   /** the frozen verification command(s) once the plan is approved */
@@ -327,6 +334,18 @@ async function loadSharedContext(root: string): Promise<AlwaysFile[]> {
   } catch {
     /* no decisions yet */
   }
+  // Brownfield: the as-is analysis (the structured architecture/stack/risk summary)
+  // so a Dev agent working existing code sees the high-level map, not just its story.
+  // Bound it — a multi-repo aggregate can be large and rides every agent's argv.
+  const brownfield = await invoke<string>("read_file", { path: `${root}/${BROWNFIELD_DOC_PATH}` }).catch(() => "");
+  if (brownfield.trim()) {
+    const capped =
+      brownfield.length > BROWNFIELD_INJECT_BUDGET_BYTES
+        ? brownfield.slice(0, BROWNFIELD_INJECT_BUDGET_BYTES) +
+          `\n\n…(analysis truncated for prompt size — read \`${BROWNFIELD_DOC_PATH}\` in full for the complete picture)`
+        : brownfield;
+    files.push({ path: BROWNFIELD_DOC_PATH, content: capped });
+  }
   return files;
 }
 
@@ -410,6 +429,7 @@ export const useCadre = create<CadreState>((set, get) => {
   poValidation: "",
   projectContext: "",
   isBrownfield: false,
+  analyzingBrownfield: false,
   detectedVerify: "",
   verification: [],
   needsReplan: false,
@@ -545,9 +565,13 @@ export const useCadre = create<CadreState>((set, get) => {
       const { prd, architecture, uxSpec } = get();
       const ids = useBmadStore.getState().stories.map((s) => s.id);
       const story = nextStoryNumber(epic, ids);
+      const brownfield = get().projectContext;
       const planContext =
         `# PRD\n\n${prd}\n\n---\n\n# Architecture\n\n${architecture}` +
-        (uxSpec.trim() ? `\n\n---\n\n# UX / Design Spec\n\n${uxSpec}` : "");
+        (uxSpec.trim() ? `\n\n---\n\n# UX / Design Spec\n\n${uxSpec}` : "") +
+        // Brownfield: the SM must slice stories against the REAL module layout,
+        // file paths, and patterns — not invent a greenfield structure.
+        (brownfield.trim() ? `\n\n---\n\n# Existing project analysis (brownfield)\n\n${brownfield}` : "");
 
       await generateStory(
         {
@@ -582,9 +606,13 @@ export const useCadre = create<CadreState>((set, get) => {
       const { prd, architecture, uxSpec } = get();
       const ids = useBmadStore.getState().stories.map((s) => s.id);
       const start = nextStoryNumber(epic, ids);
+      const brownfield = get().projectContext;
       const planContext =
         `# PRD\n\n${prd}\n\n---\n\n# Architecture\n\n${architecture}` +
-        (uxSpec.trim() ? `\n\n---\n\n# UX / Design Spec\n\n${uxSpec}` : "");
+        (uxSpec.trim() ? `\n\n---\n\n# UX / Design Spec\n\n${uxSpec}` : "") +
+        // Brownfield: the SM must slice stories against the REAL module layout,
+        // file paths, and patterns — not invent a greenfield structure.
+        (brownfield.trim() ? `\n\n---\n\n# Existing project analysis (brownfield)\n\n${brownfield}` : "");
 
       const toolInput = await callTool({
         apiKey: auth.apiKey,
@@ -941,7 +969,7 @@ export const useCadre = create<CadreState>((set, get) => {
       reportError("document project", e, { toastMessage: "Project analysis failed" });
       return;
     }
-    patchRoot(root, { busy: "Analyzing the existing project (2 passes)…", error: null });
+    patchRoot(root, { busy: "Analyzing the existing project (2 passes)…", analyzingBrownfield: true, error: null });
     const onOutput = (chunk: string) => {
       aiLog("analysis", chunk);
       const prev = get().projects[root]?.logs?.["brownfield"] ?? "";
@@ -953,22 +981,57 @@ export const useCadre = create<CadreState>((set, get) => {
       const provider = getProvider(get().fleetProvider);
       const { env, model } = await resolveFleetAuth(provider);
 
-      const res = await documentProjectFleet(tauriReviewFleetDeps(onOutput), {
-        root,
-        passes: 2,
-        model,
-        env,
-      });
-      // Ground the PM in the existing project (read back what the agent wrote).
-      const content =
-        res.content ||
-        (await invoke<string>("read_file", { path: `${root}/${BROWNFIELD_DOC_PATH}` }).catch(() => ""));
-      // Auto-detect the project's real test command to pre-fill sign-off later.
-      const detectedVerify = await detectProjectVerify(root).catch(() => "");
-      patchRoot(root, { projectContext: content, isBrownfield: false, detectedVerify, busy: null });
+      // Read the manifest (tolerant — missing cadre.json defaults to single root repo).
+      const manifestJson = await readManifest(root);
+      const repoRefs = parseRepos(manifestJson);
+      // Resolve each repo's path to an absolute path for the orchestrator.
+      const repos = repoRefs.map((r) => ({
+        id: r.id,
+        name: r.name,
+        path: resolveRepoPath(root, r.path),
+      }));
+
+      const baseDeps = tauriReviewFleetDeps(onOutput);
+      const results = await documentAllRepos(
+        {
+          ...baseDeps,
+          detectVerify: (repoRoot) => detectProjectVerify(repoRoot).then((v) => v || null),
+          onRepoStart: (repo, i, total) => {
+            onOutput(`\n\n=== Analyzing ${repo.name} (${i + 1}/${total}) ===\n`);
+          },
+        },
+        { repos, passes: 2, model, env }
+      );
+
+      // Compose aggregate analysis (single repo → verbatim; multi → sectioned).
+      const projectContext = composeAggregateAnalysis(results);
+      // Single repo: documentAllRepos already wrote the (identical, verbatim) brief to
+      // ${root}/docs/brownfield-analysis.md — don't rewrite. Multi repo: write the
+      // sectioned aggregate to the project home so hydrate + loadSharedContext read the
+      // whole-project picture. (Each external repo keeps its own brief at its own path;
+      // if one repo IS the root, the home doc is intentionally the aggregate.)
+      if (results.length > 1) {
+        await invoke("write_text_file", {
+          path: `${root}/${BROWNFIELD_DOC_PATH}`,
+          content: projectContext,
+        }).catch(() => {});
+      }
+
+      // Persist detected verify commands to cadre.json via reposStore.
+      for (const result of results) {
+        if (result.detectedVerify) {
+          await useRepos.getState().setVerify(root, result.id, result.detectedVerify).catch(() => {});
+        }
+      }
+
+      // Pre-fill the single detectedVerify field from the default/first repo
+      // so the single-repo sign-off verify field still pre-fills as before.
+      const firstVerify = results[0]?.detectedVerify ?? "";
+
+      patchRoot(root, { projectContext, isBrownfield: false, analyzingBrownfield: false, detectedVerify: firstVerify, busy: null });
       toast("Project analyzed — the PM now has context", "success");
     } catch (e) {
-      patchRoot(root, { error: String(e), busy: null });
+      patchRoot(root, { error: String(e), analyzingBrownfield: false, busy: null });
       reportError("document project", e, { toastMessage: "Project analysis failed" });
     }
   },

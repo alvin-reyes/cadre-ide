@@ -31,6 +31,9 @@ export interface CadreSlice {
   poValidation: string;
   projectContext: string;
   isBrownfield: boolean;
+  /** True only while the brownfield analysis agent is running (drives the onboard
+   *  spinner) — distinct from `busy`, which any async action sets. */
+  analyzingBrownfield: boolean;
   detectedVerify: string;
   verification: string[];
   needsReplan: boolean;
@@ -56,6 +59,7 @@ export function emptyCadreSlice(): CadreSlice {
     poValidation: "",
     projectContext: "",
     isBrownfield: false,
+    analyzingBrownfield: false,
     detectedVerify: "",
     verification: [],
     needsReplan: false,
@@ -100,6 +104,7 @@ export function mirrorCadre(
     poValidation: s.poValidation,
     projectContext: s.projectContext,
     isBrownfield: s.isBrownfield,
+    analyzingBrownfield: s.analyzingBrownfield,
     detectedVerify: s.detectedVerify,
     verification: s.verification,
     needsReplan: s.needsReplan,
