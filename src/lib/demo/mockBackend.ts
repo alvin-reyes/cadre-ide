@@ -14,6 +14,8 @@ import type { MockFs } from "./mockFs";
 import type { PlanApproval } from "../engine/planApproval";
 import type { Status } from "../engine/status";
 import { canTransition } from "../engine/transitions";
+import { buildTranscript, streamTranscript } from "./demoContent";
+import type { PtyEvent } from "./demoContent";
 
 // ─── Callback registry (for transformCallback / unregisterCallback) ────────────
 
@@ -34,10 +36,16 @@ function convertFileSrc(path: string): string {
   return path;
 }
 
-// ─── PTY stub state (Task 2 will expand) ──────────────────────────────────────
+// ─── PTY state ────────────────────────────────────────────────────────────────
 
 let ptySeq = 0;
 const ptyCwds = new Map<number, string>();
+
+interface PtyHandle {
+  stop: () => void;
+  ch: { onmessage: (e: PtyEvent) => void };
+}
+const ptyHandles = new Map<number, PtyHandle>();
 
 // ─── Secrets store (in-memory, round-trips Settings) ─────────────────────────
 
@@ -299,34 +307,57 @@ function makeInvoke(fs: MockFs) {
         return "/demo/cadre-demo-project";
       }
 
-      // ── PTY stubs (TODO: Task 2 fills these in) ───────────────────────────
+      // ── PTY (mock build agent) ────────────────────────────────────────────
 
       case "create_pty": {
-        // TODO(Task 2): stream a realistic build transcript via the Channel.
         const id = ++ptySeq;
         const cwd = (args.cwd as string | undefined) ?? "";
         ptyCwds.set(id, cwd);
+
+        // Grab the live Channel instance the caller passed in args.onEvent.
+        // makeSpawnAgent wires channel.onmessage before calling create_pty, so
+        // we call ch.onmessage(event) directly — no need to re-route through
+        // Tauri's callback machinery.
+        const ch = args.onEvent as { onmessage: (e: PtyEvent) => void };
+
+        // Derive a story label from the cwd path if parseable (last segment).
+        const cwdLabel = cwd ? basename(cwd) : undefined;
+        const lines = buildTranscript(cwdLabel);
+
+        // Return the id immediately (Promise already resolved), THEN start the
+        // stream. This mirrors the real flow where create_pty resolves with the
+        // pid before any output arrives, giving makeSpawnAgent time to call
+        // exits.register(id) + idReady.resolve(id).
+        Promise.resolve().then(() => {
+          const handle = streamTranscript((e) => ch.onmessage(e), lines);
+          ptyHandles.set(id, { stop: handle.stop, ch });
+        });
+
         return id;
       }
 
       case "write_pty": {
-        // TODO(Task 2): feed input to the mock agent.
+        // No-op: the mock agent drives its own output.
         return null;
       }
 
       case "resize_pty": {
-        // TODO(Task 2): resize the mock terminal.
+        // No-op: terminal size is irrelevant in the mock.
         return null;
       }
 
       case "reattach_pty": {
-        // TODO(Task 2): reconnect to an existing mock PTY session.
+        // No-op: sessions are not persisted in demo mode.
         return null;
       }
 
       case "kill_pty": {
-        // TODO(Task 2): cancel the active PTY transcript timer and emit exit.
         const id = args.id as number;
+        const handle = ptyHandles.get(id);
+        if (handle) {
+          handle.stop(); // cancels timers; emits exit 143 if still running
+          ptyHandles.delete(id);
+        }
         ptyCwds.delete(id);
         return null;
       }
