@@ -109,12 +109,22 @@ export function OrchestratorChat() {
         return a;
       });
 
+    // The useCadre actions swallow their own errors (catch → reportError → set `error`)
+    // and resolve normally. So the copilot doesn't falsely claim success, run each
+    // action through a guard that clears `error` first and rethrows if the action set
+    // it — turning a silent store failure into an `ok:false` tool outcome the model sees.
+    const runAction = async (fn: () => Promise<void>) => {
+      useCadre.setState({ error: null });
+      await fn();
+      const err = useCadre.getState().error;
+      if (err) throw new Error(err);
+    };
     const actions: OrchestratorActions = {
-      shardStory: (e) => useCadre.getState().shardNextStory(e),
-      shardBacklog: (e) => useCadre.getState().shardBacklog(e),
-      approveStory: (e, s) => useCadre.getState().approveStory(e, s),
-      dispatchStory: (e, s) => useCadre.getState().dispatchStory(e, s),
-      dispatchReady: () => useCadre.getState().dispatchReady(),
+      shardStory: (e) => runAction(() => useCadre.getState().shardNextStory(e)),
+      shardBacklog: (e) => runAction(() => useCadre.getState().shardBacklog(e)),
+      approveStory: (e, s) => runAction(() => useCadre.getState().approveStory(e, s)),
+      dispatchStory: (e, s) => runAction(() => useCadre.getState().dispatchStory(e, s)),
+      dispatchReady: () => runAction(() => useCadre.getState().dispatchReady()),
     };
 
     const sessionDeps = root
