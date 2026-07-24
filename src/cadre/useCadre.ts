@@ -112,6 +112,10 @@ const OPS_PATH = "docs/ops.md";
  *  log is append-only and unbounded; newest ADRs win, the rest are summarized). */
 const ADR_INJECT_BUDGET_BYTES = 24_000;
 
+/** Byte budget for the brownfield analysis inlined into a dispatched agent's prompt
+ *  (a multi-repo aggregate can be large; the full doc stays on disk). */
+const BROWNFIELD_INJECT_BUDGET_BYTES = 16_000;
+
 interface CadreState {
   // --- per-project map (Task 5) ---
   /** every open project's fleet state, keyed by root */
@@ -332,8 +336,16 @@ async function loadSharedContext(root: string): Promise<AlwaysFile[]> {
   }
   // Brownfield: the as-is analysis (the structured architecture/stack/risk summary)
   // so a Dev agent working existing code sees the high-level map, not just its story.
+  // Bound it — a multi-repo aggregate can be large and rides every agent's argv.
   const brownfield = await invoke<string>("read_file", { path: `${root}/${BROWNFIELD_DOC_PATH}` }).catch(() => "");
-  if (brownfield.trim()) files.push({ path: BROWNFIELD_DOC_PATH, content: brownfield });
+  if (brownfield.trim()) {
+    const capped =
+      brownfield.length > BROWNFIELD_INJECT_BUDGET_BYTES
+        ? brownfield.slice(0, BROWNFIELD_INJECT_BUDGET_BYTES) +
+          `\n\n…(analysis truncated for prompt size — read \`${BROWNFIELD_DOC_PATH}\` in full for the complete picture)`
+        : brownfield;
+    files.push({ path: BROWNFIELD_DOC_PATH, content: capped });
+  }
   return files;
 }
 
@@ -993,11 +1005,17 @@ export const useCadre = create<CadreState>((set, get) => {
 
       // Compose aggregate analysis (single repo → verbatim; multi → sectioned).
       const projectContext = composeAggregateAnalysis(results);
-      // Write the aggregate to the root so hydrate can restore it.
-      await invoke("write_text_file", {
-        path: `${root}/${BROWNFIELD_DOC_PATH}`,
-        content: projectContext,
-      }).catch(() => {});
+      // Single repo: documentAllRepos already wrote the (identical, verbatim) brief to
+      // ${root}/docs/brownfield-analysis.md — don't rewrite. Multi repo: write the
+      // sectioned aggregate to the project home so hydrate + loadSharedContext read the
+      // whole-project picture. (Each external repo keeps its own brief at its own path;
+      // if one repo IS the root, the home doc is intentionally the aggregate.)
+      if (results.length > 1) {
+        await invoke("write_text_file", {
+          path: `${root}/${BROWNFIELD_DOC_PATH}`,
+          content: projectContext,
+        }).catch(() => {});
+      }
 
       // Persist detected verify commands to cadre.json via reposStore.
       for (const result of results) {

@@ -165,7 +165,7 @@ describe("documentAllRepos", () => {
     expect(detectVerifyCalls).toEqual(["/proj/frontend", "/proj/backend"]);
   });
 
-  it("fail-soft: a repo that throws is captured as empty, the other repo still analyzed", async () => {
+  it("fail-soft: a repo whose analysis throws is captured as empty, the other repo still analyzed, and its verify (detected independently) survives", async () => {
     const repoA: OnboardRepo = { id: "good", name: "Good", path: "/proj/good" };
     const repoB: OnboardRepo = { id: "bad", name: "Bad", path: "/proj/bad" };
 
@@ -179,7 +179,19 @@ describe("documentAllRepos", () => {
 
     expect(results).toHaveLength(2);
     expect(results[0]).toMatchObject({ id: "good", analysis: "analysis of /proj/good", detectedVerify: "npm test" });
-    expect(results[1]).toMatchObject({ id: "bad", analysis: "", detectedVerify: null });
+    // The analysis failed but detectVerify only reads manifests, so it still succeeds.
+    expect(results[1]).toMatchObject({ id: "bad", analysis: "", detectedVerify: "npm test" });
+  });
+
+  it("composeAggregateAnalysis on all-failed multi repos emits headers without crashing", () => {
+    const empty = [
+      { id: "a", name: "A", path: "/a", analysis: "", detectedVerify: null },
+      { id: "b", name: "B", path: "/b", analysis: "", detectedVerify: null },
+    ];
+    const md = composeAggregateAnalysis(empty);
+    expect(md).toContain("# Project analysis (2 repos)");
+    expect(md).toContain("## Repo: A (`/a`)");
+    expect(md).toContain("## Repo: B (`/b`)");
   });
 });
 

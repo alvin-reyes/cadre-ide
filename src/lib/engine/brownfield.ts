@@ -122,15 +122,18 @@ export async function documentAllRepos(
   for (let i = 0; i < total; i++) {
     const repo = input.repos[i];
     deps.onRepoStart?.(repo, i, total);
+    // Detect the verify command independently of the analysis agent: it only reads
+    // manifests, so a failing/expensive analysis pass shouldn't discard a good
+    // detection. FAIL-SOFT: an errored analysis is captured as "" but keeps its verify.
+    const verify = await deps.detectVerify(repo.path).catch(() => null);
+    let analysis = "";
     try {
-      const [res, verify] = await Promise.all([
-        documentProject(deps, { root: repo.path, passes: input.passes, model: input.model, env: input.env }),
-        deps.detectVerify(repo.path),
-      ]);
-      results.push({ id: repo.id, name: repo.name, path: repo.path, analysis: res.content, detectedVerify: verify });
+      const res = await documentProject(deps, { root: repo.path, passes: input.passes, model: input.model, env: input.env });
+      analysis = res.content;
     } catch {
-      results.push({ id: repo.id, name: repo.name, path: repo.path, analysis: "", detectedVerify: null });
+      /* analysis failed for this repo — keep going with an empty brief */
     }
+    results.push({ id: repo.id, name: repo.name, path: repo.path, analysis, detectedVerify: verify });
   }
 
   return results;
