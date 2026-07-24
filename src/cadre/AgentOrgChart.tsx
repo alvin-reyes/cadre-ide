@@ -10,7 +10,7 @@
  * dispatchReady(). No drag, no status write.
  */
 
-import { Circle, Play, Network } from "lucide-react";
+import { Play, Network } from "lucide-react";
 import { useBmadStore } from "../stores/bmadStore";
 import { useCadre } from "./useCadre";
 import { stateInfo, LiveTerminal } from "./agentShared";
@@ -133,8 +133,9 @@ function AgentNode({ card }: { card: StoryCard }) {
         }}
       />
 
-      {/* The agent card */}
+      {/* The agent card — cadre-generating applied when actively working */}
       <div
+        className={card.status === "InProgress" ? "cadre-generating" : undefined}
         style={{
           background: "var(--c-surface-1)",
           border: `1.5px solid ${isInReview ? "color-mix(in srgb, var(--c-warning) 60%, var(--c-border))" : "var(--c-border-strong)"}`,
@@ -159,14 +160,13 @@ function AgentNode({ card }: { card: StoryCard }) {
             gap: "var(--c-space-1)",
           }}
         >
-          {/* Role badge */}
+          {/* Role badge — mono uppercase §5 */}
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span
+              className="cadre-label-mono"
               style={{
                 fontSize: "9px",
                 fontWeight: 700 as const,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
                 color: isInReview ? "var(--c-warning)" : "var(--c-accent)",
                 background: isInReview
                   ? "color-mix(in srgb, var(--c-warning) 15%, transparent)"
@@ -179,14 +179,10 @@ function AgentNode({ card }: { card: StoryCard }) {
               {roleLabel}
             </span>
 
-            {/* Live pulse */}
+            {/* Live pulse — brand status dot §5 */}
             {info.live && (
-              <Circle
-                size={7}
-                fill={info.color}
-                strokeWidth={0}
-                className="cadre-typing-dot"
-                style={{ color: info.color, flexShrink: 0 }}
+              <span
+                className={isInReview ? "cadre-dot cadre-dot-warning" : "cadre-dot cadre-dot-progress"}
               />
             )}
 
@@ -216,15 +212,13 @@ function AgentNode({ card }: { card: StoryCard }) {
             </span>
             {phaseChip && (
               <span
+                className="cadre-label-mono"
                 style={{
                   fontSize: "9px",
                   fontWeight: 600 as const,
-                  letterSpacing: "0.04em",
-                  textTransform: "uppercase",
                   padding: "1px 5px",
                   borderRadius: "var(--c-radius-sm)",
                   background: "var(--c-surface-3)",
-                  color: "var(--c-text-muted)",
                   whiteSpace: "nowrap",
                 }}
               >
@@ -372,8 +366,9 @@ function PoolAgentNode({
         }}
       />
 
-      {/* The agent card */}
+      {/* The agent card — cadre-generating applied when actively working */}
       <div
+        className={isWorking ? "cadre-generating" : undefined}
         style={{
           background: "var(--c-surface-1)",
           border: `1.5px solid ${borderColor}`,
@@ -399,13 +394,12 @@ function PoolAgentNode({
         >
           {/* Agent name + status */}
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            {/* Role badge */}
+            {/* Role badge — mono uppercase §5 */}
             <span
+              className="cadre-label-mono"
               style={{
                 fontSize: "9px",
                 fontWeight: 700 as const,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
                 color: isIdle ? "var(--c-text-muted)" : isVerifying ? "var(--c-warning)" : "var(--c-accent)",
                 background: isIdle
                   ? "var(--c-surface-3)"
@@ -420,14 +414,10 @@ function PoolAgentNode({
               {agentLabel(slot.agentId)}
             </span>
 
-            {/* Live pulse */}
+            {/* Live pulse — brand status dot §5 */}
             {info.live && (
-              <Circle
-                size={7}
-                fill={info.color}
-                strokeWidth={0}
-                className="cadre-typing-dot"
-                style={{ color: info.color, flexShrink: 0 }}
+              <span
+                className={isVerifying ? "cadre-dot cadre-dot-warning" : "cadre-dot cadre-dot-progress"}
               />
             )}
 
@@ -538,10 +528,11 @@ export function AgentOrgChart() {
           Live agent org-chart
         </span>
 
-        {/* Auto-execute */}
+        {/* Auto-execute — ONE primary action on this view */}
         <button
           onClick={() => void dispatchReady()}
           disabled={!canAutoExecute}
+          className={canAutoExecute ? "cadre-btn-primary" : undefined}
           title={
             preview
               ? "Open a project to auto-execute"
@@ -557,8 +548,8 @@ export function AgentOrgChart() {
             fontWeight: 550 as const,
             padding: "5px 12px",
             borderRadius: "var(--c-radius)",
-            background: canAutoExecute ? "var(--c-accent)" : "var(--c-surface-3)",
-            color: canAutoExecute ? "var(--c-on-accent)" : "var(--c-text-muted)",
+            background: canAutoExecute ? undefined : "var(--c-surface-3)",
+            color: canAutoExecute ? undefined : "var(--c-text-muted)",
             border: "none",
             cursor: canAutoExecute ? "pointer" : "default",
           }}

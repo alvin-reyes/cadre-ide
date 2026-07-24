@@ -328,10 +328,11 @@ export function SignIn({ onDone }: { onDone: () => void }) {
           )}
         </div>
 
-        {/* Continue button */}
+        {/* Continue button — ONE primary action on this screen */}
         <button
           onClick={handleContinue}
           disabled={!hasCredential || busy}
+          className={hasCredential && !saved ? "cadre-btn-primary" : undefined}
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -342,12 +343,12 @@ export function SignIn({ onDone }: { onDone: () => void }) {
             background: saved
               ? "var(--c-success-subtle)"
               : hasCredential
-              ? "var(--c-accent)"
+              ? undefined
               : "var(--c-surface-3)",
             color: saved
               ? "var(--c-success)"
               : hasCredential
-              ? "var(--c-on-accent)"
+              ? undefined
               : "var(--c-text-muted)",
             border: "none",
             fontSize: "var(--c-fs-sm)",
