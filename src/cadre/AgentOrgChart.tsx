@@ -7,21 +7,16 @@
  * as a child sub-node.
  *
  * ENGINE-OWNED INVARIANT: this view NEVER mutates story status. It only calls
- * dispatchReady() and reviewStory(). No drag, no status write.
+ * dispatchReady(). No drag, no status write.
  */
 
 import { Circle, Play, Network } from "lucide-react";
 import { useBmadStore } from "../stores/bmadStore";
 import { useCadre } from "./useCadre";
 import { stateInfo, LiveTerminal, FleetModelPicker } from "./agentShared";
-import { rollupCounts } from "../lib/engine/kanban";
+import { rollupCounts, selectRunningAgents } from "../lib/engine/kanban";
 import { FleetBoard } from "./components/FleetBoard";
 import type { StoryCard } from "../lib/engine/board";
-
-// ── Pure helper — which stories are "running" (InProgress | InReview) ─────────
-export function runningStories(cards: StoryCard[]): StoryCard[] {
-  return cards.filter((c) => c.status === "InProgress" || c.status === "InReview");
-}
 
 // ── OrchestratorNode — root card ──────────────────────────────────────────────
 function OrchestratorNode({
@@ -305,9 +300,10 @@ export function AgentOrgChart() {
   const stories = useBmadStore((s) => s.stories);
   const dispatchReady = useCadre((s) => s.dispatchReady);
   const busy = useCadre((s) => s.busy);
+  const active = useCadre((s) => s.active);
   const preview = !useBmadStore((s) => s.projectRoot);
 
-  const running = runningStories(stories);
+  const running = selectRunningAgents(stories, active);
   const counts = rollupCounts(stories);
 
   // Determine how many stories are ready-to-dispatch (Approved or Failed)
@@ -508,22 +504,6 @@ export function AgentOrgChart() {
                 justifyContent: "center",
               }}
             >
-              {/* The horizontal connector bar — sits between vertical stem and children */}
-              {running.length > 1 && (
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: "50%",
-                    right: "50%",
-                    // We'll use the pseudo approach via an inner element instead
-                    height: 1,
-                    background: "var(--c-border-strong)",
-                    // Stretch it across all children: use a wrapper approach
-                  }}
-                />
-              )}
-
               {/* Agent nodes row */}
               <div
                 style={{

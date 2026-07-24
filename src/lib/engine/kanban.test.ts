@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { statusColumn, isAttention, rollupCounts, groupIntoLanes, KANBAN_COLUMNS, type KanbanColumn } from "./kanban";
+import { statusColumn, isAttention, rollupCounts, groupIntoLanes, selectRunningAgents, KANBAN_COLUMNS, type KanbanColumn } from "./kanban";
 import type { Status } from "./status";
+import type { StoryCard } from "./board";
 
 // All statuses must be covered: Draft | Approved | InProgress | InReview | Done | Failed | Blocked
 const ALL_STATUSES: Status[] = ["Draft", "Approved", "InProgress", "InReview", "Done", "Failed", "Blocked"];
@@ -216,5 +217,62 @@ describe("groupIntoLanes", () => {
     // Total count intact
     const total = [...epicBuckets.values()].reduce((s, a) => s + a.length, 0) + otherCards.length;
     expect(total).toBe(3);
+  });
+});
+
+// ── selectRunningAgents ───────────────────────────────────────────────────────
+
+function makeCard(id: string, status: Status): StoryCard {
+  const [epic, story] = id.split(".").map(Number);
+  return { id, epic, story, status };
+}
+
+describe("selectRunningAgents", () => {
+  it("returns empty array when stories is empty", () => {
+    expect(selectRunningAgents([], {})).toEqual([]);
+  });
+
+  it("includes InProgress stories", () => {
+    const cards = [makeCard("1.1", "InProgress")];
+    expect(selectRunningAgents(cards, {})).toHaveLength(1);
+  });
+
+  it("includes InReview stories", () => {
+    const cards = [makeCard("1.2", "InReview")];
+    expect(selectRunningAgents(cards, {})).toHaveLength(1);
+  });
+
+  it("includes Approved story when active[id] is true (dispatch in-flight)", () => {
+    const cards = [makeCard("1.3", "Approved")];
+    expect(selectRunningAgents(cards, { "1.3": true })).toHaveLength(1);
+  });
+
+  it("excludes Approved story when active[id] is not set", () => {
+    const cards = [makeCard("1.4", "Approved")];
+    expect(selectRunningAgents(cards, {})).toHaveLength(0);
+  });
+
+  it("excludes Draft story when not active", () => {
+    const cards = [makeCard("1.5", "Draft")];
+    expect(selectRunningAgents(cards, {})).toHaveLength(0);
+  });
+
+  it("excludes Done story when not active", () => {
+    const cards = [makeCard("1.6", "Done")];
+    expect(selectRunningAgents(cards, {})).toHaveLength(0);
+  });
+
+  it("returns only running/active stories from a mixed set", () => {
+    const cards = [
+      makeCard("1.1", "InProgress"),
+      makeCard("1.2", "InReview"),
+      makeCard("1.3", "Approved"),   // active → included
+      makeCard("1.4", "Approved"),   // not active → excluded
+      makeCard("1.5", "Draft"),
+      makeCard("1.6", "Done"),
+      makeCard("1.7", "Failed"),
+    ];
+    const result = selectRunningAgents(cards, { "1.3": true });
+    expect(result.map((c) => c.id).sort()).toEqual(["1.1", "1.2", "1.3"]);
   });
 });
