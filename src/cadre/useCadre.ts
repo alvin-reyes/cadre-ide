@@ -327,6 +327,10 @@ async function loadSharedContext(root: string): Promise<AlwaysFile[]> {
   } catch {
     /* no decisions yet */
   }
+  // Brownfield: the as-is analysis (the structured architecture/stack/risk summary)
+  // so a Dev agent working existing code sees the high-level map, not just its story.
+  const brownfield = await invoke<string>("read_file", { path: `${root}/${BROWNFIELD_DOC_PATH}` }).catch(() => "");
+  if (brownfield.trim()) files.push({ path: BROWNFIELD_DOC_PATH, content: brownfield });
   return files;
 }
 
@@ -545,9 +549,13 @@ export const useCadre = create<CadreState>((set, get) => {
       const { prd, architecture, uxSpec } = get();
       const ids = useBmadStore.getState().stories.map((s) => s.id);
       const story = nextStoryNumber(epic, ids);
+      const brownfield = get().projectContext;
       const planContext =
         `# PRD\n\n${prd}\n\n---\n\n# Architecture\n\n${architecture}` +
-        (uxSpec.trim() ? `\n\n---\n\n# UX / Design Spec\n\n${uxSpec}` : "");
+        (uxSpec.trim() ? `\n\n---\n\n# UX / Design Spec\n\n${uxSpec}` : "") +
+        // Brownfield: the SM must slice stories against the REAL module layout,
+        // file paths, and patterns — not invent a greenfield structure.
+        (brownfield.trim() ? `\n\n---\n\n# Existing project analysis (brownfield)\n\n${brownfield}` : "");
 
       await generateStory(
         {
@@ -582,9 +590,13 @@ export const useCadre = create<CadreState>((set, get) => {
       const { prd, architecture, uxSpec } = get();
       const ids = useBmadStore.getState().stories.map((s) => s.id);
       const start = nextStoryNumber(epic, ids);
+      const brownfield = get().projectContext;
       const planContext =
         `# PRD\n\n${prd}\n\n---\n\n# Architecture\n\n${architecture}` +
-        (uxSpec.trim() ? `\n\n---\n\n# UX / Design Spec\n\n${uxSpec}` : "");
+        (uxSpec.trim() ? `\n\n---\n\n# UX / Design Spec\n\n${uxSpec}` : "") +
+        // Brownfield: the SM must slice stories against the REAL module layout,
+        // file paths, and patterns — not invent a greenfield structure.
+        (brownfield.trim() ? `\n\n---\n\n# Existing project analysis (brownfield)\n\n${brownfield}` : "");
 
       const toolInput = await callTool({
         apiKey: auth.apiKey,
