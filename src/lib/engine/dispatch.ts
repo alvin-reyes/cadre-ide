@@ -7,6 +7,42 @@
 
 import { repoWorktreePath } from "./repos";
 
+/**
+ * Parse `git worktree list --porcelain` output and return every worktree path
+ * whose checked-out branch matches `branch` (the short name, e.g. "story/1.2").
+ * Exported so it can be unit-tested in isolation.
+ *
+ * Porcelain format — each worktree is a blank-line-separated block:
+ *   worktree /path/to/wt
+ *   HEAD <sha>
+ *   branch refs/heads/<name>          ← present unless detached
+ *
+ * Detached-HEAD entries have `detached` instead of a `branch` line; those are
+ * skipped because they can't be on the target branch.
+ */
+export function worktreesForBranch(porcelain: string, branch: string): string[] {
+  const target = `refs/heads/${branch}`;
+  const paths: string[] = [];
+  // Each block is separated by one or more blank lines.
+  const blocks = porcelain.split(/\n\s*\n/);
+  for (const block of blocks) {
+    const lines = block.trim().split("\n");
+    let wt: string | null = null;
+    let matched = false;
+    for (const line of lines) {
+      if (line.startsWith("worktree ")) {
+        wt = line.slice("worktree ".length).trim();
+      } else if (line.startsWith("branch ") && line.trim() === `branch ${target}`) {
+        matched = true;
+      }
+    }
+    if (matched && wt !== null) {
+      paths.push(wt);
+    }
+  }
+  return paths;
+}
+
 export function storyBranch(epic: number, story: number): string {
   return `story/${epic}.${story}`;
 }
@@ -58,6 +94,8 @@ export function composeDispatchPrompt(input: {
 export interface DispatchDeps {
   /** run a git command in `cwd` (throws on failure) */
   runGit: (args: string[], cwd: string) => Promise<void>;
+  /** non-throwing variant — returns exit code + stdout (e.g. for porcelain queries) */
+  runGitQuery: (args: string[], cwd: string) => Promise<{ exitCode: number | null; stdout: string }>;
   /** spawn the agent as a PTY's direct child; returns the pty id */
   spawnAgent: (opts: {
     command: string;
@@ -115,7 +153,23 @@ export async function dispatchStory(
       /* nothing to clean up */
     }
   };
+
+  // Belt-and-suspenders: remove the expected worktree path first (fast path).
   await tryGit(["worktree", "remove", "--force", worktree]);
+
+  // `git branch -D <branch>` refuses to delete a branch that is checked out in
+  // ANY worktree — not just the expected path. If a prior interrupted run left a
+  // worktree on this branch at a DIFFERENT path, branch -D would silently fail
+  // (swallowed by tryGit) and then `worktree add -b` would blow up with
+  // "already exists". Enumerate ALL worktrees on the branch and remove them first.
+  const { stdout: porcelain } = await deps.runGitQuery(
+    ["worktree", "list", "--porcelain"],
+    input.repoPath
+  ).catch(() => ({ stdout: "" }));
+  for (const stalePath of worktreesForBranch(porcelain, branch)) {
+    await tryGit(["worktree", "remove", "--force", stalePath]);
+  }
+
   await tryGit(["worktree", "prune"]);
   await tryGit(["branch", "-D", branch]);
 

@@ -16,6 +16,8 @@ function makeDeps(opts: {
     runGit: async () => {
       events.push("git");
     },
+    // Non-throwing git query — returns empty porcelain (no stale worktrees) in tests.
+    runGitQuery: async () => ({ exitCode: 0, stdout: "" }),
     spawnAgent: async () => {
       events.push("spawn");
       return 7;
@@ -61,6 +63,7 @@ describe("runStory", () => {
     const deps: RunStoryDeps = {
       setStatus: async () => {},
       runGit: async () => {},
+      runGitQuery: async () => ({ exitCode: 0, stdout: "" }),
       spawnAgent: async () => 7,
       // The agent never exits (hung on a bad key).
       waitForExit: () => new Promise(() => {}),

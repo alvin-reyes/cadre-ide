@@ -67,6 +67,7 @@ function makeWorld(cfg: {
     runGit: async (args: string[]) => {
       world.gitCalls.push(args);
     },
+    runGitQuery: async () => ({ exitCode: 0, stdout: "" }),
     spawnAgent: async () => {
       world.spawned++;
       return 1;
