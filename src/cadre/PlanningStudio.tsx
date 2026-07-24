@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, type CSSProperties, type ClipboardEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { marked } from "marked";
-import { ArrowUp, ArrowRight, Lock, RefreshCw, AlertTriangle, FileText, FileDown, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, ShieldAlert, Gavel, Paperclip, X, Check, Copy, Eye, Code2, Wrench, Loader2, Workflow, Search, BookText } from "lucide-react";
+import { ArrowUp, ArrowRight, Lock, RefreshCw, AlertTriangle, FileText, FileDown, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, ShieldAlert, Gavel, Paperclip, X, Check, Copy, Eye, Code2, Wrench, Loader2, Workflow, Search, BookText, Server } from "lucide-react";
 import { exportHtmlToPdf } from "./exportPdf";
 import { DiagramEditor } from "./DiagramEditor";
 import { BrownfieldOnboard } from "./BrownfieldOnboard";
@@ -10,7 +10,7 @@ import { useRepos } from "../stores/reposStore";
 import { useBmadStore } from "../stores/bmadStore";
 import { Markdown } from "./components/Markdown";
 import { planningTurn, type ChatMessage, type Attachment } from "../lib/planning/planningChat";
-import { PM_SYSTEM_PROMPT, ARCHITECT_SYSTEM_PROMPT, DESIGN_SYSTEM_PROMPT, ANALYST_SYSTEM_PROMPT, TECHWRITER_SYSTEM_PROMPT, ADVERSARIAL_REVIEW_PROMPTS, PLAN_VALIDATION_PROMPT } from "../lib/planning/personas";
+import { PM_SYSTEM_PROMPT, ARCHITECT_SYSTEM_PROMPT, DESIGN_SYSTEM_PROMPT, ANALYST_SYSTEM_PROMPT, TECHWRITER_SYSTEM_PROMPT, DEVOPS_SYSTEM_PROMPT, ADVERSARIAL_REVIEW_PROMPTS, PLAN_VALIDATION_PROMPT } from "../lib/planning/personas";
 import { reviewArtifact, type ReviewResult, type Severity, type Finding } from "../lib/planning/review";
 import { reportError } from "../lib/reportError";
 import { resolvePlanningAuth } from "../lib/planning/planningAuth";
@@ -42,7 +42,7 @@ function wordCount(text: string): number {
   return text.trim() ? text.trim().split(/\s+/).length : 0;
 }
 
-type PersonaId = "pm" | "analyst" | "architect" | "design" | "techwriter";
+type PersonaId = "pm" | "analyst" | "architect" | "design" | "techwriter" | "devops";
 
 const PERSONAS: Record<
   PersonaId,
@@ -88,9 +88,17 @@ const PERSONAS: Record<
     intro: "I'm your Technical Writer. I plan and draft the project's documentation.",
     opener: "What docs does this need?",
   },
+  devops: {
+    label: "DevOps",
+    icon: Server,
+    sub: "DevOps Engineer · shaping delivery & release",
+    file: "docs/ops.md",
+    intro: "I'm your DevOps Engineer. From the PRD and architecture I plan the delivery layer — CI/CD, environments, release process, rollback, observability, and runbooks.",
+    opener: "How should we ship and operate it?",
+  },
 };
 
-const PERSONA_IDS: PersonaId[] = ["pm", "analyst", "architect", "design", "techwriter"];
+const PERSONA_IDS: PersonaId[] = ["pm", "analyst", "architect", "design", "techwriter", "devops"];
 
 const paneHead: CSSProperties = {
   display: "flex",
@@ -126,11 +134,13 @@ export function PlanningStudio() {
   const brownfieldLog = useCadre((s) => s.logs["brownfield"] ?? "");
   const analystBrief = useCadre((s) => s.analystBrief);
   const techDocs = useCadre((s) => s.techDocs);
+  const opsDoc = useCadre((s) => s.opsDoc);
   const setPrd = useCadre((s) => s.setPrd);
   const setArchitecture = useCadre((s) => s.setArchitecture);
   const setUxSpec = useCadre((s) => s.setUxSpec);
   const setAnalystBrief = useCadre((s) => s.setAnalystBrief);
   const setTechDocs = useCadre((s) => s.setTechDocs);
+  const setOpsDoc = useCadre((s) => s.setOpsDoc);
   const setMockupHtml = useCadre((s) => s.setMockupHtml);
   const approvePlan = useCadre((s) => s.approvePlan);
   const cascadeReplan = useCadre((s) => s.cascadeReplan);
@@ -160,7 +170,7 @@ export function PlanningStudio() {
   }, [repos, multiRepo]);
 
   const [persona, setPersona] = useState<PersonaId>("pm");
-  const [threads, setThreads] = useState<Record<PersonaId, ChatMessage[]>>({ pm: [], analyst: [], architect: [], design: [], techwriter: [] });
+  const [threads, setThreads] = useState<Record<PersonaId, ChatMessage[]>>({ pm: [], analyst: [], architect: [], design: [], techwriter: [], devops: [] });
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [thinking, setThinking] = useState(false);
@@ -199,7 +209,7 @@ export function PlanningStudio() {
   const [designView, setDesignView] = useState<"spec" | "preview">("preview");
   const [verifySuggested, setVerifySuggested] = useState(false);
   // Which roles the PM has brought in this session (the user reaches them only via the PM).
-  const [handedOff, setHandedOff] = useState<Record<PersonaId, boolean>>({ pm: true, analyst: false, architect: false, design: false, techwriter: false });
+  const [handedOff, setHandedOff] = useState<Record<PersonaId, boolean>>({ pm: true, analyst: false, architect: false, design: false, techwriter: false, devops: false });
   // Adversarial review state per artifact (a reviewer agent is part of the fleet).
   // Each finding must be resolved by the user (confirmed or commented) to clear the review.
   type Resolution = { action: "confirmed" | "commented"; comment?: string };
@@ -214,6 +224,7 @@ export function PlanningStudio() {
     architect: { status: "idle" },
     design: { status: "idle" },
     techwriter: { status: "idle" },
+    devops: { status: "idle" },
   });
   const review = reviews[persona];
 
@@ -313,6 +324,7 @@ export function PlanningStudio() {
     : id === "analyst" ? analystBrief
     : id === "architect" ? architecture
     : id === "techwriter" ? techDocs
+    : id === "devops" ? opsDoc
     : uxSpec;
   const doc = docFor(persona);
   const messages = threads[persona];
@@ -326,6 +338,7 @@ export function PlanningStudio() {
     : persona === "analyst" ? "brief"
     : persona === "architect" ? "architecture"
     : persona === "techwriter" ? "docs"
+    : persona === "devops" ? "ops"
     : "UX spec";
   // Brownfield: guide the PM through analyzing the existing code before planning.
   const brownfieldOnboarding = persona === "pm" && isBrownfield && !projectContext.trim();
@@ -334,7 +347,7 @@ export function PlanningStudio() {
   }
   function insertDiagramToDoc(src: string) {
     const block = "```mermaid\n" + src + "\n```\n";
-    const apply = persona === "pm" ? setPrd : persona === "analyst" ? setAnalystBrief : persona === "architect" ? setArchitecture : persona === "techwriter" ? setTechDocs : setUxSpec;
+    const apply = persona === "pm" ? setPrd : persona === "analyst" ? setAnalystBrief : persona === "architect" ? setArchitecture : persona === "techwriter" ? setTechDocs : persona === "devops" ? setOpsDoc : setUxSpec;
     apply(doc.trim() ? doc.replace(/\s*$/, "") + "\n\n" + block : block);
     setDiagramOpen(false);
   }
@@ -432,6 +445,7 @@ export function PlanningStudio() {
     const base =
       id === "architect" ? ARCHITECT_SYSTEM_PROMPT
       : id === "techwriter" ? TECHWRITER_SYSTEM_PROMPT
+      : id === "devops" ? DEVOPS_SYSTEM_PROMPT
       : DESIGN_SYSTEM_PROMPT;
     return prd.trim() ? `${base}\n\n## PRD (context)\n${prd}` : base;
   }
@@ -452,7 +466,7 @@ export function PlanningStudio() {
     const atts = target ? [] : attachments;
     // Resolve the doc setter from `active`, not the render-time persona — otherwise a
     // routed turn would write its updated document into the wrong pane.
-    const applyDoc = active === "pm" ? setPrd : active === "analyst" ? setAnalystBrief : active === "architect" ? setArchitecture : active === "techwriter" ? setTechDocs : setUxSpec;
+    const applyDoc = active === "pm" ? setPrd : active === "analyst" ? setAnalystBrief : active === "architect" ? setArchitecture : active === "techwriter" ? setTechDocs : active === "devops" ? setOpsDoc : setUxSpec;
     const base: ChatMessage[] = [
       ...threads[active],
       { role: "user", content: text, attachments: atts.length ? atts : undefined },
@@ -520,6 +534,7 @@ export function PlanningStudio() {
   // summon ANY specialist on demand — just click its tab to open a chat.
   const isOpen = (id: PersonaId) =>
     // PM is the entry; the Analyst runs discovery BEFORE the PRD, so it's always open.
+    // DevOps (like TechWriter) opens once the PRD is ready.
     id === "pm" || id === "analyst" || prdReady || handedOff[id] || docFor(id).trim().length > 0;
   const architectOpen = isOpen("architect");
 
