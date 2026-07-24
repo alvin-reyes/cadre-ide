@@ -378,12 +378,23 @@ function EpicLane({
   epic,
   cards,
   preview,
+  onShard,
 }: {
   epic: Epic | null;
   cards: StoryCard[];
   preview: boolean;
+  onShard?: () => void;
 }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const busy = useCadre((s) => s.busy);
+
   if (cards.length === 0) return null;
+
+  // Status rollup counts
+  const doneCount = cards.filter((c) => statusColumn(c.status) === "completed").length;
+  const inProgressCount = cards.filter((c) => statusColumn(c.status) === "inProgress").length;
+  const qaCount = cards.filter((c) => statusColumn(c.status) === "qa").length;
+  const backlogCount = cards.filter((c) => statusColumn(c.status) === "backlog").length;
 
   return (
     <div
@@ -394,79 +405,247 @@ function EpicLane({
         overflow: "hidden",
       }}
     >
-      {/* Lane title */}
+      {/* Collapsible lane header */}
       <div
         style={{
           padding: "var(--c-space-2) var(--c-space-3)",
           background: "var(--c-surface-2)",
-          borderBottom: "1px solid var(--c-border)",
-          fontSize: "var(--c-fs-xs)",
-          fontWeight: 600 as const,
-          color: "var(--c-text-secondary)",
+          borderBottom: collapsed ? "none" : "1px solid var(--c-border)",
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--c-space-2)",
         }}
       >
-        {epic ? (
-          <>
-            <span style={{ color: "var(--c-text-muted)", marginRight: 6 }}>
-              Epic {epic.number}
+        {/* Collapse toggle */}
+        <button
+          onClick={() => setCollapsed((v) => !v)}
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? "Expand epic lane" : "Collapse epic lane"}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            padding: 2,
+            color: "var(--c-text-muted)",
+            flexShrink: 0,
+            transition: "transform 0.15s ease",
+          }}
+        >
+          <ChevronDown
+            size={14}
+            strokeWidth={2}
+            style={{
+              transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)",
+              transition: "transform 0.15s ease",
+            }}
+          />
+        </button>
+
+        {/* Epic label */}
+        <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: "var(--c-space-2)" }}>
+          {epic ? (
+            <>
+              <span
+                style={{
+                  fontSize: "var(--c-fs-xs)",
+                  fontWeight: 600 as const,
+                  color: "var(--c-text-muted)",
+                  flexShrink: 0,
+                }}
+              >
+                Epic {epic.number}
+              </span>
+              <span
+                style={{
+                  fontSize: "var(--c-fs-xs)",
+                  fontWeight: 600 as const,
+                  color: "var(--c-text-secondary)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {epic.title}
+              </span>
+            </>
+          ) : (
+            <span
+              style={{
+                fontSize: "var(--c-fs-xs)",
+                fontWeight: 600 as const,
+                color: "var(--c-text-muted)",
+              }}
+            >
+              Other
             </span>
-            {epic.title}
-          </>
-        ) : (
-          <span style={{ color: "var(--c-text-muted)" }}>Other</span>
+          )}
+
+          {/* Task count */}
+          <span
+            style={{
+              fontSize: "var(--c-fs-xs)",
+              color: "var(--c-text-faint)",
+              flexShrink: 0,
+            }}
+          >
+            {cards.length} {cards.length === 1 ? "story" : "stories"}
+          </span>
+
+          {/* Status rollup pills */}
+          <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+            {doneCount > 0 && (
+              <span
+                style={{
+                  fontSize: "9px",
+                  fontWeight: 600 as const,
+                  padding: "1px 5px",
+                  borderRadius: "var(--c-radius-sm)",
+                  background: "color-mix(in srgb, var(--c-success) 15%, transparent)",
+                  color: "var(--c-success)",
+                  border: "1px solid color-mix(in srgb, var(--c-success) 30%, transparent)",
+                }}
+              >
+                {doneCount} done
+              </span>
+            )}
+            {inProgressCount > 0 && (
+              <span
+                style={{
+                  fontSize: "9px",
+                  fontWeight: 600 as const,
+                  padding: "1px 5px",
+                  borderRadius: "var(--c-radius-sm)",
+                  background: "color-mix(in srgb, var(--c-accent) 15%, transparent)",
+                  color: "var(--c-accent)",
+                  border: "1px solid color-mix(in srgb, var(--c-accent) 30%, transparent)",
+                }}
+              >
+                {inProgressCount} active
+              </span>
+            )}
+            {qaCount > 0 && (
+              <span
+                style={{
+                  fontSize: "9px",
+                  fontWeight: 600 as const,
+                  padding: "1px 5px",
+                  borderRadius: "var(--c-radius-sm)",
+                  background: "color-mix(in srgb, var(--c-warning) 15%, transparent)",
+                  color: "var(--c-warning)",
+                  border: "1px solid color-mix(in srgb, var(--c-warning) 30%, transparent)",
+                }}
+              >
+                {qaCount} QA
+              </span>
+            )}
+            {backlogCount > 0 && (
+              <span
+                style={{
+                  fontSize: "9px",
+                  fontWeight: 600 as const,
+                  padding: "1px 5px",
+                  borderRadius: "var(--c-radius-sm)",
+                  background: "var(--c-surface-3)",
+                  color: "var(--c-text-muted)",
+                  border: "1px solid var(--c-border)",
+                }}
+              >
+                {backlogCount} backlog
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Per-epic "+ Shard story" button — only for named epics */}
+        {onShard && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onShard();
+            }}
+            disabled={preview || !!busy}
+            title={
+              preview
+                ? "Open a project to shard stories"
+                : `Shard the next story for Epic ${epic?.number ?? ""}`
+            }
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              fontSize: "var(--c-fs-xs)",
+              fontWeight: 550 as const,
+              padding: "3px 8px",
+              borderRadius: "var(--c-radius-sm)",
+              background:
+                preview || busy ? "var(--c-surface-3)" : "var(--c-accent)",
+              color:
+                preview || busy ? "var(--c-text-muted)" : "var(--c-on-accent)",
+              border: "none",
+              cursor: preview || busy ? "default" : "pointer",
+              flexShrink: 0,
+            }}
+          >
+            <Plus size={11} strokeWidth={2.5} />
+            Shard story
+          </button>
         )}
       </div>
 
-      {/* 4-column grid within this lane */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
-        }}
-      >
-        {KANBAN_COLUMNS.map((col, idx) => {
-          const colCards = cards.filter((c) => statusColumn(c.status) === col.id);
-          const colBg =
-            col.id === "completed"
-              ? "color-mix(in srgb, var(--c-success) 6%, transparent)"
-              : col.id === "inProgress"
-                ? "color-mix(in srgb, var(--c-accent) 5%, transparent)"
-                : col.id === "qa"
-                  ? "color-mix(in srgb, var(--c-warning) 5%, transparent)"
-                  : undefined;
-          return (
-            <div
-              key={col.id}
-              style={{
-                padding: "var(--c-space-2)",
-                borderRight:
-                  idx < KANBAN_COLUMNS.length - 1
-                    ? "1px solid var(--c-border)"
-                    : undefined,
-                minHeight: 60,
-                background: colBg,
-              }}
-            >
-              {colCards.length === 0 ? (
-                <div
-                  style={{
-                    fontSize: "var(--c-fs-xs)",
-                    color: "var(--c-text-faint)",
-                    textAlign: "center",
-                    paddingTop: "var(--c-space-3)",
-                  }}
-                >
-                  —
-                </div>
-              ) : (
-                colCards.map((card) => (
-                  <KanbanCard key={card.id} card={card} preview={preview} />
-                ))
-              )}
-            </div>
-          );
-        })}
-      </div>
+      {/* 4-column grid within this lane — hidden when collapsed */}
+      {!collapsed && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, 1fr)",
+          }}
+        >
+          {KANBAN_COLUMNS.map((col, idx) => {
+            const colCards = cards.filter((c) => statusColumn(c.status) === col.id);
+            const colBg =
+              col.id === "completed"
+                ? "color-mix(in srgb, var(--c-success) 6%, transparent)"
+                : col.id === "inProgress"
+                  ? "color-mix(in srgb, var(--c-accent) 5%, transparent)"
+                  : col.id === "qa"
+                    ? "color-mix(in srgb, var(--c-warning) 5%, transparent)"
+                    : undefined;
+            return (
+              <div
+                key={col.id}
+                style={{
+                  padding: "var(--c-space-2)",
+                  borderRight:
+                    idx < KANBAN_COLUMNS.length - 1
+                      ? "1px solid var(--c-border)"
+                      : undefined,
+                  minHeight: 60,
+                  background: colBg,
+                }}
+              >
+                {colCards.length === 0 ? (
+                  <div
+                    style={{
+                      fontSize: "var(--c-fs-xs)",
+                      color: "var(--c-text-faint)",
+                      textAlign: "center",
+                      paddingTop: "var(--c-space-3)",
+                    }}
+                  >
+                    —
+                  </div>
+                ) : (
+                  colCards.map((card) => (
+                    <KanbanCard key={card.id} card={card} preview={preview} />
+                  ))
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -486,7 +665,6 @@ export function KanbanBoard() {
 
   const repos = useRepos((s) => s.repos);
   const multiRepo = repos.length > 1;
-  const [selectedEpic, setSelectedEpic] = useState(1);
   const [selectedRepo, setSelectedRepo] = useState(repos[0]?.id ?? "main");
 
   // Keep selectedRepo in sync if repos list changes
@@ -533,31 +711,6 @@ export function KanbanBoard() {
           flexWrap: "wrap",
         }}
       >
-        {/* Epic selector */}
-        {epics.length > 0 && (
-          <select
-            value={selectedEpic}
-            onChange={(e) => setSelectedEpic(Number(e.target.value))}
-            title="Which epic to shard the next story for"
-            aria-label="Epic"
-            style={{
-              background: "var(--c-surface-2)",
-              border: "1px solid var(--c-border-strong)",
-              borderRadius: "var(--c-radius-sm)",
-              color: "var(--c-text)",
-              fontSize: "var(--c-fs-xs)",
-              padding: "4px 6px",
-              maxWidth: 180,
-            }}
-          >
-            {epics.map((ep) => (
-              <option key={ep.number} value={ep.number}>
-                Epic {ep.number}: {ep.title}
-              </option>
-            ))}
-          </select>
-        )}
-
         {/* Repo selector (multi-repo only) */}
         {multiRepo && (
           <select
@@ -582,34 +735,6 @@ export function KanbanBoard() {
             ))}
           </select>
         )}
-
-        {/* Shard next story */}
-        <button
-          onClick={() =>
-            shardNextStory(
-              epics.length > 0 ? selectedEpic : 1,
-              multiRepo ? selectedRepo : undefined
-            )
-          }
-          disabled={preview || !!busy}
-          title={preview ? "Open a project to shard stories" : "Run the SM to shard the next story"}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 5,
-            fontSize: "var(--c-fs-sm)",
-            fontWeight: 550 as const,
-            padding: "5px 12px",
-            borderRadius: "var(--c-radius)",
-            background: preview || busy ? "var(--c-surface-3)" : "var(--c-accent)",
-            color: preview || busy ? "var(--c-text-muted)" : "var(--c-on-accent)",
-            border: "none",
-            cursor: preview || busy ? "default" : "pointer",
-          }}
-        >
-          <Plus size={14} strokeWidth={2.5} />
-          Shard next story
-        </button>
 
         {/* Shard backlog */}
         <button
@@ -762,6 +887,9 @@ export function KanbanBoard() {
                 epic={ep}
                 cards={epicMap.get(ep.number) ?? []}
                 preview={preview}
+                onShard={() =>
+                  shardNextStory(ep.number, multiRepo ? selectedRepo : undefined)
+                }
               />
             ))}
             {otherCards.length > 0 && (
