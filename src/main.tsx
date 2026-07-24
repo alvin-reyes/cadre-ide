@@ -23,6 +23,10 @@ async function bootstrap() {
       await enterDemoMode();
     } catch (e) {
       console.error("[demo] enterDemoMode failed:", e);
+      // Surface as toast + AI Log entry (project error convention) so demo failures
+      // are visible in the UI, not just the console. App renders regardless.
+      const { reportError } = await import("./lib/reportError");
+      reportError("demo bootstrap", e);
     }
   }
 

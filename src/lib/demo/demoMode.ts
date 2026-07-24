@@ -210,6 +210,11 @@ React 19 + TypeScript, Zustand, Vitest, Vite.
  * from SignIn) so the stores are populated before the first render.
  */
 export async function enterDemoMode(): Promise<void> {
+  // Idempotent: if already in demo mode, don't rebuild the seed and wipe
+  // state the user may have already advanced (e.g. ?demo=1 + SignIn button,
+  // or a double-click on the demo button).
+  if (isDemoMode()) return;
+
   setDemoMode(true);
 
   // Build the seed and install the mock backend (no-op under real Tauri).
@@ -226,7 +231,10 @@ export async function enterDemoMode(): Promise<void> {
 
   // Enable Claude login-mode so resolveFleetAuth succeeds without a key — the mock
   // agent ignores env, but dispatch bails if no credential path is configured.
-  useSettingsStore.getState().setDispatchUseLogin(true);
+  // Use setState (in-memory only) rather than setDispatchUseLogin so persistSettings
+  // is NOT called and dispatchUseLogin:true is NOT written to localStorage["cadre-settings"],
+  // which would silently leak login-mode into a later real (non-demo) browser session.
+  useSettingsStore.setState({ dispatchUseLogin: true });
 
   // openProject sets the active root, seeds the BmadSlice, and hydrates the board
   // (reads story files + state files from the mock FS via invoke).

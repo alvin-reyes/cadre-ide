@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre } from "./useCadre";
 import { secretGet, secretSet, secretHas, isTauri } from "../lib/secrets";
+import { reportError } from "../lib/reportError";
 
 /**
  * Sign-In screen — shown when no usable credential is detected on first launch.
@@ -135,6 +136,8 @@ export function SignIn({ onDone }: { onDone: () => void }) {
       onDone();
     } catch (e) {
       console.error("[demo] enterDemoMode failed:", e);
+      // Surface as toast + AI Log entry (project error convention).
+      reportError("demo entry", e);
       setDemoLoading(false);
     }
   }

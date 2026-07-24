@@ -69,7 +69,13 @@ function stateFilePath(root: string, epic: number, story: number): string {
 
 // ─── Main command dispatcher ──────────────────────────────────────────────────
 
-function makeInvoke(fs: MockFs) {
+/**
+ * Create a testable invoke factory bound to the given MockFs.
+ * Exported so unit tests can exercise the REAL command handlers without
+ * needing a browser / window (installMockBackend uses this internally too,
+ * keeping a single implementation).
+ */
+export function createMockInvoke(fs: MockFs) {
   return async function invoke(cmd: string, args: Record<string, unknown> = {}): Promise<unknown> {
     switch (cmd) {
       // ── File system ───────────────────────────────────────────────────────
@@ -366,6 +372,18 @@ function makeInvoke(fs: MockFs) {
         return null;
       }
 
+      // ── Non-core plugin commands (no-op quietly) ──────────────────────────
+
+      case "plugin:clipboard-manager|read_image": {
+        // Pasting an image in demo mode — return null silently (no console warn).
+        return null;
+      }
+
+      case "plugin:opener|open_url": {
+        // Clicking an external link in demo mode — return null silently.
+        return null;
+      }
+
       // ── Unmapped fallback ─────────────────────────────────────────────────
 
       default: {
@@ -389,7 +407,7 @@ export function installMockBackend(fs: MockFs): void {
   if (typeof window === "undefined") return;
   if ("__TAURI_INTERNALS__" in window) return;
 
-  const invoke = makeInvoke(fs);
+  const invoke = createMockInvoke(fs);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (window as any).__TAURI_INTERNALS__ = {
