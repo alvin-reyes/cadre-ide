@@ -432,7 +432,10 @@ export const useCadre = create<CadreState>((set, get) => {
         await invoke("write_text_file", { path: `${root}/${PO_PATH}`, content: poValidation });
       }
       // Freeze the verification command in engine-owned state (agents can't forge it).
-      await invoke("approve_plan", { root, verification: cmds });
+      // Task-6 shim: repoVerification will be populated from the multi-repo registry
+      // once Task 6 builds the real per-repo map. For now send an empty map so the
+      // Rust command (which requires the field after Task 5) doesn't error at runtime.
+      await invoke("approve_plan", { root, verification: cmds, repoVerification: {} });
       // Land on SHARD — the next step is breaking the plan into stories (the board
       // is empty until the SM shards), not the (empty) execution board.
       patchRoot(root, { verification: cmds, phase: "SHARD", needsReplan: false });

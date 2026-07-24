@@ -7,6 +7,8 @@ export interface PlanApproval {
   approved: boolean;
   /** frozen verification steps (project command + any pack checks) */
   verification: string[];
+  /** frozen verify commands per code-repo id; falls back to `verification`. */
+  repoVerification?: Record<string, string[]>;
 }
 
 /**
