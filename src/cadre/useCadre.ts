@@ -24,6 +24,7 @@ import { parseRepos, resolveRepoPath, findRepo } from "../lib/engine/repos";
 import { useRepos } from "../stores/reposStore";
 import { CREATE_BACKLOG_TOOL, backlogFromTool } from "../lib/planning/storyTool";
 import { scheduleParallel } from "../lib/engine/schedule";
+import { reconcileSlots } from "../lib/engine/agentSlots";
 import { detectVerifyCommand } from "../lib/engine/detectVerify";
 import { integrateStory } from "../lib/engine/integrate";
 import { getProvider, resolveAgentEnv, type Provider } from "../lib/engine/providers";
@@ -940,11 +941,10 @@ export const useCadre = create<CadreState>((set, get) => {
 
       // ---- ON PATH: team-pool worker-pump ----
       // Ensure teamSize agent slots exist in the slice (idempotent — preserve existing state).
+      // reconcileSlots clamps teamSize to [1,8], so a malformed persisted teamSize:0
+      // can no longer produce zero slots (which would hang the pump on `await allDone`).
       const existingSlots = get().projects[root]?.agentSlots ?? [];
-      const slots: AgentSlot[] = Array.from({ length: teamSize }, (_, i) => {
-        const id = `agent-${i}`;
-        return existingSlots.find((s) => s.agentId === id) ?? { agentId: id, currentStory: null, status: "idle" };
-      });
+      const slots = reconcileSlots(teamSize, existingSlots);
       patchRoot(root, { agentSlots: slots, error: null });
 
       // Mutable pump state (local to this dispatchReady invocation).

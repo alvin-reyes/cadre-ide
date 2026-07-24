@@ -17,6 +17,7 @@ import { Modal } from "./components/Modal";
 import { useCadre } from "./useCadre";
 import { useBmadStore } from "../stores/bmadStore";
 import { useSettingsStore } from "../stores/settingsStore";
+import { agentLabel, reconcileSlots } from "../lib/engine/agentSlots";
 
 /**
  * The Team view — the CTO's org chart of the agent fleet: who's on the team, what
@@ -184,20 +185,9 @@ export function Team({ onClose }: { onClose: () => void }) {
             {useTeamPool ? (
               /* ── Team-pool mode: list agent slots ── */
               (() => {
-                // Show live slots if dispatched, else placeholder slots from teamSize
-                const slotsToShow = agentSlots.length > 0
-                  ? agentSlots
-                  : Array.from({ length: teamSize }, (_, i) => ({
-                      agentId: `agent-${i}`,
-                      currentStory: null as string | null,
-                      status: "idle" as "idle" | "working" | "verifying",
-                    }));
-
-                function agentLabel(agentId: string): string {
-                  const m = agentId.match(/^agent-(\d+)$/);
-                  if (m) return `Agent ${Number(m[1]) + 1}`;
-                  return agentId;
-                }
+                // Derive slots from teamSize via reconcileSlots so the roster
+                // matches teamSize immediately after the user changes it.
+                const slotsToShow = reconcileSlots(teamSize, agentSlots);
 
                 function slotLive(status: "idle" | "working" | "verifying"): Live {
                   if (status === "working") return { label: "working", kind: "active" };

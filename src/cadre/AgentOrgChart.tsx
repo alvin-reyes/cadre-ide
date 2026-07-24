@@ -17,6 +17,7 @@ import { stateInfo, LiveTerminal, FleetModelPicker } from "./agentShared";
 import { rollupCounts, selectRunningAgents } from "../lib/engine/kanban";
 import { FleetBoard } from "./components/FleetBoard";
 import { useSettingsStore } from "../stores/settingsStore";
+import { agentLabel, reconcileSlots } from "../lib/engine/agentSlots";
 import type { StoryCard } from "../lib/engine/board";
 import type { AgentSlot } from "../lib/engine/projectSlices";
 
@@ -312,13 +313,6 @@ function slotStatusInfo(status: AgentSlot["status"]): { label: string; color: st
   }
 }
 
-function agentLabel(agentId: string): string {
-  // "agent-0" → "Agent 1", "agent-3" → "Agent 4", etc.
-  const m = agentId.match(/^agent-(\d+)$/);
-  if (m) return `Agent ${Number(m[1]) + 1}`;
-  return agentId;
-}
-
 function PoolAgentNode({
   slot,
   log,
@@ -603,20 +597,12 @@ export function AgentOrgChart() {
         {useTeamPool ? (
           /* ── Team-pool mode: stable agent slot nodes ── */
           (() => {
-            // Determine which slots to render: use live agentSlots if populated,
-            // else render N idle placeholders based on teamSize.
-            const workingCount = agentSlots.filter((s) => s.status === "working" || s.status === "verifying").length;
-            const poolSummary = agentSlots.length > 0
-              ? `${agentSlots.length} agent${agentSlots.length === 1 ? "" : "s"} · ${workingCount} working · ${agentSlots.length - workingCount} idle`
-              : `${teamSize} agent${teamSize === 1 ? "" : "s"} · all idle`;
-
-            const slotsToRender: AgentSlot[] = agentSlots.length > 0
-              ? agentSlots
-              : Array.from({ length: teamSize }, (_, i) => ({
-                  agentId: `agent-${i}`,
-                  currentStory: null,
-                  status: "idle" as const,
-                }));
+            // Derive displayed slots from teamSize via reconcileSlots so the
+            // displayed pool matches teamSize immediately after the user changes
+            // it, without waiting for the next dispatch.
+            const slotsToRender = reconcileSlots(teamSize, agentSlots);
+            const workingCount = slotsToRender.filter((s) => s.status === "working" || s.status === "verifying").length;
+            const poolSummary = `${slotsToRender.length} agent${slotsToRender.length === 1 ? "" : "s"} · ${workingCount} working · ${slotsToRender.length - workingCount} idle`;
 
             return (
               <>
@@ -680,7 +666,7 @@ export function AgentOrgChart() {
                         <PoolAgentNode
                           key={slot.agentId}
                           slot={slot}
-                          log={agentLogs[slot.agentId] ?? ""}
+                          log={slot.status === "idle" ? "" : (agentLogs[slot.agentId] ?? "")}
                           stories={stories}
                         />
                       ))}
