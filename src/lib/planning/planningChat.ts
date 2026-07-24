@@ -104,13 +104,13 @@ export const SUGGEST_VERIFICATION_TOOL = {
 export const HANDOFF_TOOL = {
   name: "handoff" as const,
   description:
-    "Bring in the next specialist. Call this to hand off — the Analyst for discovery/research, the Architect when the PRD is solid and it's time to design the build, the Designer for UX, the DevOps / Release engineer for delivery, CI/CD, and release/rollback, or the Technical Writer for documentation.",
+    "Bring in the next specialist. Call this to hand off — the Architect when the PRD is solid and it's time to design the build, or the Designer for UX.",
   input_schema: {
     type: "object" as const,
     properties: {
       role: {
         type: "string" as const,
-        enum: ["analyst", "architect", "design", "techwriter", "devops"],
+        enum: ["architect", "design"],
         description: "which specialist to bring in",
       },
       note: { type: "string" as const, description: "one short line on what they should focus on" },
@@ -244,15 +244,7 @@ export async function planningTurn(opts: {
       if (typeof input.command === "string" && input.command.trim()) verification = input.command.trim();
     } else if (block.type === "tool_use" && block.name === "handoff") {
       const input = block.input as { role?: string };
-      // Accept every role the HANDOFF_TOOL enum offers — dropping analyst/techwriter
-      // here made those PM hand-offs silent no-ops.
-      if (
-        input.role === "analyst" ||
-        input.role === "architect" ||
-        input.role === "design" ||
-        input.role === "techwriter" ||
-        input.role === "devops"
-      ) {
+      if (input.role === "architect" || input.role === "design") {
         handoff = input.role;
       }
     } else if (block.type === "tool_use" && block.name === "suggest_replies") {

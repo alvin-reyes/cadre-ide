@@ -17,8 +17,6 @@ import {
   DEMO_PRD,
   DEMO_ARCHITECTURE,
   DEMO_UX,
-  DEMO_DOCS,
-  DEMO_OPS,
   DEMO_BACKLOG,
   DEMO_STORY,
 } from "./demoContent";
@@ -91,14 +89,8 @@ function buildContent(
     } else if (sys.includes("designer") || sys.includes("ux/ui")) {
       markdown = DEMO_UX;
       persona = "the Designer";
-    } else if (sys.includes("technical writer")) {
-      markdown = DEMO_DOCS;
-      persona = "the Technical Writer";
-    } else if (sys.includes("devops") || sys.includes("release engineer")) {
-      markdown = DEMO_OPS;
-      persona = "the DevOps Engineer";
     } else {
-      // PM / Analyst / default
+      // PM / default
       markdown = DEMO_PRD;
       persona = "the PM";
     }
