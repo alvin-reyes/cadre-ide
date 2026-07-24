@@ -2,6 +2,7 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Replace, CaseSensitive, Loader2, ChevronDown, ChevronRight } from "lucide-react";
 import { toast } from "../stores/toastStore";
+import { reportError } from "../lib/reportError";
 
 /**
  * Project-wide search & replace across every text file in the folder (VS Code-style
@@ -65,7 +66,7 @@ export function SearchPanel({ root, onOpen }: { root: string; onOpen: (path: str
       setResults(res);
       setCollapsed(new Set());
     } catch (e) {
-      toast(`Search failed: ${e}`, "error");
+      reportError("search", e);
     } finally {
       setBusy(false);
     }
@@ -85,7 +86,7 @@ export function SearchPanel({ root, onOpen }: { root: string; onOpen: (path: str
       toast(`Replaced ${r.replacements} occurrence(s) in ${r.files_changed} file(s)`, "success");
       await runSearch(); // refresh (busy already true; runSearch resets it)
     } catch (e) {
-      toast(`Replace failed: ${e}`, "error");
+      reportError("replace", e);
       setBusy(false);
     }
   }
