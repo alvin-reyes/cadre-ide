@@ -107,7 +107,7 @@ export const HANDOFF_TOOL = {
     properties: {
       role: {
         type: "string" as const,
-        enum: ["analyst", "architect", "design", "techwriter"],
+        enum: ["analyst", "architect", "design", "techwriter", "devops"],
         description: "which specialist to bring in",
       },
       note: { type: "string" as const, description: "one short line on what they should focus on" },
@@ -247,7 +247,8 @@ export async function planningTurn(opts: {
         input.role === "analyst" ||
         input.role === "architect" ||
         input.role === "design" ||
-        input.role === "techwriter"
+        input.role === "techwriter" ||
+        input.role === "devops"
       ) {
         handoff = input.role;
       }
