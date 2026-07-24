@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { LayoutGrid, FolderTree, SquareTerminal } from "lucide-react";
+import { LayoutGrid, FolderTree, SquareTerminal, Library } from "lucide-react";
 import { TopBar } from "./components/TopBar";
 import { PhaseStepper } from "./components/PhaseStepper";
 import { PlanningStudio } from "./PlanningStudio";
@@ -19,9 +19,10 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre } from "./useCadre";
 import { useOpenProjects } from "../stores/openProjectsStore";
 import { useRepos } from "../stores/reposStore";
+import { ContextView } from "./ContextView";
 
-/** The three top-level views, switched via the dock rail. Orchestrator is default. */
-type MainView = "orchestrator" | "files" | "terminal";
+/** The four top-level views, switched via the dock rail. Orchestrator is default. */
+type MainView = "orchestrator" | "files" | "terminal" | "context";
 
 /** The Cadre Cockpit shell — three main views (Orchestrator · File · Terminal). */
 export function CadreApp() {
@@ -36,10 +37,11 @@ export function CadreApp() {
   const [signInDone, setSignInDone] = useState(false);
   const { checked: credChecked, hasCredential } = useHasCredential();
   const [view, setView] = useState<MainView>("orchestrator");
-  // Files/Terminal mount on first visit and stay mounted (hidden) so editor buffers
-  // and terminal PTY sessions survive switching away.
+  // Files/Terminal/Context mount on first visit and stay mounted (hidden) so editor
+  // buffers, terminal PTY sessions, and context store state survive switching away.
   const [filesMounted, setFilesMounted] = useState(false);
   const [termMounted, setTermMounted] = useState(false);
+  const [ctxMounted, setCtxMounted] = useState(false);
   const [teamOpen, setTeamOpen] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
   const projectRoot = useBmadStore((s) => s.projectRoot);
@@ -50,6 +52,7 @@ export function CadreApp() {
   useEffect(() => {
     if (view === "files") setFilesMounted(true);
     if (view === "terminal") setTermMounted(true);
+    if (view === "context") setCtxMounted(true);
   }, [view]);
 
   // A different project resets to the Orchestrator and drops the other views.
@@ -57,6 +60,7 @@ export function CadreApp() {
     setView("orchestrator");
     setFilesMounted(false);
     setTermMounted(false);
+    setCtxMounted(false);
   }, [projectRoot]);
 
   // Phase gating: SHARD/FLEET open once the plan is approved; DONE only when there
@@ -186,6 +190,13 @@ export function CadreApp() {
               <TerminalTabs cwd={projectRoot} />
             </div>
           )}
+
+          {/* Context view — browses .cadre/context and ADRs; store state persists. */}
+          {ctxMounted && projectRoot && (
+            <div style={hidden(view === "context")}>
+              <ContextView root={projectRoot} />
+            </div>
+          )}
         </div>
 
         {projectRoot && <DockRail active={view} onSelect={setView} />}
@@ -206,6 +217,7 @@ function DockRail({ active, onSelect }: { active: MainView; onSelect: (v: MainVi
     { id: "orchestrator", icon: LayoutGrid, label: "Orchestrator" },
     { id: "files", icon: FolderTree, label: "Files" },
     { id: "terminal", icon: SquareTerminal, label: "Terminal — ⌃`" },
+    { id: "context", icon: Library, label: "Context — decisions & contracts" },
   ];
   return (
     <div
