@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { KeyRound, Cpu, Eye, EyeOff, Check, GitBranch } from "lucide-react";
+import { KeyRound, Cpu, Eye, EyeOff, Check, GitBranch, Users } from "lucide-react";
 import { Modal } from "./components/Modal";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre } from "./useCadre";
@@ -42,6 +42,12 @@ export function Settings({ onClose }: { onClose: () => void }) {
   const setDispatchUseLogin = useSettingsStore((s) => s.setDispatchUseLogin);
   const resumeSessions = useSettingsStore((s) => s.resumeSessions);
   const setResumeSessions = useSettingsStore((s) => s.setResumeSessions);
+  const useTeamPool = useSettingsStore((s) => s.useTeamPool);
+  const setUseTeamPool = useSettingsStore((s) => s.setUseTeamPool);
+  const teamSize = useSettingsStore((s) => s.teamSize);
+  const setTeamSize = useSettingsStore((s) => s.setTeamSize);
+  const sessionResetK = useSettingsStore((s) => s.sessionResetK);
+  const setSessionResetK = useSettingsStore((s) => s.setSessionResetK);
   const fleetProvider = useCadre((s) => s.fleetProvider);
   const setFleetProvider = useCadre((s) => s.setFleetProvider);
 
@@ -177,6 +183,47 @@ export function Settings({ onClose }: { onClose: () => void }) {
               value={agentTimeoutMins}
               onChange={(e) => setAgentTimeoutMins(Number(e.target.value))}
               style={{ ...inputStyle, width: 120 }}
+            />
+          </Field>
+        </Section>
+
+        {/* Team pool */}
+        <Section icon={Users} title="Team pool" subtitle="Persistent agent slots — each slot keeps a Claude session across tasks, pulling from the ready queue.">
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 9, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={useTeamPool}
+              onChange={(e) => setUseTeamPool(e.target.checked)}
+              style={{ marginTop: 3, accentColor: "var(--c-accent)", cursor: "pointer", flexShrink: 0 }}
+            />
+            <span>
+              <span style={{ fontSize: "var(--c-fs-sm)", fontWeight: 550 as const, color: "var(--c-text-secondary)" }}>Persistent team pool — agents keep context across tasks and pull from the backlog</span>
+              <span style={{ display: "block", fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)" }}>
+                N durable agent slots share the ready queue (file-disjoint). Each slot resumes its own Claude session across tasks instead of starting cold. When off, the existing ephemeral per-story path runs unchanged.
+              </span>
+            </span>
+          </label>
+
+          <Field label="Pool size" hint="Number of concurrent agent slots (1–8)">
+            <input
+              type="number"
+              min={1}
+              max={8}
+              disabled={!useTeamPool}
+              value={teamSize}
+              onChange={(e) => setTeamSize(Number(e.target.value))}
+              style={{ ...inputStyle, width: 120, opacity: useTeamPool ? 1 : 0.5, cursor: useTeamPool ? "text" : "not-allowed" }}
+            />
+          </Field>
+
+          <Field label="Fresh session every N tasks" hint="Reset an agent's Claude session after this many tasks to avoid context bloat (min 1)">
+            <input
+              type="number"
+              min={1}
+              disabled={!useTeamPool}
+              value={sessionResetK}
+              onChange={(e) => setSessionResetK(Number(e.target.value))}
+              style={{ ...inputStyle, width: 120, opacity: useTeamPool ? 1 : 0.5, cursor: useTeamPool ? "text" : "not-allowed" }}
             />
           </Field>
         </Section>

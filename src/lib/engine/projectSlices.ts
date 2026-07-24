@@ -2,6 +2,13 @@ import { emptyBoard, type BoardState, type StoryCard } from "./board";
 import type { LensReview } from "./reviewFleet";
 import type { Phase } from "../../cadre/components/PhaseStepper";
 
+/** One persistent agent slot in the team pool. */
+export interface AgentSlot {
+  agentId: string;
+  currentStory: string | null;
+  status: "idle" | "working" | "verifying";
+}
+
 export interface BmadSlice {
   board: BoardState;
   stories: StoryCard[];
@@ -40,6 +47,10 @@ export interface CadreSlice {
   logs: Record<string, string>;
   codeReviews: Record<string, { status: "reviewing" | "done"; reviews?: LensReview[] }>;
   active: Record<string, boolean>;
+  /** Persistent team-pool agent slots (agentId → slot state). Only populated when useTeamPool is on. */
+  agentSlots: AgentSlot[];
+  /** Per-agent accumulated output log, keyed by agentId. Only populated when useTeamPool is on. */
+  agentLogs: Record<string, string>;
   /** Human-readable status while an async action runs for this project (null = idle). */
   busy: string | null;
   /** Last error message for this project (null = none). */
@@ -66,6 +77,8 @@ export function emptyCadreSlice(): CadreSlice {
     logs: {},
     codeReviews: {},
     active: {},
+    agentSlots: [],
+    agentLogs: {},
     busy: null,
     error: null,
   };
@@ -111,6 +124,8 @@ export function mirrorCadre(
     logs: s.logs,
     codeReviews: s.codeReviews,
     active: s.active,
+    agentSlots: s.agentSlots,
+    agentLogs: s.agentLogs,
     busy: s.busy,
     error: s.error,
   };
