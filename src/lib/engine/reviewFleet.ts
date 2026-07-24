@@ -38,6 +38,8 @@ export interface ReviewFleetDeps {
 
 export interface ReviewFleetInput {
   root: string;
+  /** the logical repo id for the story's code repo (e.g. "main", "backend", "mobile") */
+  repoId: string;
   epic: number;
   story: number;
   lenses: ReviewLens[];
@@ -84,8 +86,7 @@ export async function reviewStory(
   deps: ReviewFleetDeps,
   input: ReviewFleetInput
 ): Promise<LensReview[]> {
-  // Task 4 will add repoId to ReviewFleetInput; for now default to "main" (shim).
-  const worktree = repoWorktreePath(input.root, "main", input.epic, input.story);
+  const worktree = repoWorktreePath(input.root, input.repoId, input.epic, input.story);
 
   return Promise.all(
     input.lenses.map(async (lens): Promise<LensReview> => {

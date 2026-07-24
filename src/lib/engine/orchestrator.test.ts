@@ -18,7 +18,7 @@ function makeDeps(approval: PlanApproval | null) {
   return { deps, verifyCommands };
 }
 
-const input = { root: "/proj", epic: 1, story: 1, prompt: "P", timeoutSecs: 60 };
+const input = { root: "/proj", repoPath: "/proj", repoId: "main", epic: 1, story: 1, prompt: "P", timeoutSecs: 60 };
 
 describe("runApprovedStory", () => {
   it("refuses to dispatch when the plan is not approved", async () => {

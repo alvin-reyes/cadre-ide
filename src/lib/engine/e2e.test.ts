@@ -81,8 +81,10 @@ function makeWorld(cfg: {
   return { world, deps };
 }
 
-const baseInput = (over: Partial<Parameters<typeof runApprovedStory>[1]> = {}) => ({
+const baseInput = (over: Partial<Parameters<typeof runApprovedStory>[1]> = {}): Parameters<typeof runApprovedStory>[1] => ({
   root: "/proj",
+  repoPath: "/proj",
+  repoId: "main",
   epic: 1,
   story: 1,
   prompt: "implement the story test-first",

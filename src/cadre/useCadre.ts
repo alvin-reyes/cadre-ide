@@ -596,6 +596,10 @@ export const useCadre = create<CadreState>((set, get) => {
 
       const res = await runApprovedStory(deps, {
         root,
+        // Task-6 shim: multi-repo routing will supply repoPath/repoId from the story's
+        // repo ref. For now default to the project root / "main" so single-repo projects work.
+        repoPath: root,
+        repoId: "main",
         epic,
         story,
         prompt,
@@ -754,6 +758,9 @@ export const useCadre = create<CadreState>((set, get) => {
 
       const reviews = await reviewStoryFleet(tauriReviewFleetDeps(onOutput), {
         root: target,
+        // Task-6 shim: multi-repo routing will supply repoId from the story's repo ref.
+        // For now default to "main" so single-repo projects work.
+        repoId: "main",
         epic,
         story,
         lenses: CODE_REVIEW_LENSES,

@@ -34,6 +34,8 @@ function makeDeps(opts: {
 
 const input = {
   root: "/proj",
+  repoPath: "/proj",
+  repoId: "main",
   epic: 1,
   story: 1,
   prompt: "P",
