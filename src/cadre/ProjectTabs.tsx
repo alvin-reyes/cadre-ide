@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Plus, X } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useBmadStore } from "../stores/bmadStore";
@@ -44,7 +45,22 @@ export function ProjectTabs() {
   const roots = useOpenProjects((s) => s.roots);
   const activeRoot = useOpenProjects((s) => s.activeRoot);
   const names = useOpenProjects((s) => s.names);
+  const rename = useOpenProjects((s) => s.rename);
   const openProject = useBmadStore((s) => s.openProject);
+
+  // Which tab is being renamed inline, and the working draft.
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+
+  function startRename(root: string, current: string) {
+    setEditing(root);
+    setDraft(current);
+  }
+
+  function commitRename() {
+    if (editing) rename(editing, draft);
+    setEditing(null);
+  }
 
   async function addProject() {
     if (!isTauri()) return;
@@ -108,32 +124,59 @@ export function ProjectTabs() {
               flexShrink: 0,
             }}
           >
-            <button
-              onClick={() => selectProject(root)}
-              aria-pressed={on}
-              aria-label={`Switch to project ${label}`}
-              className="cadre-hover"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                height: 26,
-                fontSize: "var(--c-fs-xs)",
-                fontWeight: 550 as const,
-                padding: "0 4px 0 10px",
-                borderRadius: "var(--c-radius-sm) 0 0 var(--c-radius-sm)",
-                background: "transparent",
-                border: "none",
-                color: on ? "var(--c-text)" : "var(--c-text-muted)",
-                cursor: "pointer",
-                maxWidth: 180,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-              title={root}
-            >
-              {label}
-            </button>
+            {editing === root ? (
+              <input
+                autoFocus
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={commitRename}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitRename();
+                  else if (e.key === "Escape") setEditing(null);
+                }}
+                aria-label={`Rename project ${label}`}
+                style={{
+                  height: 26,
+                  width: 140,
+                  fontSize: "var(--c-fs-xs)",
+                  fontWeight: 550 as const,
+                  padding: "0 4px 0 10px",
+                  borderRadius: "var(--c-radius-sm) 0 0 var(--c-radius-sm)",
+                  background: "var(--c-surface-1)",
+                  border: "1px solid var(--c-accent)",
+                  outline: "none",
+                  color: "var(--c-text)",
+                }}
+              />
+            ) : (
+              <button
+                onClick={() => selectProject(root)}
+                onDoubleClick={() => startRename(root, label)}
+                aria-pressed={on}
+                aria-label={`Switch to project ${label}`}
+                className="cadre-hover"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  height: 26,
+                  fontSize: "var(--c-fs-xs)",
+                  fontWeight: 550 as const,
+                  padding: "0 4px 0 10px",
+                  borderRadius: "var(--c-radius-sm) 0 0 var(--c-radius-sm)",
+                  background: "transparent",
+                  border: "none",
+                  color: on ? "var(--c-text)" : "var(--c-text-muted)",
+                  cursor: "pointer",
+                  maxWidth: 180,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+                title={`${root}  ·  double-click to rename`}
+              >
+                {label}
+              </button>
+            )}
             <button
               onClick={(e) => {
                 e.stopPropagation();

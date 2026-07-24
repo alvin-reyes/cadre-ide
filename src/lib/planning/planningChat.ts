@@ -101,13 +101,13 @@ export const SUGGEST_VERIFICATION_TOOL = {
 export const HANDOFF_TOOL = {
   name: "handoff" as const,
   description:
-    "Bring in the next specialist. Call this to hand off — the Analyst for discovery/research, the Architect when the PRD is solid and it's time to design the build, the Designer for UX, or the Technical Writer for documentation.",
+    "Bring in the next specialist. Call this to hand off — the Analyst for discovery/research, the Architect when the PRD is solid and it's time to design the build, the Designer for UX, the DevOps / Release engineer for delivery, CI/CD, and release/rollback, or the Technical Writer for documentation.",
   input_schema: {
     type: "object" as const,
     properties: {
       role: {
         type: "string" as const,
-        enum: ["analyst", "architect", "design", "techwriter"],
+        enum: ["analyst", "architect", "design", "techwriter", "devops"],
         description: "which specialist to bring in",
       },
       note: { type: "string" as const, description: "one short line on what they should focus on" },
@@ -247,7 +247,8 @@ export async function planningTurn(opts: {
         input.role === "analyst" ||
         input.role === "architect" ||
         input.role === "design" ||
-        input.role === "techwriter"
+        input.role === "techwriter" ||
+        input.role === "devops"
       ) {
         handoff = input.role;
       }

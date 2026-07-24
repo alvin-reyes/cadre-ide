@@ -1,10 +1,16 @@
-import { Hexagon, ArrowUp, ArrowDown, PanelRight, Users, Sun, Moon, SunMoon, Settings as SettingsIcon, ScrollText } from "lucide-react";
+import { ArrowUp, ArrowDown, PanelRight, Users, Sun, Moon, SunMoon, Settings as SettingsIcon, ScrollText } from "lucide-react";
 import { useUsageStore } from "../../stores/usageStore";
 import { useThemeStore } from "../../stores/themeStore";
+import { BrandLogo } from "../BrandLogo";
 
 function fmtK(n: number): string {
   return n < 1000 ? String(n) : `${(n / 1000).toFixed(1)}k`;
 }
+
+// macOS uses an overlay titlebar (see tauri.conf.json titleBarStyle), so the
+// traffic-light buttons float over the top-left of our content. Pad the bar's
+// left edge on macOS so the wordmark clears them.
+const IS_MAC = typeof navigator !== "undefined" && /Mac/.test(navigator.userAgent);
 
 /** The Cockpit top bar: wordmark + tools + session token/cost meter. The phase
  *  stepper lives in its own centered PhaseBar just below (see CadreApp). */
@@ -37,21 +43,20 @@ export function TopBar({
 
   return (
     <div
+      data-tauri-drag-region
       style={{
         display: "flex",
         alignItems: "center",
         gap: "var(--c-space-4)",
         padding: "var(--c-space-2) var(--c-space-4)",
+        paddingLeft: IS_MAC ? 82 : undefined,
         background: "var(--c-surface-1)",
         borderBottom: "1px solid var(--c-border)",
         flexShrink: 0,
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-        <Hexagon size={16} strokeWidth={2} style={{ color: "var(--c-accent)" }} />
-        <span className="cadre-wordmark" style={{ fontSize: "var(--c-fs-lg)" }}>
-          cadre
-        </span>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, pointerEvents: "none" }}>
+        <BrandLogo size={20} />
       </div>
 
       <div style={{ flex: 1 }} />

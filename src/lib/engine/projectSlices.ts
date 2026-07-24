@@ -25,6 +25,7 @@ export interface CadreSlice {
   architecture: string;
   analystBrief: string;
   techDocs: string;
+  opsDoc: string;
   uxSpec: string;
   mockupHtml: string;
   poValidation: string;
@@ -49,6 +50,7 @@ export function emptyCadreSlice(): CadreSlice {
     architecture: "",
     analystBrief: "",
     techDocs: "",
+    opsDoc: "",
     uxSpec: "",
     mockupHtml: "",
     poValidation: "",
@@ -92,6 +94,7 @@ export function mirrorCadre(
     architecture: s.architecture,
     analystBrief: s.analystBrief,
     techDocs: s.techDocs,
+    opsDoc: s.opsDoc,
     uxSpec: s.uxSpec,
     mockupHtml: s.mockupHtml,
     poValidation: s.poValidation,

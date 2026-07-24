@@ -6,44 +6,48 @@
  * Icons: use Lucide line icons (lucide-react). NO emoji anywhere in the UI.
  */
 :root {
-  /* Surfaces — warm charcoal (Anthropic warmth), subtle elevation steps */
-  --c-bg: #1c1815; /* warm near-black */
-  --c-surface-1: #221d19; /* panels */
-  --c-surface-2: #29231e; /* cards */
-  --c-surface-3: #332c25; /* elevated / hover */
-  --c-overlay: #3a322a; /* popovers / menus */
+  /* Surfaces — Ink near-black, cool, subtle elevation steps (Cadre brand) */
+  --c-bg: #0b0b12; /* Ink — app background */
+  --c-surface-1: #0e0e17; /* panels */
+  --c-surface-2: #101019; /* cards */
+  --c-surface-3: #12121c; /* elevated / hover */
+  --c-overlay: #171723; /* popovers / menus */
 
-  /* Content — warm ivory */
-  --c-text: #efe9df;
-  --c-text-secondary: #b8ac9c;
-  --c-text-muted: #8a7e6e;
-  --c-text-faint: #5b5247;
+  /* Content — cool ivory */
+  --c-text: #ededf2;
+  --c-text-secondary: #b8b8c6;
+  --c-text-muted: #9a9aae;
+  --c-text-faint: #6e6e82;
 
-  /* Hairlines — warm, low-alpha */
-  --c-border: rgba(245, 235, 220, 0.08);
-  --c-border-strong: rgba(245, 235, 220, 0.14);
+  /* Hairlines — cool, solid (brand borders) */
+  --c-border: #1e1e2c;
+  --c-border-strong: #2a2a3c;
 
-  /* Accent — Anthropic clay / terracotta */
-  --c-accent: #d97757;
-  --c-accent-hover: #e08a6c;
-  --c-accent-subtle: rgba(217, 119, 87, 0.15);
-  --c-accent-ring: rgba(217, 119, 87, 0.4);
+  /* Accent — Signal Violet (Cadre brand primary) */
+  --c-accent: #6d5ef8;
+  --c-accent-hover: #8375f5;
+  --c-accent-subtle: rgba(109, 94, 248, 0.15);
+  --c-accent-ring: rgba(109, 94, 248, 0.4);
   --c-on-accent: #ffffff;
 
-  /* Status — semantic, warmed to sit with the clay accent */
-  --c-success: #6fae86;
-  --c-success-subtle: rgba(111, 174, 134, 0.16);
-  --c-warning: #e0a33a;
-  --c-warning-subtle: rgba(224, 163, 58, 0.15);
-  --c-danger: #db6560;
-  --c-danger-subtle: rgba(219, 101, 96, 0.15);
-  --c-info: #d97757;
+  /* Brand gradient + glow — primary buttons, brand surfaces */
+  --c-grad-brand: linear-gradient(150deg, #6d5ef8, #3a2ed0);
+  --c-shadow-brand: 0 8px 24px rgba(109, 94, 248, 0.35);
+
+  /* Status — brand semantic (Mint success, amber warning, coral danger) */
+  --c-success: #8ce0c0;
+  --c-success-subtle: rgba(140, 224, 192, 0.16);
+  --c-warning: #febc2e;
+  --c-warning-subtle: rgba(254, 188, 46, 0.15);
+  --c-danger: #ff5f57;
+  --c-danger-subtle: rgba(255, 95, 87, 0.15);
+  --c-info: #6d5ef8;
 
   /* Typography — Anthropic-style: Newsreader (~Tiempos) display, Inter (~Styrene) body */
-  --c-font-display: "Newsreader", "Tiempos Text", "Charter", "Iowan Old Style",
-    Georgia, ui-serif, serif;
+  /* Cadre brand type: Space Grotesk display, Inter UI, JetBrains Mono code/labels */
+  --c-font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
   --c-font-ui: "Inter", -apple-system, "SF Pro Text", system-ui, sans-serif;
-  --c-font-mono: "SF Mono", "JetBrains Mono", ui-monospace, "Cascadia Code",
+  --c-font-mono: "JetBrains Mono", "SF Mono", ui-monospace, "Cascadia Code",
     monospace;
   --c-fs-xs: 11px;
   --c-fs-sm: 12px;
@@ -69,10 +73,10 @@
   --c-space-6: 32px;
   --c-space-7: 48px;
 
-  /* Radius */
-  --c-radius-sm: 6px;
-  --c-radius: 8px;
-  --c-radius-lg: 12px;
+  /* Radius — Cadre brand scale (8 / 12 / 16 / pill) */
+  --c-radius-sm: 8px;
+  --c-radius: 12px;
+  --c-radius-lg: 16px;
   --c-radius-full: 999px;
 
   /* Elevation — Linear-style: hairline + soft shadow */
@@ -88,66 +92,66 @@
   --c-dur-slow: 240ms;
 
   /* Code/diagram surface — dark by default; light theme overrides below. */
-  --c-code-bg: #14100c;
+  --c-code-bg: #0e0e17;
 
   /* Modal/overlay scrim. */
   --c-scrim: rgba(0, 0, 0, 0.5);
 }
 
 /*
- * Light theme — warm ivory, same clay accent. Toggled via
+ * Light theme — Cloud surfaces, Ink text, Signal Violet accent. Toggled via
  * document.documentElement[data-theme="light"] (see themeStore).
  * :root[data-theme] outweighs :root, so these win by source order + specificity.
  */
 :root[data-theme="light"] {
-  /* Surfaces — warm paper, subtle elevation steps */
-  --c-bg: #f6f2ec;
-  --c-surface-1: #fbf8f3;
-  --c-surface-2: #f1ece3;
-  --c-surface-3: #e8e1d6;
+  /* Surfaces — Cloud paper, subtle elevation steps */
+  --c-bg: #f5f5f7;
+  --c-surface-1: #ffffff;
+  --c-surface-2: #efeff3;
+  --c-surface-3: #e7e7ee;
   --c-overlay: #ffffff;
 
-  /* Content — warm near-black */
-  --c-text: #2a2420;
-  --c-text-secondary: #574f45;
-  --c-text-muted: #857a6b;
-  --c-text-faint: #a89c8b;
+  /* Content — Ink near-black */
+  --c-text: #0b0b12;
+  --c-text-secondary: #3a3a48;
+  --c-text-muted: #6e6e82;
+  --c-text-faint: #9a9aae;
 
-  /* Hairlines — warm, low-alpha on light */
-  --c-border: rgba(60, 45, 30, 0.12);
-  --c-border-strong: rgba(60, 45, 30, 0.2);
+  /* Hairlines — cool ink, low-alpha on light */
+  --c-border: rgba(11, 11, 18, 0.1);
+  --c-border-strong: rgba(11, 11, 18, 0.18);
 
-  /* Accent unchanged — clay reads well on paper; tint the subtles a touch stronger */
-  --c-accent-subtle: rgba(217, 119, 87, 0.16);
-  --c-accent-ring: rgba(217, 119, 87, 0.5);
+  /* Accent stays Signal Violet — reads well on Cloud; tint the subtles for the light ground */
+  --c-accent-subtle: rgba(109, 94, 248, 0.14);
+  --c-accent-ring: rgba(109, 94, 248, 0.45);
 
   /* Status — deepened for contrast on a light ground */
-  --c-success: #4f9d6f;
-  --c-success-subtle: rgba(79, 157, 111, 0.16);
+  --c-success: #1fa971;
+  --c-success-subtle: rgba(31, 169, 113, 0.16);
   --c-warning: #b3801f;
   --c-warning-subtle: rgba(179, 128, 31, 0.16);
-  --c-danger: #c8524d;
-  --c-danger-subtle: rgba(200, 82, 77, 0.14);
+  --c-danger: #e5484d;
+  --c-danger-subtle: rgba(229, 72, 77, 0.14);
 
-  /* Elevation — soft, warm-tinted shadows instead of near-black */
-  --c-elev-1: 0 1px 2px rgba(60, 45, 30, 0.08);
-  --c-elev-2: 0 4px 16px rgba(60, 45, 30, 0.1);
-  --c-elev-3: 0 12px 40px rgba(60, 45, 30, 0.14);
+  /* Elevation — soft, cool-tinted shadows instead of near-black */
+  --c-elev-1: 0 1px 2px rgba(11, 11, 18, 0.08);
+  --c-elev-2: 0 4px 16px rgba(11, 11, 18, 0.1);
+  --c-elev-3: 0 12px 40px rgba(11, 11, 18, 0.14);
 
-  /* Code/diagram surface — light paper block */
-  --c-code-bg: #f1ece3;
+  /* Code/diagram surface — light Cloud block */
+  --c-code-bg: #efeff3;
 
-  /* Softer, warm scrim on light. */
-  --c-scrim: rgba(40, 30, 20, 0.32);
+  /* Cool scrim on light. */
+  --c-scrim: rgba(11, 11, 18, 0.32);
 }
 
 /* Dark-tuned scrollbars flip to dark-on-light in the light theme. */
 :root[data-theme="light"] .cadre-ui *::-webkit-scrollbar-thumb {
-  background: rgba(60, 45, 30, 0.16);
+  background: rgba(11, 11, 18, 0.16);
   background-clip: padding-box;
 }
 :root[data-theme="light"] .cadre-ui *::-webkit-scrollbar-thumb:hover {
-  background: rgba(60, 45, 30, 0.28);
+  background: rgba(11, 11, 18, 0.28);
   background-clip: padding-box;
 }
 
@@ -303,6 +307,26 @@
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+/* Brand splash — logo entrance + the gradient shimmer bar. */
+@keyframes cadre-splash-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes cadre-splash-slide {
+  from {
+    transform: translateX(-140%);
+  }
+  to {
+    transform: translateX(320%);
   }
 }
 .cadre-toast {
