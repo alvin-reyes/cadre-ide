@@ -18,6 +18,7 @@ export function AiLog({ onClose }: { onClose: () => void }) {
   const entries = useAiLog((s) => s.entries);
   const clear = useAiLog((s) => s.clear);
   const [filter, setFilter] = useState<string>("all");
+  const [errorsOnly, setErrorsOnly] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
 
@@ -27,12 +28,14 @@ export function AiLog({ onClose }: { onClose: () => void }) {
     return ["all", ...Array.from(set).sort()];
   }, [entries]);
 
-  const shown = filter === "all" ? entries : entries.filter((e) => e.source === filter);
+  const shown = entries
+    .filter((e) => filter === "all" || e.source === filter)
+    .filter((e) => !errorsOnly || e.level === "error");
 
-  // Switching source resets the view to the tail.
+  // Switching source or errors-only resets the view to the tail.
   useEffect(() => {
     atBottom.current = true;
-  }, [filter]);
+  }, [filter, errorsOnly]);
 
   // Auto-scroll to the tail while the user is already at the bottom (keyed on the
   // latest entry id, not just length, so it fires on genuine new lines).
@@ -75,6 +78,18 @@ export function AiLog({ onClose }: { onClose: () => void }) {
             </option>
           ))}
         </select>
+        <label
+          style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)", cursor: "pointer", userSelect: "none" }}
+        >
+          <input
+            type="checkbox"
+            checked={errorsOnly}
+            onChange={(e) => setErrorsOnly(e.target.checked)}
+            aria-label="Show errors only"
+            style={{ accentColor: "var(--c-danger)", cursor: "pointer" }}
+          />
+          Errors only
+        </label>
         <div style={{ flex: 1 }} />
         <button
           onClick={clear}
