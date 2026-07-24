@@ -213,7 +213,7 @@ export function SignIn({ onDone }: { onDone: () => void }) {
                   </span>
                   <span style={{ display: "block", fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)", marginTop: 2, lineHeight: 1.45 }}>
                     Fleet agents use your <code>claude</code> CLI login — no API key needed.
-                    Planning still requires an Anthropic API key for now.
+                    Planning needs an API key: add an Anthropic key, or use DeepSeek/Kimi as your planning provider.
                   </span>
                 </span>
               </label>
@@ -267,7 +267,7 @@ export function SignIn({ onDone }: { onDone: () => void }) {
                 />
                 {dispatchUseLogin && !anthropicKey.trim() && (
                   <div style={{ marginTop: 6, fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)", lineHeight: 1.45 }}>
-                    Login powers the fleet with no key. Planning still needs an Anthropic key for now.
+                    Login powers the fleet with no key. Planning needs an API key — add an Anthropic key, or pick DeepSeek/Kimi as your planning provider.
                   </div>
                 )}
               </div>

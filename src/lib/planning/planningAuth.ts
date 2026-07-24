@@ -20,7 +20,7 @@ export async function resolvePlanningAuth(
       apiKey: "",
       ready: false,
       reason:
-        "Claude login powers dispatch, but planning still needs a key — add an Anthropic key (or wait for CLI planning).",
+        "Claude login powers dispatch. Planning needs an API key — add an Anthropic key, or choose DeepSeek/Kimi as your planning provider.",
     };
   }
   return {
