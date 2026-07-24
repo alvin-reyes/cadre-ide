@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100" fill="none">
+  <mask id="cardeSlash">
+    <rect x="22" y="22" width="56" height="56" rx="15" fill="#fff"></rect>
+    <path d="M70 28 L44 68 L54 68 L80 28 Z" fill="#000"></path>
+  </mask>
+  <rect x="22" y="22" width="56" height="56" rx="15" fill="#6D5EF8" mask="url(#cardeSlash)"></rect>
+</svg>
