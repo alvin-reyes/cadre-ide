@@ -17,6 +17,7 @@ import { useBmadStore } from "../stores/bmadStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre } from "./useCadre";
 import { useOpenProjects } from "../stores/openProjectsStore";
+import { useRepos } from "../stores/reposStore";
 
 /** The three top-level views, switched via the dock rail. Orchestrator is default. */
 type MainView = "orchestrator" | "files" | "terminal";
@@ -90,6 +91,8 @@ export function CadreApp() {
       // reload the plan into that slice from disk.
       setActiveProject(projectRoot);
       hydrateFromProject();
+      // Load the repo registry from cadre.json so RepoRegistry and per-repo verify gate are current.
+      useRepos.getState().load(projectRoot);
       // Ensure the tab list always knows about this project (covers the Welcome
       // first-open path and any other direct openProject call).
       const { roots } = useOpenProjects.getState();

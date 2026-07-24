@@ -6,6 +6,7 @@ import { Markdown } from "./components/Markdown";
 import { exportHtmlToPdf } from "./exportPdf";
 import { useBmadStore } from "../stores/bmadStore";
 import { useCadre, isInterrupted } from "./useCadre";
+import { useRepos } from "../stores/reposStore";
 import { aggregateReviews, type LensReview } from "../lib/engine/reviewFleet";
 import { parseEpics } from "../lib/planning/epics";
 import { PROVIDERS, getProvider } from "../lib/engine/providers";
@@ -40,6 +41,16 @@ export function FleetView({ mode = "fleet" }: { mode?: "shard" | "fleet" }) {
   const prd = useCadre((s) => s.prd);
   const epics = parseEpics(prd);
   const [selectedEpic, setSelectedEpic] = useState(1);
+  // Repo selector for shard mode — only shown when >1 repo registered
+  const repos = useRepos((s) => s.repos);
+  const multiRepo = repos.length > 1;
+  const [selectedRepo, setSelectedRepo] = useState(repos[0]?.id ?? "main");
+  // Keep selectedRepo in sync if repos change and current selection is gone
+  useEffect(() => {
+    if (multiRepo && !repos.find((r) => r.id === selectedRepo)) {
+      setSelectedRepo(repos[0]?.id ?? "main");
+    }
+  }, [repos, selectedRepo, multiRepo]);
   const dispatchReady = useCadre((s) => s.dispatchReady);
   const cascadeReplan = useCadre((s) => s.cascadeReplan);
   const approvePlan = useCadre((s) => s.approvePlan);
@@ -100,8 +111,23 @@ export function FleetView({ mode = "fleet" }: { mode?: "shard" | "fleet" }) {
             ))}
           </select>
         )}
+        {shard && multiRepo && (
+          <select
+            value={selectedRepo}
+            onChange={(e) => setSelectedRepo(e.target.value)}
+            title="Which repo to target for the next story"
+            aria-label="Repo"
+            style={{ background: "var(--c-surface-2)", border: "1px solid var(--c-border-strong)", borderRadius: "var(--c-radius-sm)", color: "var(--c-text)", fontSize: "var(--c-fs-xs)", padding: "4px 6px", maxWidth: 150 }}
+          >
+            {repos.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name || r.id}
+              </option>
+            ))}
+          </select>
+        )}
         <button
-          onClick={() => shardNextStory(shard && epics.length > 0 ? selectedEpic : 1)}
+          onClick={() => shardNextStory(shard && epics.length > 0 ? selectedEpic : 1, multiRepo ? selectedRepo : undefined)}
           disabled={preview || !!busy}
           title={preview ? "Open a project to shard stories" : "Run the SM to shard the next story"}
           style={{

@@ -6,6 +6,8 @@ import { DiagramEditor } from "./DiagramEditor";
 import { BrownfieldOnboard } from "./BrownfieldOnboard";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre, MODEL } from "./useCadre";
+import { useRepos } from "../stores/reposStore";
+import { useBmadStore } from "../stores/bmadStore";
 import { Markdown } from "./components/Markdown";
 import { planningTurn, type ChatMessage, type Attachment } from "../lib/planning/planningChat";
 import { PM_SYSTEM_PROMPT, ARCHITECT_SYSTEM_PROMPT, DESIGN_SYSTEM_PROMPT, ANALYST_SYSTEM_PROMPT, TECHWRITER_SYSTEM_PROMPT, ADVERSARIAL_REVIEW_PROMPTS, PLAN_VALIDATION_PROMPT } from "../lib/planning/personas";
@@ -124,6 +126,25 @@ export function PlanningStudio() {
   const busy = useCadre((s) => s.busy);
   const error = useCadre((s) => s.error);
   const clearError = useCadre((s) => s.clearError);
+
+  // Multi-repo: per-repo verify commands (pre-filled from registry, editable before sign-off)
+  const repos = useRepos((s) => s.repos);
+  const setRepoVerify = useRepos((s) => s.setVerify);
+  const multiRepo = repos.length > 1;
+  const projectRootForRepos = useBmadStore((s) => s.projectRoot);
+  // Per-repo verify drafts (id → command), seeded from the registry
+  const [repoVerifyDrafts, setRepoVerifyDrafts] = useState<Record<string, string>>({});
+  // Seed drafts when repos load or change (only fill in missing entries — don't clobber user edits)
+  useEffect(() => {
+    if (!multiRepo) return;
+    setRepoVerifyDrafts((prev) => {
+      const next = { ...prev };
+      for (const r of repos) {
+        if (!(r.id in next)) next[r.id] = r.verify ?? "";
+      }
+      return next;
+    });
+  }, [repos, multiRepo]);
 
   const [persona, setPersona] = useState<PersonaId>("pm");
   const [threads, setThreads] = useState<Record<PersonaId, ChatMessage[]>>({ pm: [], analyst: [], architect: [], design: [], techwriter: [] });
@@ -1049,6 +1070,76 @@ export function PlanningStudio() {
           {poCheck.status !== "idle" && (
             <PoValidationPanel state={poCheck} onSolve={solveGaps} solving={thinking} />
           )}
+          {/* Multi-repo: per-repo verify inputs shown above the sign-off bar */}
+          {multiRepo && (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+                padding: "8px var(--c-space-4)",
+                background: "var(--c-surface-1)",
+                borderTop: "1px solid var(--c-border)",
+                flexShrink: 0,
+              }}
+            >
+              <div style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)", fontWeight: 600 as const }}>
+                Per-repo verify commands — required for approval
+              </div>
+              {repos.map((repo) => {
+                const v = repoVerifyDrafts[repo.id] ?? repo.verify ?? "";
+                const missing = !v.trim();
+                return (
+                  <div key={repo.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span
+                      style={{
+                        fontSize: "var(--c-fs-xs)",
+                        fontFamily: "var(--c-font-mono)",
+                        fontWeight: 600 as const,
+                        color: missing ? "var(--c-danger)" : "var(--c-text-secondary)",
+                        background: missing ? "var(--c-danger-subtle)" : "var(--c-surface-2)",
+                        border: `1px solid ${missing ? "var(--c-danger)" : "var(--c-border)"}`,
+                        borderRadius: "var(--c-radius-full)",
+                        padding: "1px 8px",
+                        flexShrink: 0,
+                        minWidth: 60,
+                        textAlign: "center" as const,
+                      }}
+                    >
+                      {repo.id}
+                    </span>
+                    <input
+                      value={v}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setRepoVerifyDrafts((d) => ({ ...d, [repo.id]: val }));
+                        // Persist immediately so approvePlan picks up the latest values
+                        if (projectRootForRepos) setRepoVerify(projectRootForRepos, repo.id, val);
+                      }}
+                      placeholder={`verify command for "${repo.name || repo.id}"`}
+                      style={{
+                        flex: 1,
+                        minWidth: 80,
+                        background: "var(--c-surface-1)",
+                        border: `1px solid ${missing ? "var(--c-danger)" : "var(--c-border-strong)"}`,
+                        borderRadius: "var(--c-radius)",
+                        outline: "none",
+                        color: "var(--c-text)",
+                        fontSize: "var(--c-fs-sm)",
+                        fontFamily: "var(--c-font-mono)",
+                        padding: "4px 9px",
+                      }}
+                    />
+                    {missing && (
+                      <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-danger)", flexShrink: 0 }}>
+                        required
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <div
             style={{
               display: "flex",
@@ -1062,7 +1153,7 @@ export function PlanningStudio() {
           >
             <ShieldCheck size={15} strokeWidth={2} style={{ color: "var(--c-success)", flexShrink: 0 }} />
             <span style={{ fontSize: "var(--c-fs-sm)", color: "var(--c-text-secondary)", flexShrink: 0 }}>
-              CTO sign-off — verify against:
+              {multiRepo ? "Global verify (main repo):" : "CTO sign-off — verify against:"}
             </span>
             <input
               value={verifyCmd}
@@ -1112,32 +1203,49 @@ export function PlanningStudio() {
               <ClipboardCheck size={13} strokeWidth={2} />
               {poCheck.status === "reviewing" ? "Validating…" : "Validate plan"}
             </button>
-            <button
-              onClick={() => approvePlan([verifyCmd])}
-              disabled={!!busy || !verifyCmd.trim()}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 5,
-                fontSize: "var(--c-fs-sm)",
-                fontWeight: 550 as const,
-                padding: "6px 14px",
-                borderRadius: "var(--c-radius)",
-                background: busy ? "var(--c-surface-3)" : "var(--c-success)",
-                color: busy ? "var(--c-text-muted)" : "var(--c-on-accent)",
-                border: "none",
-                cursor: busy ? "default" : "pointer",
-                flexShrink: 0,
-              }}
-            >
-              {busy ? (
+            {(() => {
+              // Multi-repo gate: every registered repo needs a non-empty verify command.
+              const missingRepo = multiRepo
+                ? repos.find((r) => !(repoVerifyDrafts[r.id] ?? r.verify ?? "").trim())
+                : null;
+              const canSign = !busy && verifyCmd.trim() && !missingRepo;
+              return (
                 <>
-                  <Loader2 size={13} strokeWidth={2.5} className="cadre-spin" /> Signing off…
+                  {missingRepo && (
+                    <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-danger)", flexShrink: 0 }}>
+                      Set a verify command for &quot;{missingRepo.name || missingRepo.id}&quot;
+                    </span>
+                  )}
+                  <button
+                    onClick={() => approvePlan([verifyCmd])}
+                    disabled={!canSign}
+                    title={missingRepo ? `Set a verify command for "${missingRepo.name || missingRepo.id}" first` : "Sign off on the plan"}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                      fontSize: "var(--c-fs-sm)",
+                      fontWeight: 550 as const,
+                      padding: "6px 14px",
+                      borderRadius: "var(--c-radius)",
+                      background: canSign ? "var(--c-success)" : "var(--c-surface-3)",
+                      color: canSign ? "var(--c-on-accent)" : "var(--c-text-muted)",
+                      border: "none",
+                      cursor: canSign ? "pointer" : "default",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {busy ? (
+                      <>
+                        <Loader2 size={13} strokeWidth={2.5} className="cadre-spin" /> Signing off…
+                      </>
+                    ) : (
+                      "Sign off & dispatch"
+                    )}
+                  </button>
                 </>
-              ) : (
-                "Sign off & dispatch"
-              )}
-            </button>
+              );
+            })()}
           </div>
         </>
       ) : pmNeedsHandoff ? (

@@ -5,6 +5,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre } from "./useCadre";
 import { PROVIDERS } from "../lib/engine/providers";
 import { secretGet, secretSet, isTauri } from "../lib/secrets";
+import { RepoSection } from "./RepoRegistry";
 
 /**
  * Settings — the CTO's control panel for API keys and models. Keys are written to
@@ -160,6 +161,9 @@ export function Settings({ onClose }: { onClose: () => void }) {
             />
           </Field>
         </Section>
+
+        {/* Repos */}
+        <RepoSection />
 
         <div style={{ height: "var(--c-space-4)" }} />
     </Modal>

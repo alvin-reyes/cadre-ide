@@ -23,6 +23,8 @@ export interface GenerateStoryInput {
   planContext: string;
   epic: number;
   story: number;
+  /** the target code repo id (registry key); written into the `## Repo` section */
+  repoId?: string;
 }
 
 export async function generateStory(
@@ -43,7 +45,8 @@ export async function generateStory(
     userPrompt,
     CREATE_STORY_TOOL
   );
-  const content = storyContentFromTool(toolInput, input.epic, input.story);
+  const rawContent = storyContentFromTool(toolInput, input.epic, input.story);
+  const content = input.repoId ? { ...rawContent, repo: input.repoId } : rawContent;
   const { path } = await shardStory(deps, content);
   return { path, content };
 }

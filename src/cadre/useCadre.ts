@@ -161,8 +161,8 @@ interface CadreState {
 
   /** Freeze the verification command, write the plan to disk, unlock the fleet. */
   approvePlan: (verification: string[]) => Promise<void>;
-  /** Run the SM to shard the next story for `epic` (default 1). */
-  shardNextStory: (epic?: number) => Promise<void>;
+  /** Run the SM to shard the next story for `epic` (default 1) in the given `repoId` (default main). */
+  shardNextStory: (epic?: number, repoId?: string) => Promise<void>;
   /** Run the SM to shard the COMPLETE lifecycle backlog (features + tests + deploy + support…). */
   shardBacklog: (epic?: number) => Promise<void>;
   /** Dispatch a Dev agent for a story; Cadre verifies and writes the status. */
@@ -456,7 +456,7 @@ export const useCadre = create<CadreState>((set, get) => {
     }
   },
 
-  shardNextStory: async (epic = 1) => {
+  shardNextStory: async (epic = 1, repoId?: string) => {
     set({ busy: "Sharding the next story (SM)…", error: null });
     try {
       const root = requireRoot();
@@ -475,7 +475,7 @@ export const useCadre = create<CadreState>((set, get) => {
           writeFile: (relPath, content) =>
             invoke("write_text_file", { path: `${root}/${relPath}`, content }),
         },
-        { systemPrompt: SM_SYSTEM_PROMPT, planContext, epic, story }
+        { systemPrompt: SM_SYSTEM_PROMPT, planContext, epic, story, repoId }
       );
       // The story file lands in docs/stories/; the watcher reconciles it onto the board.
       set({ busy: null });
