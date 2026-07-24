@@ -233,6 +233,7 @@ export async function enterDemoMode(): Promise<void> {
   const { useBmadStore } = await import("../../stores/bmadStore");
   const { useCadre } = await import("../../cadre/useCadre");
   const { useSettingsStore } = await import("../../stores/settingsStore");
+  const { useModelsStore } = await import("../../stores/modelsStore");
 
   // Enable Claude login-mode so resolveFleetAuth succeeds without a key — the mock
   // agent ignores env, but dispatch bails if no credential path is configured.
@@ -248,6 +249,9 @@ export async function enterDemoMode(): Promise<void> {
   // hydrateFromProject reads docs/prd.md, docs/architecture.md, .cadre/plan-approval.json
   // etc. from the mock FS and lands the phase on EXECUTE (because plan is approved).
   await useCadre.getState().hydrateFromProject();
+
+  // Load the demo project's model config (no models key → global default; parity with real open).
+  await useModelsStore.getState().load(DEMO_ROOT);
 
   // Ensure phase is EXECUTE (hydrate should set it; this is a safety net).
   const phase = useCadre.getState().phase;

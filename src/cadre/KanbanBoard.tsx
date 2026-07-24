@@ -32,7 +32,7 @@ import { parseDefinitionOfDone } from "../lib/engine/shard";
 import { KANBAN_COLUMNS, statusColumn, isAttention, rollupCounts, groupIntoLanes } from "../lib/engine/kanban";
 import { FleetBoard } from "./components/FleetBoard";
 import { StatusPill } from "./components/StatusPill";
-import { stateInfo, LiveTerminal, FleetModelPicker } from "./agentShared";
+import { stateInfo, LiveTerminal } from "./agentShared";
 import type { StoryCard } from "../lib/engine/board";
 import type { Epic } from "../lib/planning/epics";
 
@@ -907,11 +907,6 @@ export function KanbanBoard() {
             <RollupPill count={fleetCounts.backlog} label="backlog" variant="backlog" />
           </div>
         )}
-
-        <div style={{ flex: 1 }} />
-
-        {/* Fleet model picker */}
-        <FleetModelPicker />
       </div>
 
       {/* ── Engine-owned invariant caption ── */}

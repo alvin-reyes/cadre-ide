@@ -13,7 +13,7 @@
 import { Circle, Play, Network } from "lucide-react";
 import { useBmadStore } from "../stores/bmadStore";
 import { useCadre } from "./useCadre";
-import { stateInfo, LiveTerminal, FleetModelPicker } from "./agentShared";
+import { stateInfo, LiveTerminal } from "./agentShared";
 import { rollupCounts, selectRunningAgents, storyRole } from "../lib/engine/kanban";
 import { FleetBoard } from "./components/FleetBoard";
 import { useSettingsStore } from "../stores/settingsStore";
@@ -578,11 +578,6 @@ export function AgentOrgChart() {
             Preview — open a project to use the org-chart.
           </span>
         )}
-
-        <div style={{ flex: 1 }} />
-
-        {/* Fleet model picker */}
-        <FleetModelPicker />
       </div>
 
       {/* ── Chart body ── */}
