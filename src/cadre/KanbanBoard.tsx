@@ -13,7 +13,6 @@
 
 import { useState, useEffect } from "react";
 import {
-  Circle,
   Plus,
   Play,
   ScrollText,
@@ -151,6 +150,7 @@ function KanbanCard({ card, preview }: { card: StoryCard; preview: boolean }) {
 
   return (
     <div
+      className={card.status === "InProgress" ? "cadre-generating" : undefined}
       style={{
         background: "var(--c-surface-1)",
         border: attention
@@ -197,15 +197,13 @@ function KanbanCard({ card, preview }: { card: StoryCard; preview: boolean }) {
             )}
             {phaseChip && (
               <span
+                className="cadre-label-mono"
                 style={{
                   fontSize: "9px",
                   fontWeight: 600 as const,
-                  letterSpacing: "0.04em",
-                  textTransform: "uppercase",
                   padding: "1px 5px",
                   borderRadius: "var(--c-radius-sm)",
                   background: "var(--c-surface-3)",
-                  color: "var(--c-text-muted)",
                   whiteSpace: "nowrap",
                 }}
               >
@@ -251,6 +249,7 @@ function KanbanCard({ card, preview }: { card: StoryCard; preview: boolean }) {
                 void useCadre.getState().approveStory(card.epic, card.story);
               }}
               title="Approve this draft story — it will become dispatchable"
+              className="cadre-btn-primary"
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -259,9 +258,6 @@ function KanbanCard({ card, preview }: { card: StoryCard; preview: boolean }) {
                 fontWeight: 550 as const,
                 padding: "3px 9px",
                 borderRadius: "var(--c-radius-sm)",
-                background: "var(--c-accent)",
-                color: "var(--c-on-accent)",
-                border: "none",
                 cursor: "pointer",
               }}
             >
@@ -370,11 +366,19 @@ function KanbanCard({ card, preview }: { card: StoryCard; preview: boolean }) {
               marginBottom: "var(--c-space-3)",
             }}
           >
-            <Circle
-              size={7}
-              fill="currentColor"
-              strokeWidth={0}
-              className={info.live ? "cadre-typing-dot" : undefined}
+            {/* Brand status dot — §5: success mint, in-progress violet pulsing, etc. */}
+            <span
+              className={
+                card.status === "Done"
+                  ? "cadre-dot cadre-dot-success"
+                  : card.status === "InProgress"
+                    ? "cadre-dot cadre-dot-progress"
+                    : card.status === "InReview"
+                      ? "cadre-dot cadre-dot-warning"
+                      : interrupted
+                        ? "cadre-dot cadre-dot-warning"
+                        : "cadre-dot cadre-dot-muted"
+              }
             />
             {interrupted
               ? "Interrupted — the run stopped when the app closed. Resume to re-dispatch."
@@ -853,10 +857,11 @@ export function KanbanBoard() {
           Shard backlog
         </button>
 
-        {/* Auto-execute */}
+        {/* Auto-execute — ONE primary action on this view */}
         <button
           onClick={() => dispatchReady()}
           disabled={!canAutoExecute}
+          className={canAutoExecute ? "cadre-btn-primary" : undefined}
           title={
             preview
               ? "Open a project to auto-execute"
@@ -874,8 +879,8 @@ export function KanbanBoard() {
             fontWeight: 550 as const,
             padding: "5px 12px",
             borderRadius: "var(--c-radius)",
-            background: canAutoExecute ? "var(--c-accent)" : "var(--c-surface-3)",
-            color: canAutoExecute ? "var(--c-on-accent)" : "var(--c-text-muted)",
+            background: canAutoExecute ? undefined : "var(--c-surface-3)",
+            color: canAutoExecute ? undefined : "var(--c-text-muted)",
             border: "none",
             cursor: canAutoExecute ? "pointer" : "default",
           }}

@@ -18,11 +18,10 @@ export function StatusPill({ status, interrupted }: { status: Status; interrupte
     : STYLES[status];
   return (
     <span
+      className="cadre-label-mono"
       style={{
         fontSize: "9px",
         fontWeight: 600 as const,
-        letterSpacing: "0.04em",
-        textTransform: "uppercase",
         padding: "2px 7px",
         borderRadius: "var(--c-radius-sm)",
         background: s.bg,

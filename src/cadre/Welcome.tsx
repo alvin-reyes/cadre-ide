@@ -154,9 +154,11 @@ export function Welcome({ onPreview }: { onPreview: () => void }) {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "var(--c-space-2)", marginTop: "var(--c-space-3)" }}>
+          {/* Start a new project — ONE primary action on this screen */}
           <button
             onClick={startNew}
             disabled={!!busy}
+            className={!busy ? "cadre-btn-primary" : undefined}
             title="Pick a folder — Cadre scaffolds a fresh project (git + docs) inside it"
             style={{
               display: "inline-flex",
@@ -166,9 +168,9 @@ export function Welcome({ onPreview }: { onPreview: () => void }) {
               flex: 1,
               padding: "8px 12px",
               borderRadius: "var(--c-radius)",
-              background: "var(--c-surface-2)",
-              color: "var(--c-text)",
-              border: "1px solid var(--c-border-strong)",
+              background: busy ? "var(--c-surface-2)" : undefined,
+              color: busy ? "var(--c-text)" : undefined,
+              border: busy ? "1px solid var(--c-border-strong)" : "none",
               fontSize: "var(--c-fs-sm)",
               fontWeight: 550 as const,
               cursor: busy ? "default" : "pointer",

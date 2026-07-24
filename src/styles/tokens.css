@@ -23,16 +23,16 @@
   --c-border: #1e1e2c;
   --c-border-strong: #2a2a3c;
 
-  /* Accent — Mint green (Cadre brand primary) */
-  --c-accent: #3ecf8e;
-  --c-accent-hover: #5bd9a0;
-  --c-accent-subtle: rgba(62, 207, 142, 0.15);
-  --c-accent-ring: rgba(62, 207, 142, 0.4);
-  --c-on-accent: #06231a;
+  /* Accent — Signal Violet (Cadre brand primary) */
+  --c-accent: #6d5ef8;
+  --c-accent-hover: #8375f5;
+  --c-accent-subtle: rgba(109, 94, 248, 0.15);
+  --c-accent-ring: rgba(109, 94, 248, 0.4);
+  --c-on-accent: #ffffff;
 
   /* Brand gradient + glow — primary buttons, brand surfaces */
-  --c-grad-brand: linear-gradient(150deg, #3ecf8e, #1a9e6c);
-  --c-shadow-brand: 0 8px 24px rgba(62, 207, 142, 0.35);
+  --c-grad-brand: linear-gradient(150deg, #6d5ef8, #3a2ed0);
+  --c-shadow-brand: 0 8px 24px rgba(109, 94, 248, 0.35);
 
   /* Status — brand semantic (Mint success, amber warning, coral danger) */
   --c-success: #8ce0c0;
@@ -41,7 +41,7 @@
   --c-warning-subtle: rgba(254, 188, 46, 0.15);
   --c-danger: #ff5f57;
   --c-danger-subtle: rgba(255, 95, 87, 0.15);
-  --c-info: #3ecf8e;
+  --c-info: #6d5ef8;
 
   /* Typography — Anthropic-style: Newsreader (~Tiempos) display, Inter (~Styrene) body */
   /* Cadre brand type: Space Grotesk display, Inter UI, JetBrains Mono code/labels */
@@ -121,14 +121,9 @@
   --c-border: rgba(11, 11, 18, 0.1);
   --c-border-strong: rgba(11, 11, 18, 0.18);
 
-  /* Accent — deeper emerald on the light ground for contrast; white text on it */
-  --c-accent: #10b981;
-  --c-accent-hover: #0ea371;
-  --c-on-accent: #ffffff;
-  --c-accent-subtle: rgba(16, 185, 129, 0.14);
-  --c-accent-ring: rgba(16, 185, 129, 0.45);
-  --c-info: #10b981;
-  --c-grad-brand: linear-gradient(150deg, #10b981, #0a7d55);
+  /* Accent stays Signal Violet — reads well on Cloud; tint the subtles for the light ground */
+  --c-accent-subtle: rgba(109, 94, 248, 0.14);
+  --c-accent-ring: rgba(109, 94, 248, 0.45);
 
   /* Status — deepened for contrast on a light ground */
   --c-success: #1fa971;
@@ -148,6 +143,113 @@
 
   /* Cool scrim on light. */
   --c-scrim: rgba(11, 11, 18, 0.32);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * BRAND.md §5 — Product UI pattern utilities
+ * ─────────────────────────────────────────────────────────────────────────
+ *
+ * .cadre-btn-primary  — brand gradient + glow; use for the ONE primary
+ *                       action per view (BRAND.md: "max 1 primary action").
+ * .cadre-generating   — 2px shimmer top-border + subtle accent tint for
+ *                       cards in the "InProgress" / "working" state.
+ * .cadre-label-mono   — JetBrains Mono uppercase label (status pills,
+ *                       phase chips, meta text).
+ * .cadre-dot-*        — brand status dots (use inside a flex container).
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+
+/* Primary action button — brand gradient + shadow (§5: "primary buttons"). */
+.cadre-btn-primary {
+  background: var(--c-grad-brand) !important;
+  color: var(--c-on-accent) !important;
+  border: none !important;
+  box-shadow: var(--c-shadow-brand) !important;
+  transition: transform var(--c-dur-fast) var(--c-ease-out),
+    box-shadow var(--c-dur-fast) var(--c-ease-out),
+    filter var(--c-dur-fast) var(--c-ease-out) !important;
+}
+.cadre-btn-primary:not(:disabled):hover {
+  transform: translateY(-1px) !important;
+  box-shadow: 0 12px 32px rgba(109, 94, 248, 0.45) !important;
+  filter: brightness(1.06) !important;
+}
+.cadre-btn-primary:not(:disabled):active {
+  transform: translateY(0) !important;
+}
+.cadre-btn-primary:disabled {
+  background: var(--c-surface-3) !important;
+  color: var(--c-text-muted) !important;
+  box-shadow: none !important;
+  cursor: default !important;
+}
+
+/* Generating / InProgress shimmer — §5: "2px shimmer top-border + violet card tint". */
+@keyframes cadre-shimmer-slide {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+.cadre-generating {
+  position: relative;
+  background-color: var(--c-accent-subtle) !important;
+}
+.cadre-generating::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--c-accent) 40%,
+    #3a2ed0 60%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: cadre-shimmer-slide 1.6s linear infinite;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cadre-generating::before {
+    animation: none;
+    background: var(--c-accent);
+  }
+}
+
+/* Mono uppercase label — §5: "Mono status labels in uppercase with 0.1–0.2em tracking". */
+.cadre-label-mono {
+  font-family: var(--c-font-mono) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.14em !important;
+  font-size: var(--c-fs-xs) !important;
+  color: var(--c-text-muted);
+}
+
+/* Status dot keyframe — pulsing violet for in-progress (§5: "in-progress violet pulsing"). */
+@keyframes cadre-dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 rgba(109, 94, 248, 0.5); }
+  50%       { opacity: 0.85; transform: scale(1.15); box-shadow: 0 0 0 4px rgba(109, 94, 248, 0); }
+}
+
+/* Brand status dots — inline-block circles; apply as siblings/children. */
+.cadre-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.cadre-dot-success  { background: var(--c-success); }
+.cadre-dot-progress { background: var(--c-accent); animation: cadre-dot-pulse 1.4s ease-in-out infinite; }
+.cadre-dot-warning  { background: var(--c-warning); }
+.cadre-dot-muted    { background: var(--c-text-muted); }
+@media (prefers-reduced-motion: reduce) {
+  .cadre-dot-progress { animation: none; }
 }
 
 /* Dark-tuned scrollbars flip to dark-on-light in the light theme. */

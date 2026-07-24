@@ -1053,6 +1053,7 @@ export function PlanningStudio() {
           <button
             onClick={() => approvePlan(verification.length ? verification : [verifyCmd])}
             disabled={!!busy}
+            className={!busy ? "cadre-btn-primary" : undefined}
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -1061,8 +1062,8 @@ export function PlanningStudio() {
               fontWeight: 550 as const,
               padding: "5px 12px",
               borderRadius: "var(--c-radius)",
-              background: busy ? "var(--c-surface-3)" : "var(--c-success)",
-              color: busy ? "var(--c-text-muted)" : "var(--c-on-accent)",
+              background: busy ? "var(--c-surface-3)" : undefined,
+              color: busy ? "var(--c-text-muted)" : undefined,
               border: "none",
               cursor: busy ? "default" : "pointer",
               flexShrink: 0,
@@ -1226,6 +1227,7 @@ export function PlanningStudio() {
                   <button
                     onClick={() => approvePlan([verifyCmd])}
                     disabled={!canSign}
+                    className={canSign ? "cadre-btn-primary" : undefined}
                     title={missingRepo ? `Set a verify command for "${missingRepo.name || missingRepo.id}" first` : "Sign off on the plan"}
                     style={{
                       display: "inline-flex",
@@ -1235,8 +1237,8 @@ export function PlanningStudio() {
                       fontWeight: 550 as const,
                       padding: "6px 14px",
                       borderRadius: "var(--c-radius)",
-                      background: canSign ? "var(--c-success)" : "var(--c-surface-3)",
-                      color: canSign ? "var(--c-on-accent)" : "var(--c-text-muted)",
+                      background: canSign ? undefined : "var(--c-surface-3)",
+                      color: canSign ? undefined : "var(--c-text-muted)",
                       border: "none",
                       cursor: canSign ? "pointer" : "default",
                       flexShrink: 0,
