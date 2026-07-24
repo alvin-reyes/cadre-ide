@@ -5,6 +5,7 @@ import {
   storyFilename,
   composeStoryFile,
   parseStoryRepo,
+  parseDefinitionOfDone,
   shardStory,
   type ShardDeps,
   type StoryContent,
@@ -62,6 +63,12 @@ const sampleContent: StoryContent = {
   tasks: ["Build the login form", "Wire up the auth API"],
   devNotes: "Use the existing AuthService in src/lib/auth.",
   files: ["src/components/Login.tsx", "src/lib/auth.ts"],
+  definitionOfDone: [
+    "All acceptance criteria pass with automated tests",
+    "Invalid credentials return an error message",
+    "No regressions in existing auth tests",
+    "Frozen verification command passes green",
+  ],
 };
 
 describe("composeStoryFile", () => {
@@ -104,12 +111,52 @@ describe("composeStoryFile", () => {
   });
 });
 
+describe("Definition of Done — compose + parse", () => {
+  it("composeStoryFile includes a ## Definition of Done section", () => {
+    const md = composeStoryFile(sampleContent);
+    expect(md).toContain("## Definition of Done");
+  });
+
+  it("renders each DoD item as a checkbox bullet", () => {
+    const md = composeStoryFile(sampleContent);
+    expect(md).toContain("- [ ] All acceptance criteria pass with automated tests");
+    expect(md).toContain("- [ ] Invalid credentials return an error message");
+    expect(md).toContain("- [ ] No regressions in existing auth tests");
+    expect(md).toContain("- [ ] Frozen verification command passes green");
+  });
+
+  it("parseDefinitionOfDone round-trips a multi-item DoD from composed markdown", () => {
+    const md = composeStoryFile(sampleContent);
+    const items = parseDefinitionOfDone(md);
+    expect(items).toEqual(sampleContent.definitionOfDone);
+  });
+
+  it("parseDefinitionOfDone strips checked checkboxes too", () => {
+    const md = "## Definition of Done\n\n- [x] Done item\n- [ ] Pending item\n\n## Next";
+    expect(parseDefinitionOfDone(md)).toEqual(["Done item", "Pending item"]);
+  });
+
+  it("parseDefinitionOfDone returns empty array when section is absent", () => {
+    expect(parseDefinitionOfDone("# Story\n\n## Status\n\nDraft\n")).toEqual([]);
+  });
+
+  it("DoD section appears after Acceptance Criteria and before Tasks", () => {
+    const md = composeStoryFile(sampleContent);
+    const acPos = md.indexOf("## Acceptance Criteria");
+    const dodPos = md.indexOf("## Definition of Done");
+    const tasksPos = md.indexOf("## Tasks / Subtasks");
+    expect(acPos).toBeLessThan(dodPos);
+    expect(dodPos).toBeLessThan(tasksPos);
+  });
+});
+
 describe("parseStoryRepo", () => {
   it("composeStoryFile writes a Repo section and parseStoryRepo reads it", () => {
     const md = composeStoryFile({
       epic: 1, story: 2, title: "Auth", repo: "api",
       userStory: { role: "u", action: "a", benefit: "b" },
       acceptanceCriteria: ["x"], tasks: ["t"], devNotes: "n", files: [],
+      definitionOfDone: ["All ACs pass with tests", "Verification command green"],
     });
     expect(md).toContain("## Repo");
     expect(parseStoryRepo(md)).toBe("api");
@@ -123,6 +170,7 @@ describe("parseStoryRepo", () => {
     const md = composeStoryFile({
       epic: 1, story: 1, title: "T", userStory: { role: "u", action: "a", benefit: "b" },
       acceptanceCriteria: [], tasks: [], devNotes: "", files: [],
+      definitionOfDone: [],
     });
     expect(parseStoryRepo(md)).toBe(DEFAULT_REPO_ID);
   });

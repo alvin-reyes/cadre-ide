@@ -38,8 +38,14 @@ export const CREATE_STORY_TOOL = {
         description:
           "The repo-relative files this story is expected to create or modify. Keep stories file-DISJOINT from each other so they can build in parallel without conflicts. List the specific paths you know; be accurate — Cadre uses this to schedule parallel agents.",
       },
+      definitionOfDone: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "An EXTENSIVE Definition of Done — the full checklist that must ALL be true before this task is complete: every acceptance criterion met AND covered by a passing test; edge/error cases handled; no regressions; docs/comments updated; and the project's frozen verification command green. Be thorough — several concrete, checkable items, not one line.",
+      },
     },
-    required: ["title", "role", "action", "benefit", "acceptanceCriteria", "tasks", "devNotes", "files"],
+    required: ["title", "role", "action", "benefit", "acceptanceCriteria", "tasks", "devNotes", "files", "definitionOfDone"],
   },
 } as const;
 
@@ -51,7 +57,7 @@ export const CREATE_STORY_TOOL = {
 export const CREATE_BACKLOG_TOOL = {
   name: "create_backlog",
   description:
-    "Emit the COMPLETE backlog of stories to ship AND operate this plan. Cover every LAYER — frontend/UI, backend/API, and database (schema + migrations) — and every PHASE — project setup/scaffolding, DevOps (CI/CD, infrastructure, deployment), automated tests, QA (test plans, end-to-end/acceptance testing, quality gates), integration, observability/monitoring, documentation, and ongoing support/operations. A backlog that is only backend, or is missing the frontend, database, QA, or deployment, is INCOMPLETE and wrong. Each story must be fully specified (a Dev agent works only from it) and file-disjoint where possible for parallel builds.",
+    "Emit the COMPLETE backlog of stories to ship AND operate this plan. Cover every LAYER — frontend/UI, backend/API, and database (schema + migrations) — and every PHASE — project setup/scaffolding, DevOps (CI/CD, infrastructure, deployment), automated tests, QA (test plans, end-to-end/acceptance testing, quality gates), integration, observability/monitoring, documentation, and ongoing support/operations. A backlog that is only backend, or is missing the frontend, database, QA, or deployment, is INCOMPLETE and wrong. Each story must be fully specified (a Dev agent works only from it), file-disjoint where possible for parallel builds, and must include an extensive Definition of Done — a thorough, checkable list (acceptance criteria met and test-covered, edge cases, no regressions, docs, and the frozen verification command green). A story without a real DoD is incomplete.",
   input_schema: {
     type: "object",
     properties: {
@@ -123,5 +129,6 @@ export function storyContentFromTool(
     tasks: strList(i.tasks, "tasks"),
     devNotes: reqStr(i.devNotes, "devNotes"),
     files: Array.isArray(i.files) ? i.files.filter((x): x is string => typeof x === "string") : [],
+    definitionOfDone: strList(i.definitionOfDone, "definitionOfDone"),
   };
 }

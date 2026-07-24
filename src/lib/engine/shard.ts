@@ -60,6 +60,8 @@ export interface StoryContent {
   devNotes: string;
   /** repo-relative files this story is expected to touch (parallel scheduling). */
   files: string[];
+  /** Extensive checklist that must ALL be true before the story is complete. */
+  definitionOfDone: string[];
 }
 
 /** Read the "## Repo" section (a bare repo id), or the default repo when absent. */
@@ -79,13 +81,23 @@ export function parseStoryFiles(markdown: string): string[] {
     .filter((l) => l.length > 0 && !/^_none/i.test(l));
 }
 
+/** Parse the "## Definition of Done" section of a story markdown back into a list of items. */
+export function parseDefinitionOfDone(markdown: string): string[] {
+  const m = markdown.match(/## Definition of Done\n([\s\S]*?)(?=\n## |\n# |$)/);
+  if (!m) return [];
+  return m[1]
+    .split("\n")
+    .map((l) => l.replace(/^\s*-\s*\[[ x]\]\s*/, "").replace(/^\s*[-*]\s*/, "").trim())
+    .filter((l) => l.length > 0);
+}
+
 /**
  * Render the BMAD story markdown (faithful to story-tmpl.yaml section titles).
  * Sections in order: title heading, Status (Draft), Story, Acceptance Criteria,
  * Tasks / Subtasks, Dev Notes, then empty Dev Agent Record + QA Results.
  */
 export function composeStoryFile(input: StoryContent): string {
-  const { epic, story, title, userStory, acceptanceCriteria, tasks, devNotes, files } =
+  const { epic, story, title, userStory, acceptanceCriteria, definitionOfDone, tasks, devNotes, files } =
     input;
   const parts: string[] = [];
 
@@ -110,6 +122,12 @@ export function composeStoryFile(input: StoryContent): string {
   acceptanceCriteria.forEach((ac, i) => {
     parts.push(`${i + 1}. ${ac}`);
   });
+  parts.push("");
+  parts.push("## Definition of Done");
+  parts.push("");
+  for (const item of definitionOfDone) {
+    parts.push(`- [ ] ${item}`);
+  }
   parts.push("");
   parts.push("## Tasks / Subtasks");
   parts.push("");
