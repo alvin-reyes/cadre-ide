@@ -12,6 +12,7 @@ import type { Status } from "./status";
 export interface RunStoryDeps {
   setStatus: (epic: number, story: number, status: Status) => Promise<void>;
   runGit: DispatchDeps["runGit"];
+  runGitQuery: DispatchDeps["runGitQuery"];
   spawnAgent: DispatchDeps["spawnAgent"];
   /** resolve when the agent PTY exits, with its exit code */
   waitForExit: (ptyId: number) => Promise<{ exitCode: number | null }>;
@@ -59,7 +60,7 @@ export async function runStory(
   await deps.setStatus(input.epic, input.story, "InProgress");
 
   const dispatch = await dispatchStory(
-    { runGit: deps.runGit, spawnAgent: deps.spawnAgent },
+    { runGit: deps.runGit, runGitQuery: deps.runGitQuery, spawnAgent: deps.spawnAgent },
     {
       root: input.root,
       repoPath: input.repoPath,

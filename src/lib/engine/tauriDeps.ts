@@ -150,6 +150,7 @@ export function tauriRunStoryDeps(root: string, onOutput?: OutputSink): RunStory
   return {
     setStatus: (epic, story, status) => setStatus(root, epic, story, status),
     runGit,
+    runGitQuery,
     spawnAgent: makeSpawnAgent(onOutput),
     waitForExit,
     runVerification: makeRunVerification(onOutput),

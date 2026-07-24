@@ -8,6 +8,7 @@ function makeDeps(approval: PlanApproval | null) {
     getPlanApproval: async () => approval,
     setStatus: async () => {},
     runGit: async () => {},
+    runGitQuery: async () => ({ exitCode: 0, stdout: "" }),
     spawnAgent: async () => 1,
     waitForExit: async () => ({ exitCode: 0 }),
     runVerification: async (_cwd, command) => {
