@@ -145,8 +145,15 @@ interface CadreState {
   active: Record<string, boolean>;
   /** which model provider the Dev fleet runs on (id from engine PROVIDERS) */
   fleetProvider: string;
-  /** a human-readable status while an async action runs (null = idle) */
+  /**
+   * A human-readable status while an async action runs for the active project
+   * (null = idle). Mirror-derived: reflects projects[activeRoot].busy.
+   */
   busy: string | null;
+  /**
+   * Last error message for the active project (null = none).
+   * Mirror-derived: reflects projects[activeRoot].error.
+   */
   error: string | null;
 
   setPhase: (phase: Phase) => void;
@@ -366,6 +373,7 @@ export const useCadre = create<CadreState>((set, get) => {
   active: {},
   // --- global (not per-project) ---
   fleetProvider: "claude",
+  // busy/error are mirror fields; initialize from emptyCadreSlice defaults.
   busy: null,
   error: null,
 
@@ -412,24 +420,28 @@ export const useCadre = create<CadreState>((set, get) => {
     if (root) patchRoot(root, { poValidation });
   },
   setFleetProvider: (fleetProvider) => set({ fleetProvider }),
-  clearError: () => set({ error: null }),
+  clearError: () => {
+    const root = get().activeRoot;
+    if (root) patchRoot(root, { error: null });
+  },
   markNeedsReplan: () => {
     const root = get().activeRoot;
     if (root && get().verification.length > 0) patchRoot(root, { needsReplan: true });
   },
 
   approvePlan: async (verification) => {
+    const activeRoot = get().activeRoot;
     const cmds = verification.map((c) => c.trim()).filter(Boolean);
     if (cmds.length === 0) {
-      set({ error: "Enter at least one verification command to approve." });
+      if (activeRoot) patchRoot(activeRoot, { error: "Enter at least one verification command to approve." });
       return;
     }
     const { prd, architecture } = get();
     if (!prd.trim() || !architecture.trim()) {
-      set({ error: "Approve needs both a PRD and an architecture." });
+      if (activeRoot) patchRoot(activeRoot, { error: "Approve needs both a PRD and an architecture." });
       return;
     }
-    set({ busy: "Approving plan…", error: null });
+    if (activeRoot) patchRoot(activeRoot, { busy: "Approving plan…", error: null });
     try {
       const root = requireRoot();
       // Persist the plan so it reloads from git (§3.8) and the Dev agents can read it.
@@ -459,24 +471,25 @@ export const useCadre = create<CadreState>((set, get) => {
       await invoke("approve_plan", { root, verification: cmds, repoVerification });
       // Land on SHARD — the next step is breaking the plan into stories (the board
       // is empty until the SM shards), not the (empty) execution board.
-      patchRoot(root, { verification: cmds, phase: "SHARD", needsReplan: false });
-      set({ busy: null });
+      patchRoot(root, { verification: cmds, phase: "SHARD", needsReplan: false, busy: null });
       toast("Plan signed off — shard it into stories", "success");
       await logSession(root, `plan approved (PRD + architecture) — verified by: ${cmds.join(", ")}`);
     } catch (e) {
-      set({ error: String(e), busy: null });
+      const root = get().activeRoot;
+      if (root) patchRoot(root, { error: String(e), busy: null });
       reportError("approve", e, { toastMessage: "Sign-off failed" });
     }
   },
 
   shardNextStory: async (epic = 1, repoId?: string) => {
-    set({ busy: "Sharding the next story (SM)…", error: null });
+    const activeRoot = get().activeRoot;
+    if (activeRoot) patchRoot(activeRoot, { busy: "Sharding the next story (SM)…", error: null });
     try {
       const root = requireRoot();
       const auth = await getPlanningAuth();
       if (!auth.ready) {
         reportError("planning", new Error(auth.reason ?? "planning credential missing"));
-        set({ busy: null });
+        patchRoot(root, { busy: null });
         return;
       }
       const { prd, architecture, uxSpec } = get();
@@ -496,22 +509,24 @@ export const useCadre = create<CadreState>((set, get) => {
         { systemPrompt: SM_SYSTEM_PROMPT, planContext, epic, story, repoId }
       );
       // The story file lands in docs/stories/; the watcher reconciles it onto the board.
-      set({ busy: null });
+      patchRoot(root, { busy: null });
       toast(`Story ${epic}.${story} sharded onto the board`, "success");
     } catch (e) {
-      set({ error: String(e), busy: null });
+      const root = get().activeRoot;
+      if (root) patchRoot(root, { error: String(e), busy: null });
       reportError("shard", e, { toastMessage: "Sharding failed" });
     }
   },
 
   shardBacklog: async (epic = 1) => {
-    set({ busy: "Sharding the full lifecycle backlog (SM)…", error: null });
+    const activeRoot = get().activeRoot;
+    if (activeRoot) patchRoot(activeRoot, { busy: "Sharding the full lifecycle backlog (SM)…", error: null });
     try {
       const root = requireRoot();
       const auth = await getPlanningAuth();
       if (!auth.ready) {
         reportError("planning", new Error(auth.reason ?? "planning credential missing"));
-        set({ busy: null });
+        patchRoot(root, { busy: null });
         return;
       }
       const { prd, architecture, uxSpec } = get();
@@ -538,10 +553,11 @@ export const useCadre = create<CadreState>((set, get) => {
       for (const content of stories) {
         await shardStory({ writeFile: (relPath, c) => invoke("write_text_file", { path: `${root}/${relPath}`, content: c }) }, content);
       }
-      set({ busy: null });
+      patchRoot(root, { busy: null });
       toast(`Sharded ${stories.length} stories across the lifecycle`, "success");
     } catch (e) {
-      set({ error: String(e), busy: null });
+      const root = get().activeRoot;
+      if (root) patchRoot(root, { error: String(e), busy: null });
       reportError("shard backlog", e, { toastMessage: "Backlog sharding failed" });
     }
   },
@@ -550,21 +566,22 @@ export const useCadre = create<CadreState>((set, get) => {
     const key = `${epic}.${story}`;
     const silent = opts?.silent ?? false;
     // Capture the target project ONCE at the top. Every per-project write in this
-    // action (logs, active, codeReviews) targets THIS root — never get().activeRoot
-    // — so a background dispatch never corrupts whatever project is in the foreground.
+    // action (logs, active, codeReviews, busy, error) targets THIS root — never
+    // get().activeRoot — so a background dispatch never corrupts the foreground.
     let root: string;
     try {
       root = requireRoot();
     } catch (e) {
-      set({ error: String(e), busy: silent ? get().busy : null });
+      const ar = get().activeRoot;
+      if (ar) patchRoot(ar, { error: String(e), busy: silent ? (get().projects[ar]?.busy ?? null) : null });
       reportError(`dispatch ${epic}.${story}`, e, { toastMessage: `Dispatch failed for ${epic}.${story}` });
       return;
     }
     // Fresh log for this run; the sink appends streamed output (capped). Mark the
     // story active so the UI shows it as genuinely running (vs. an orphaned one).
     // In parallel mode (silent) the caller owns the `busy` banner.
-    if (!silent) set({ busy: `Dispatching story ${epic}.${story}…` });
-    set({ error: null });
+    if (!silent) patchRoot(root, { busy: `Dispatching story ${epic}.${story}…` });
+    patchRoot(root, { error: null });
     patchRoot(root, {
       logs: { ...(get().projects[root]?.logs ?? {}), [key]: "" },
       active: { ...(get().projects[root]?.active ?? {}), [key]: true },
@@ -657,7 +674,7 @@ export const useCadre = create<CadreState>((set, get) => {
             `A silent stall is usually a bad/expired API key or a stuck task. Check the key in Settings, or raise the timeout.\n`
         );
       }
-      if (!silent) set({ busy: null });
+      if (!silent) patchRoot(root, { busy: null });
       if (res.status === "Done") {
         // QA gate: run the adversarial code-review fleet on the worktree BEFORE
         // integrating. If it blocks, quarantine the story (Blocked) and don't merge
@@ -721,7 +738,7 @@ export const useCadre = create<CadreState>((set, get) => {
       }
     } catch (e) {
       onOutput(`\n[cadre] dispatch error: ${String(e)}\n`);
-      set((s) => ({ error: String(e), busy: silent ? s.busy : null }));
+      patchRoot(root, { error: String(e), busy: silent ? (get().projects[root]?.busy ?? null) : null });
       reportError(`dispatch ${epic}.${story}`, e, { toastMessage: `Dispatch failed for ${epic}.${story}` });
     } finally {
       // No longer running this session — an InProgress/InReview status left on the
@@ -768,7 +785,7 @@ export const useCadre = create<CadreState>((set, get) => {
       let done = 0;
       for (let b = 0; b < batches.length; b++) {
         const batch = batches[b];
-        set({
+        patchRoot(root, {
           busy: `Building ${batch.length} stor${batch.length === 1 ? "y" : "ies"} in parallel — batch ${b + 1}/${batches.length}…`,
           error: null,
         });
@@ -780,10 +797,11 @@ export const useCadre = create<CadreState>((set, get) => {
         );
         done += batch.length;
       }
-      set({ busy: null });
+      patchRoot(root, { busy: null });
       toast(`Dispatched ${done} stor${done === 1 ? "y" : "ies"} across ${batches.length} batch${batches.length === 1 ? "" : "es"}`, "success");
     } catch (e) {
-      set({ error: String(e), busy: null });
+      const root = get().activeRoot;
+      if (root) patchRoot(root, { error: String(e), busy: null });
       reportError("dispatch ready", e, { toastMessage: "Parallel dispatch failed" });
     }
   },
@@ -793,7 +811,8 @@ export const useCadre = create<CadreState>((set, get) => {
       await useBmadStore.getState().setStatus(epic, story, "Approved");
       toast(`Story ${epic}.${story} approved — ready to dispatch`, "success");
     } catch (e) {
-      set({ error: String(e) });
+      const root = get().activeRoot;
+      if (root) patchRoot(root, { error: String(e) });
       reportError(`approve ${epic}.${story}`, e, { toastMessage: `Approve failed for ${epic}.${story}` });
     }
   },
@@ -807,11 +826,12 @@ export const useCadre = create<CadreState>((set, get) => {
     try {
       target = root ?? requireRoot();
     } catch (e) {
-      set({ error: String(e) });
+      const ar = get().activeRoot;
+      if (ar) patchRoot(ar, { error: String(e) });
       reportError(`review ${key}`, e, { toastMessage: `Review failed for ${key}` });
       return;
     }
-    set({ error: null });
+    patchRoot(target, { error: null });
     patchRoot(target, {
       codeReviews: { ...(get().projects[target]?.codeReviews ?? {}), [key]: { status: "reviewing" } },
     });
@@ -854,8 +874,8 @@ export const useCadre = create<CadreState>((set, get) => {
     } catch (e) {
       patchRoot(target, {
         codeReviews: { ...(get().projects[target]?.codeReviews ?? {}), [key]: { status: "done", reviews: [] } },
+        error: String(e),
       });
-      set({ error: String(e) });
       reportError(`review ${key}`, e, { toastMessage: `Review failed for ${key}` });
     }
   },
@@ -866,11 +886,12 @@ export const useCadre = create<CadreState>((set, get) => {
     try {
       root = requireRoot();
     } catch (e) {
-      set({ error: String(e) });
+      const ar = get().activeRoot;
+      if (ar) patchRoot(ar, { error: String(e) });
       reportError("document project", e, { toastMessage: "Project analysis failed" });
       return;
     }
-    set({ busy: "Analyzing the existing project (2 passes)…", error: null });
+    patchRoot(root, { busy: "Analyzing the existing project (2 passes)…", error: null });
     const onOutput = (chunk: string) => {
       aiLog("analysis", chunk);
       const prev = get().projects[root]?.logs?.["brownfield"] ?? "";
@@ -894,11 +915,10 @@ export const useCadre = create<CadreState>((set, get) => {
         (await invoke<string>("read_file", { path: `${root}/${BROWNFIELD_DOC_PATH}` }).catch(() => ""));
       // Auto-detect the project's real test command to pre-fill sign-off later.
       const detectedVerify = await detectProjectVerify(root).catch(() => "");
-      patchRoot(root, { projectContext: content, isBrownfield: false, detectedVerify });
-      set({ busy: null });
+      patchRoot(root, { projectContext: content, isBrownfield: false, detectedVerify, busy: null });
       toast("Project analyzed — the PM now has context", "success");
     } catch (e) {
-      set({ error: String(e), busy: null });
+      patchRoot(root, { error: String(e), busy: null });
       reportError("document project", e, { toastMessage: "Project analysis failed" });
     }
   },
@@ -917,13 +937,14 @@ export const useCadre = create<CadreState>((set, get) => {
 
   cascadeReplan: async () => {
     if (get().busy) return;
-    set({ busy: "Updating the architecture…", error: null });
+    const activeRoot = get().activeRoot;
+    if (activeRoot) patchRoot(activeRoot, { busy: "Updating the architecture…", error: null });
     try {
       const root = requireRoot();
       const auth = await getPlanningAuth();
       if (!auth.ready) {
         reportError("planning", new Error(auth.reason ?? "planning credential missing"));
-        set({ busy: null });
+        patchRoot(root, { busy: null });
         return;
       }
       const prd = get().projects[root]?.prd ?? "";
@@ -946,7 +967,7 @@ export const useCadre = create<CadreState>((set, get) => {
 
       // 2. If a UX spec exists, the Designer updates the spec + mockup.
       if (get().projects[root]?.uxSpec.trim()) {
-        set({ busy: "Updating the UX…" });
+        patchRoot(root, { busy: "Updating the UX…" });
         const ux = await planningTurn({
           apiKey: auth.apiKey,
           baseUrl: auth.baseUrl,
@@ -966,7 +987,7 @@ export const useCadre = create<CadreState>((set, get) => {
       }
 
       // 3. Persist the refreshed plan to disk.
-      set({ busy: "Writing the updated plan…" });
+      patchRoot(root, { busy: "Writing the updated plan…" });
       const slice = get().projects[root] ?? emptyCadreSlice();
       const { architecture, uxSpec, mockupHtml } = slice;
       await invoke("write_text_file", { path: `${root}/${PRD_PATH}`, content: prd });
@@ -975,14 +996,15 @@ export const useCadre = create<CadreState>((set, get) => {
       if (mockupHtml.trim()) await invoke("write_text_file", { path: `${root}/${MOCKUP_PATH}`, content: mockupHtml });
 
       // 4. Shard a story for the new scope (dispatch stays gated on re-approval).
-      set({ busy: "Sharding a story for the new scope…" });
+      patchRoot(root, { busy: "Sharding a story for the new scope…" });
       await get().shardNextStory(1);
 
       // The plan is refreshed but must be RE-APPROVED by a human before dispatch.
-      set({ busy: null });
+      patchRoot(root, { busy: null });
       toast("Plan updated downstream — re-approve to dispatch", "info");
     } catch (e) {
-      set({ error: String(e), busy: null });
+      const root = get().activeRoot;
+      if (root) patchRoot(root, { error: String(e), busy: null });
       reportError("cascade replan", e, { toastMessage: "Cascade failed" });
     }
   },

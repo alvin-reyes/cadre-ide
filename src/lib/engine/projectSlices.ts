@@ -16,8 +16,8 @@ export function emptyBmadSlice(): BmadSlice {
  * The per-project fleet state held by useCadre. Everything that describes ONE
  * project's plan + live execution lives here, keyed by root in the projects map.
  * useCadre keeps a mirror of the active slice as its top-level fields so every
- * existing selector keeps working unchanged. (busy/error/fleetProvider stay
- * global on useCadre — they are UI-level, not per-project.)
+ * existing selector keeps working unchanged. (busy/error are per-project via the
+ * mirror so cross-project banner leaks are impossible; fleetProvider stays global.)
  */
 export interface CadreSlice {
   phase: Phase;
@@ -36,6 +36,10 @@ export interface CadreSlice {
   logs: Record<string, string>;
   codeReviews: Record<string, { status: "reviewing" | "done"; reviews?: LensReview[] }>;
   active: Record<string, boolean>;
+  /** Human-readable status while an async action runs for this project (null = idle). */
+  busy: string | null;
+  /** Last error message for this project (null = none). */
+  error: string | null;
 }
 
 export function emptyCadreSlice(): CadreSlice {
@@ -56,6 +60,8 @@ export function emptyCadreSlice(): CadreSlice {
     logs: {},
     codeReviews: {},
     active: {},
+    busy: null,
+    error: null,
   };
 }
 
@@ -97,5 +103,7 @@ export function mirrorCadre(
     logs: s.logs,
     codeReviews: s.codeReviews,
     active: s.active,
+    busy: s.busy,
+    error: s.error,
   };
 }
