@@ -101,6 +101,17 @@ pub fn create_pty(
         cmd.env("LANG", lang);
     }
 
+    // Auth hygiene: portable_pty's CommandBuilder seeds its base env from the full
+    // parent process environment (get_base_env → std::env::vars_os), so the spawned
+    // `claude` inherits any ambient ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN from the
+    // user's shell. When a key is present, `claude -p` uses API-key auth and DISABLES
+    // the claude.ai login + org connectors. Strip both here so the per-spawn `env`
+    // overrides below decide auth unambiguously — every mode that needs a key passes
+    // it explicitly (API-key → ANTHROPIC_API_KEY; ModelRouter → ANTHROPIC_BASE_URL +
+    // ANTHROPIC_AUTH_TOKEN; login → empty env, so the CLI falls back to the login).
+    cmd.env_remove("ANTHROPIC_API_KEY");
+    cmd.env_remove("ANTHROPIC_AUTH_TOKEN");
+
     // Per-spawn env overrides (ModelRouter: ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN
     // / ANTHROPIC_MODEL, and any other agent-specific vars). Applied last so they win.
     if let Some(extra) = env {
