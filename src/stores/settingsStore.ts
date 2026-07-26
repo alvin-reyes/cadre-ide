@@ -268,6 +268,38 @@ export const themePresets: ThemePreset[] = [
       termWhite: "#abb2bf",
     },
   },
+  {
+    // Opt-in mint theme. Tunes the terminal + chrome (--bg-*/--accent/--green)
+    // toward Cadre's mint success hue; the violet brand tokens (--c-*) are
+    // unaffected, so primary buttons keep the brand identity.
+    id: "mint",
+    name: "Mint",
+    colors: {
+      bgPrimary: "#0c1512",
+      bgSecondary: "#0f1a16",
+      bgTertiary: "#13221c",
+      bgElevated: "#182a23",
+      bgSurface: "#22392f",
+      textPrimary: "#e6f4ee",
+      textSecondary: "#9db8ac",
+      textMuted: "#5a7268",
+      accent: "#8ce0c0",
+      green: "#5fd3a3",
+      border: "rgba(140, 224, 192, 0.1)",
+      borderStrong: "rgba(140, 224, 192, 0.18)",
+      termBg: "#0c1512",
+      termFg: "#e6f4ee",
+      termCursor: "#8ce0c0",
+      termBlack: "#22392f",
+      termRed: "#ff6b6b",
+      termGreen: "#5fd3a3",
+      termYellow: "#f2cd7a",
+      termBlue: "#5fb8d3",
+      termMagenta: "#b6a0f0",
+      termCyan: "#8ce0c0",
+      termWhite: "#e6f4ee",
+    },
+  },
 ];
 
 export interface WorkspacePreset {
