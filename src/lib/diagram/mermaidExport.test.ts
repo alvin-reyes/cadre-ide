@@ -130,6 +130,37 @@ describe("flowToMermaid", () => {
     expect(out).toContain("a -->|go| b");
     expect(out).toContain("b --> a");
   });
+
+  // ── Node shapes ────────────────────────────────────────────────────────────
+
+  it("defaults to rectangle bracket syntax when shape is omitted", () => {
+    expect(flowToMermaid([{ id: "a", label: "P" }], [])).toContain('a["P"]');
+  });
+
+  it("emits the correct bracket syntax for every shape", () => {
+    const cases: Array<[FlowNode["shape"], string]> = [
+      ["rectangle", 'a["P"]'],
+      ["rounded", 'a("P")'],
+      ["stadium", 'a(["P"])'],
+      ["subroutine", 'a[["P"]]'],
+      ["cylinder", 'a[("P")]'],
+      ["circle", 'a(("P"))'],
+      ["diamond", 'a{"P"}'],
+      ["hexagon", 'a{{"P"}}'],
+      ["parallelogram", 'a[/"P"/]'],
+    ];
+    for (const [shape, expected] of cases) {
+      const out = flowToMermaid([{ id: "a", label: "P", shape }], []);
+      expect(out).toContain(expected);
+    }
+  });
+
+  it("still escapes labels inside shaped nodes", () => {
+    const out = flowToMermaid([{ id: "a", label: 'a "b" | c', shape: "diamond" }], []);
+    expect(out).toContain("flowchart TD");
+    expect(out).not.toContain('"b"'); // inner double-quotes escaped to single
+    expect(out).not.toMatch(/\|/); // pipe replaced (no edges here)
+  });
 });
 
 // ---------------------------------------------------------------------------

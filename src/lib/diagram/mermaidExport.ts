@@ -12,9 +12,47 @@
 // Flow diagram types
 // ---------------------------------------------------------------------------
 
+/**
+ * Flowchart node shapes. Each maps to a Mermaid bracket syntax:
+ *   rectangle     A["label"]    process (default)
+ *   rounded       A("label")    rounded process
+ *   stadium       A(["label"])  terminator (start/end)
+ *   subroutine    A[["label"]]  predefined process
+ *   cylinder      A[("label")]  database
+ *   circle        A(("label"))  connector
+ *   diamond       A{"label"}    decision
+ *   hexagon       A{{"label"}}  preparation
+ *   parallelogram A[/"label"/]  input/output
+ */
+export type FlowShape =
+  | "rectangle"
+  | "rounded"
+  | "stadium"
+  | "subroutine"
+  | "cylinder"
+  | "circle"
+  | "diamond"
+  | "hexagon"
+  | "parallelogram";
+
+/** All shapes, in a stable UI/picker order. */
+export const FLOW_SHAPES: FlowShape[] = [
+  "rectangle",
+  "rounded",
+  "stadium",
+  "subroutine",
+  "cylinder",
+  "circle",
+  "diamond",
+  "hexagon",
+  "parallelogram",
+];
+
 export interface FlowNode {
   id: string;
   label: string;
+  /** Node shape; defaults to "rectangle" when omitted. */
+  shape?: FlowShape;
 }
 
 export interface FlowEdge {
@@ -108,15 +146,36 @@ function escapeLabel(label: string): string {
 // ---------------------------------------------------------------------------
 
 /**
+ * Wrap a label in the Mermaid bracket syntax for a given shape.
+ * Unknown/omitted shapes fall back to the rectangle form `["label"]`.
+ */
+function shapeWrap(label: string, shape: FlowShape | undefined): string {
+  const l = `"${escapeLabel(label)}"`;
+  switch (shape) {
+    case "rounded": return `(${l})`;
+    case "stadium": return `([${l}])`;
+    case "subroutine": return `[[${l}]]`;
+    case "cylinder": return `[(${l})]`;
+    case "circle": return `((${l}))`;
+    case "diamond": return `{${l}}`;
+    case "hexagon": return `{{${l}}}`;
+    case "parallelogram": return `[/${l}/]`;
+    case "rectangle":
+    default: return `[${l}]`;
+  }
+}
+
+/**
  * Serialize a flowchart model to Mermaid `flowchart TD` markup.
  *
+ * Each node renders in its `shape`'s bracket syntax (default: rectangle).
  * Empty inputs produce `"flowchart TD"` — a valid, parseable Mermaid diagram.
  */
 export function flowToMermaid(nodes: FlowNode[], edges: FlowEdge[]): string {
   const lines: string[] = ["flowchart TD"];
 
   for (const node of nodes) {
-    lines.push(`${node.id}["${escapeLabel(node.label)}"]`);
+    lines.push(`${node.id}${shapeWrap(node.label, node.shape)}`);
   }
 
   for (const edge of edges) {

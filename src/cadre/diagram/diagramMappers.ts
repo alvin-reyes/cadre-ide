@@ -9,7 +9,7 @@
  * shape (id, data, source, target) that React Flow guarantees.
  */
 
-import type { FlowNode, FlowEdge, UmlNode, UmlEdge, UmlRelation } from "../../lib/diagram/mermaidExport";
+import { FLOW_SHAPES, type FlowNode, type FlowEdge, type FlowShape, type UmlNode, type UmlEdge, type UmlRelation } from "../../lib/diagram/mermaidExport";
 
 // ---------------------------------------------------------------------------
 // Minimal RF shapes (only what the mappers need — avoids importing RF types)
@@ -43,10 +43,17 @@ export function toFlowModel(
   nodes: RfNode[],
   edges: RfEdge[]
 ): { nodes: FlowNode[]; edges: FlowEdge[] } {
-  const flowNodes: FlowNode[] = nodes.map((n) => ({
-    id: n.id,
-    label: typeof n.data.label === "string" ? n.data.label : n.id,
-  }));
+  const flowNodes: FlowNode[] = nodes.map((n) => {
+    const shape =
+      typeof n.data.shape === "string" && FLOW_SHAPES.includes(n.data.shape as FlowShape)
+        ? (n.data.shape as FlowShape)
+        : undefined;
+    return {
+      id: n.id,
+      label: typeof n.data.label === "string" ? n.data.label : n.id,
+      ...(shape ? { shape } : {}),
+    };
+  });
 
   const flowEdges: FlowEdge[] = edges.map((e) => ({
     id: e.id,

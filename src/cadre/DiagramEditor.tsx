@@ -26,7 +26,7 @@ import { Modal } from "./components/Modal";
 import { Markdown } from "./components/Markdown";
 import { UmlClassNode } from "./diagram/UmlClassNode";
 import { toFlowModel, toUmlModel, type RfNode, type RfEdge } from "./diagram/diagramMappers";
-import { flowToMermaid, umlToMermaid } from "../lib/diagram/mermaidExport";
+import { flowToMermaid, umlToMermaid, FLOW_SHAPES, type FlowShape } from "../lib/diagram/mermaidExport";
 
 // ---------------------------------------------------------------------------
 // Custom node types (defined outside component so RF doesn't re-register)
@@ -39,9 +39,9 @@ const nodeTypes = { umlClass: UmlClassNode };
 // ---------------------------------------------------------------------------
 
 const INITIAL_FLOW_NODES: Node[] = [
-  { id: "1", type: "default", position: { x: 200, y: 60 }, data: { label: "Start" } },
-  { id: "2", type: "default", position: { x: 200, y: 180 }, data: { label: "Process" } },
-  { id: "3", type: "default", position: { x: 200, y: 300 }, data: { label: "End" } },
+  { id: "1", type: "default", position: { x: 200, y: 60 }, data: { label: "Start", shape: "stadium" }, style: flowNodeStyle("stadium") },
+  { id: "2", type: "default", position: { x: 200, y: 180 }, data: { label: "Process", shape: "rectangle" }, style: flowNodeStyle("rectangle") },
+  { id: "3", type: "default", position: { x: 200, y: 300 }, data: { label: "End", shape: "stadium" }, style: flowNodeStyle("stadium") },
 ];
 
 const INITIAL_FLOW_EDGES: Edge[] = [
@@ -105,6 +105,9 @@ export function DiagramEditor({
   // Relation selector for new UML edges
   const [nextRelation, setNextRelation] = useState<UmlRelationOption>("association");
 
+  // Shape for new Flow nodes (also applied to the current selection).
+  const [nextShape, setNextShape] = useState<FlowShape>("rectangle");
+
   // Separate state for Flow and UML graphs
   const [flowNodes, setFlowNodes, onFlowNodesChange] = useNodesState(INITIAL_FLOW_NODES);
   const [flowEdges, setFlowEdges, onFlowEdgesChange] = useEdgesState(INITIAL_FLOW_EDGES);
@@ -132,10 +135,28 @@ export function DiagramEditor({
         id,
         type: "default",
         position: { x: 80 + Math.random() * 200, y: 80 + Math.random() * 200 },
-        data: { label: "Node" },
+        data: { label: "Node", shape: nextShape },
+        style: flowNodeStyle(nextShape),
       },
     ]);
-  }, [setFlowNodes]);
+  }, [setFlowNodes, nextShape]);
+
+  // Set the shape: applies to every selected Flow node, and becomes the shape
+  // for the NEXT added node. If nothing is selected, only the "next" default
+  // changes (still useful before adding).
+  const applyShape = useCallback(
+    (shape: FlowShape) => {
+      setNextShape(shape);
+      setFlowNodes((nds) =>
+        nds.map((n) =>
+          n.selected
+            ? { ...n, data: { ...n.data, shape }, style: { ...(n.style ?? {}), ...flowNodeStyle(shape) } }
+            : n
+        )
+      );
+    },
+    [setFlowNodes]
+  );
 
   const onFlowNodeDoubleClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
@@ -247,7 +268,7 @@ export function DiagramEditor({
             Diagram
           </span>
           <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)" }}>
-            drag to connect · double-click to rename
+            drag to connect · double-click to rename · pick a shape per node
           </span>
         </span>
       }
@@ -336,10 +357,32 @@ export function DiagramEditor({
           >
             <Background color="var(--c-border)" gap={20} size={1} />
             <Controls />
-            <div style={{ position: "absolute", top: 10, left: 10, zIndex: 10 }}>
+            <div style={{ position: "absolute", top: 10, left: 10, zIndex: 10, display: "flex", alignItems: "center", gap: 6 }}>
               <button onClick={addFlowNode} style={toolbarBtnStyle}>
                 + Node
               </button>
+              <select
+                value={nextShape}
+                onChange={(e) => applyShape(e.target.value as FlowShape)}
+                title="Shape for new nodes (and any selected node)"
+                aria-label="Node shape"
+                style={{
+                  background: "var(--c-surface-2)",
+                  border: "1px solid var(--c-border-strong)",
+                  borderRadius: "var(--c-radius)",
+                  color: "var(--c-text)",
+                  fontSize: "var(--c-fs-xs)",
+                  padding: "4px 8px",
+                  cursor: "pointer",
+                  fontWeight: 550,
+                }}
+              >
+                {FLOW_SHAPES.map((s) => (
+                  <option key={s} value={s}>
+                    {SHAPE_LABEL[s]}
+                  </option>
+                ))}
+              </select>
             </div>
           </ReactFlow>
         )}
@@ -428,6 +471,60 @@ export function DiagramEditor({
       </div>
     </Modal>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Flow shape helpers
+// ---------------------------------------------------------------------------
+
+/** Human-readable label for each shape (picker options). */
+const SHAPE_LABEL: Record<FlowShape, string> = {
+  rectangle: "Rectangle (process)",
+  rounded: "Rounded",
+  stadium: "Stadium (start/end)",
+  subroutine: "Subroutine",
+  cylinder: "Cylinder (database)",
+  circle: "Circle (connector)",
+  diamond: "Diamond (decision)",
+  hexagon: "Hexagon (prepare)",
+  parallelogram: "Parallelogram (I/O)",
+};
+
+/**
+ * A lightweight visual hint for a node's shape on the RF canvas via inline
+ * style. React Flow's default node is a rounded box, so we approximate the
+ * shape family with border-radius / clip-path / rotation — enough to
+ * distinguish them at a glance. The authoritative shape lives in `data.shape`
+ * and is what the Mermaid export uses; this is purely cosmetic.
+ */
+function flowNodeStyle(shape: FlowShape): React.CSSProperties {
+  const base: React.CSSProperties = {
+    background: "var(--c-surface-2)",
+    border: "1px solid var(--c-border-strong)",
+    color: "var(--c-text)",
+    fontSize: "var(--c-fs-xs)",
+  };
+  switch (shape) {
+    case "rounded":
+      return { ...base, borderRadius: 14 };
+    case "stadium":
+      return { ...base, borderRadius: 999 };
+    case "circle":
+      return { ...base, borderRadius: "50%", width: 72, height: 72, display: "flex", alignItems: "center", justifyContent: "center" };
+    case "diamond":
+      return { ...base, clipPath: "polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)", padding: 22 };
+    case "hexagon":
+      return { ...base, clipPath: "polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)", padding: "10px 22px" };
+    case "parallelogram":
+      return { ...base, clipPath: "polygon(20% 0%, 100% 0%, 80% 100%, 0% 100%)", padding: "8px 22px" };
+    case "cylinder":
+      return { ...base, borderRadius: "50% / 12px" };
+    case "subroutine":
+      return { ...base, borderRadius: 2, boxShadow: "inset 3px 0 0 var(--c-border-strong), inset -3px 0 0 var(--c-border-strong)" };
+    case "rectangle":
+    default:
+      return { ...base, borderRadius: 2 };
+  }
 }
 
 // ---------------------------------------------------------------------------
