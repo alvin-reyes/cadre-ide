@@ -23,16 +23,16 @@
   --c-border: #1e1e2c;
   --c-border-strong: #2a2a3c;
 
-  /* Accent — Mint (Cadre brand primary) */
-  --c-accent: #34d399;
-  --c-accent-hover: #5fdcac;
-  --c-accent-subtle: rgba(52, 211, 153, 0.15);
-  --c-accent-ring: rgba(52, 211, 153, 0.4);
-  --c-on-accent: #04231a;
+  /* Accent — Signal Violet (Cadre brand primary) */
+  --c-accent: #6d5ef8;
+  --c-accent-hover: #8375f5;
+  --c-accent-subtle: rgba(109, 94, 248, 0.15);
+  --c-accent-ring: rgba(109, 94, 248, 0.4);
+  --c-on-accent: #ffffff;
 
   /* Brand gradient + glow — primary buttons, brand surfaces */
-  --c-grad-brand: linear-gradient(150deg, #34d399, #17a878);
-  --c-shadow-brand: 0 8px 24px rgba(52, 211, 153, 0.35);
+  --c-grad-brand: linear-gradient(150deg, #6d5ef8, #3a2ed0);
+  --c-shadow-brand: 0 8px 24px rgba(109, 94, 248, 0.35);
 
   /* Status — brand semantic (Mint success, amber warning, coral danger) */
   --c-success: #8ce0c0;
@@ -41,7 +41,7 @@
   --c-warning-subtle: rgba(254, 188, 46, 0.15);
   --c-danger: #ff5f57;
   --c-danger-subtle: rgba(255, 95, 87, 0.15);
-  --c-info: #38bdf8;
+  --c-info: #6d5ef8;
 
   /* Typography — Anthropic-style: Newsreader (~Tiempos) display, Inter (~Styrene) body */
   /* Cadre brand type: Space Grotesk display, Inter UI, JetBrains Mono code/labels */
@@ -121,9 +121,9 @@
   --c-border: rgba(11, 11, 18, 0.1);
   --c-border-strong: rgba(11, 11, 18, 0.18);
 
-  /* Accent — Mint on Cloud; deepen the subtles/ring for contrast on the light ground */
-  --c-accent-subtle: rgba(52, 211, 153, 0.16);
-  --c-accent-ring: rgba(52, 211, 153, 0.5);
+  /* Accent stays Signal Violet — reads well on Cloud; tint the subtles for the light ground */
+  --c-accent-subtle: rgba(109, 94, 248, 0.14);
+  --c-accent-ring: rgba(109, 94, 248, 0.45);
 
   /* Status — deepened for contrast on a light ground */
   --c-success: #1fa971;
@@ -171,7 +171,7 @@
 }
 .cadre-btn-primary:not(:disabled):hover {
   transform: translateY(-1px) !important;
-  box-shadow: 0 12px 32px rgba(52, 211, 153, 0.45) !important;
+  box-shadow: 0 12px 32px rgba(109, 94, 248, 0.45) !important;
   filter: brightness(1.06) !important;
 }
 .cadre-btn-primary:not(:disabled):active {
@@ -205,7 +205,7 @@
     90deg,
     transparent 0%,
     var(--c-accent) 40%,
-    #17a878 60%,
+    #3a2ed0 60%,
     transparent 100%
   );
   background-size: 200% 100%;
@@ -232,8 +232,8 @@
 
 /* Status dot keyframe — pulsing violet for in-progress (§5: "in-progress violet pulsing"). */
 @keyframes cadre-dot-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.5); }
-  50%       { opacity: 0.85; transform: scale(1.15); box-shadow: 0 0 0 4px rgba(52, 211, 153, 0); }
+  0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 rgba(109, 94, 248, 0.5); }
+  50%       { opacity: 0.85; transform: scale(1.15); box-shadow: 0 0 0 4px rgba(109, 94, 248, 0); }
 }
 
 /* Brand status dots — inline-block circles; apply as siblings/children. */
