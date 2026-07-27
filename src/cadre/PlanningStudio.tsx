@@ -329,11 +329,14 @@ export function PlanningStudio() {
     if (el) exportHtmlToPdf(meta.file.replace(/^docs\//, "").replace(/\.md$/, ""), el.innerHTML);
   }
 
-  // Keep the conversation pinned to the latest message.
+  // Keep the conversation pinned to the latest message. `split` is a dependency
+  // because dragging the divider reflows the message list (rewraps at the new
+  // width), changing scrollHeight — without re-pinning, the bottom-anchored
+  // quick-reply suggestion chips scroll out of view and appear to "disappear".
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, thinking, persona, suggestions]);
+  }, [messages, thinking, persona, suggestions, split]);
 
   // Auto-grow the composer as the user types (capped).
   useEffect(() => {
