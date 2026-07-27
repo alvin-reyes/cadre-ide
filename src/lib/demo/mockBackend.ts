@@ -244,6 +244,14 @@ export function createMockInvoke(fs: MockFs) {
       // ── Exec ─────────────────────────────────────────────────────────────
 
       case "run_git": {
+        // openProject guards on `git rev-parse --is-inside-work-tree` returning
+        // "true" — otherwise it reports "not a git repository". The demo has no
+        // real git, so answer that probe as a valid repo; everything else is a
+        // no-op success.
+        const gitArgs = (args.args as string[] | undefined) ?? [];
+        if (gitArgs.includes("--is-inside-work-tree")) {
+          return { exit_code: 0, stdout: "true\n", stderr: "", timed_out: false };
+        }
         return { exit_code: 0, stdout: "", stderr: "", timed_out: false };
       }
 
