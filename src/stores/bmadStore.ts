@@ -183,18 +183,17 @@ export const useBmadStore = create<BmadState>((set, get) => {
     },
 
     openProject: async (root: string) => {
-      await invoke("open_project", { root });
-      // Seed the slice for this project and make it active, then sync the mirror.
-      set((s) => ({
-        projects: { ...s.projects, [root]: emptyBmadSlice() },
-        activeRoot: root,
-      }));
-      syncMirror();
-
-      // Guard: Cadre dispatches each story into an isolated git worktree, so the
-      // project folder MUST be a git repository. Surface a clear, actionable error
-      // if it is not — but still open the project so the user can see what's there.
-      // (newProject already runs `git init`, so this only bites opened non-git folders.)
+      // ENFORCED GATE: Cadre dispatches each story into an isolated git worktree,
+      // so the project folder MUST be a git repository. Check this FIRST — before
+      // open_project, before seeding the slice, before any watcher — and ABORT if
+      // it isn't a repo. Opening a non-git folder anyway used to cascade into
+      // "Not a directory" watcher errors on .cadre/state and docs/stories.
+      // (newProject already runs `git init`, so this only gates opened folders.)
+      const notGit = new Error(
+        `"${root}" is not a git repository. Cadre runs each story in an isolated ` +
+        `git worktree, so the project must be a git repo. Run \`git init\` in the ` +
+        `folder (and make an initial commit), then reopen.`
+      );
       try {
         interface RunResult { exit_code: number | null; stdout: string; stderr: string; timed_out: boolean }
         const res = await invoke<RunResult>("run_git", {
@@ -202,27 +201,23 @@ export const useBmadStore = create<BmadState>((set, get) => {
           args: ["rev-parse", "--is-inside-work-tree"],
         });
         if (res.exit_code !== 0 || res.stdout.trim() !== "true") {
-          reportError(
-            "open project",
-            new Error(
-              `"${root}" is not a git repository. Cadre runs each story in an isolated ` +
-              `git worktree, so the project must be a git repo. Run \`git init\` in the ` +
-              `folder (and make an initial commit), then reopen.`
-            )
-          );
+          reportError("open project", notGit);
+          throw notGit;
         }
-      } catch {
-        // run_git itself may throw if git is not installed or the path is invalid —
-        // surface the same actionable message rather than silently eating the error.
-        reportError(
-          "open project",
-          new Error(
-            `"${root}" is not a git repository. Cadre runs each story in an isolated ` +
-            `git worktree, so the project must be a git repo. Run \`git init\` in the ` +
-            `folder (and make an initial commit), then reopen.`
-          )
-        );
+      } catch (e) {
+        // run_git itself may throw if git is not installed or the path is invalid.
+        // Either way the folder is unusable as a project — surface it and abort.
+        if (e !== notGit) reportError("open project", notGit);
+        throw notGit;
       }
+
+      await invoke("open_project", { root });
+      // Seed the slice for this project and make it active, then sync the mirror.
+      set((s) => ({
+        projects: { ...s.projects, [root]: emptyBmadSlice() },
+        activeRoot: root,
+      }));
+      syncMirror();
 
       const stateDir = `${root}/.cadre/state`;
       const storyDir = `${root}/docs/stories`;

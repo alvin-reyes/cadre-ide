@@ -84,7 +84,11 @@ export function CadreApp() {
     if (roots.length === 0) return;
     const target = activeRoot ?? roots[0];
     // Open each project in the background (registers watchers + hydrates board).
-    Promise.all(roots.map((r) => useBmadStore.getState().openProject(r))).then(() => {
+    // openProject now REJECTS for a non-git folder; swallow per-project so one bad
+    // persisted root doesn't abort restoring the others (the error is reported).
+    Promise.all(
+      roots.map((r) => useBmadStore.getState().openProject(r).catch(() => {}))
+    ).then(() => {
       // After all projects are open, point the foreground at the previously-active one.
       useBmadStore.getState().setActiveProject(target);
       useCadre.getState().setActiveProject(target);
