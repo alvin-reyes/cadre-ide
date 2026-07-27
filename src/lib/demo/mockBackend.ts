@@ -16,6 +16,7 @@ import type { Status } from "../engine/status";
 import { canTransition } from "../engine/transitions";
 import { buildTranscript, streamTranscript } from "./demoContent";
 import type { PtyEvent } from "./demoContent";
+import { canPickLocalFolder, pickAndLoadLocalFolder } from "./loadLocalFolder";
 
 // ─── Callback registry (for transformCallback / unregisterCallback) ────────────
 
@@ -313,7 +314,16 @@ export function createMockInvoke(fs: MockFs) {
       // ── Dialog plugin ─────────────────────────────────────────────────────
 
       case "plugin:dialog|open": {
-        // Return a fixed demo project path so folder-picker works.
+        // WEB: if the browser supports the File System Access API and the caller
+        // is picking a directory, let the user pick a REAL local folder and load
+        // its files into this MockFs. Falls back to the fixed demo path otherwise.
+        const wantsDir = (args.directory as boolean | undefined) ?? (args.options as { directory?: boolean } | undefined)?.directory ?? false;
+        if (wantsDir && canPickLocalFolder()) {
+          const picked = await pickAndLoadLocalFolder(fs);
+          if (picked) return picked.root;
+          return null; // user cancelled
+        }
+        // Return a fixed demo project path so folder-picker still works.
         return "/demo/cadre-demo-project";
       }
 

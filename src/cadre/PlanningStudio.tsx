@@ -322,6 +322,7 @@ export function PlanningStudio() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const docRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   function exportDoc() {
     const el = docRef.current?.querySelector(".cadre-doc");
@@ -365,10 +366,14 @@ export function PlanningStudio() {
     if (dt.files && dt.files.length > 0) {
       e.preventDefault();
       const files = Array.from(dt.files);
-      const atts = await Promise.all(
-        files.map(async (f) => ({ name: f.name || "pasted.md", content: await readFileText(f) }))
-      );
-      addAttachments(atts);
+      try {
+        const atts = await Promise.all(
+          files.map(async (f) => ({ name: f.name || "pasted.md", content: await readFileText(f) }))
+        );
+        addAttachments(atts);
+      } catch (err) {
+        reportError("attach", err, { toastMessage: "Couldn't read the pasted file" });
+      }
       return;
     }
     const text = dt.getData("text");
@@ -379,13 +384,25 @@ export function PlanningStudio() {
     }
   }
 
-  // Explicit "attach whatever's on the clipboard" affordance.
-  async function attachFromClipboard() {
+  // Explicit "attach file(s)" affordance — opens the native picker.
+  function openFilePicker() {
+    fileInputRef.current?.click();
+  }
+
+  // Read every picked file as text and attach it. Reset the input so picking
+  // the same file twice in a row still fires a change event.
+  async function onFilesPicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const input = e.target;
+    const files = input.files ? Array.from(input.files) : [];
+    input.value = "";
+    if (!files.length) return;
     try {
-      const text = await navigator.clipboard.readText();
-      if (text.trim()) addAttachments([{ name: guessName(text), content: text }]);
-    } catch {
-      /* clipboard unavailable / permission denied */
+      const atts = await Promise.all(
+        files.map(async (f) => ({ name: f.name || "attachment.md", content: await readFileText(f) }))
+      );
+      addAttachments(atts);
+    } catch (err) {
+      reportError("attach", err, { toastMessage: "Couldn't read the attached file" });
     }
   }
 
@@ -752,10 +769,19 @@ export function PlanningStudio() {
                 padding: "8px 8px 8px 10px",
               }}
             >
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".md,.txt,.json,.ts,.tsx,.js,.jsx,.csv,.yml,.yaml,text/*"
+                onChange={onFilesPicked}
+                style={{ display: "none" }}
+              />
               <button
-                onClick={attachFromClipboard}
+                onClick={openFilePicker}
                 disabled={!planAuth.ready || thinking}
-                title="Attach a document from the clipboard"
+                title="Attach one or more files"
+                aria-label="Attach file"
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
@@ -767,6 +793,7 @@ export function PlanningStudio() {
                   border: "none",
                   color: "var(--c-text-muted)",
                   cursor: planAuth.ready && !thinking ? "pointer" : "default",
+                  opacity: planAuth.ready && !thinking ? 1 : 0.4,
                   flexShrink: 0,
                 }}
               >
@@ -788,6 +815,7 @@ export function PlanningStudio() {
                   border: "none",
                   color: "var(--c-text-muted)",
                   cursor: planAuth.ready && !thinking ? "pointer" : "default",
+                  opacity: planAuth.ready && !thinking ? 1 : 0.4,
                   flexShrink: 0,
                 }}
               >
@@ -800,7 +828,7 @@ export function PlanningStudio() {
                 onChange={(e) => setDraft(e.target.value)}
                 onPaste={onPaste}
                 onKeyDown={onInputKeyDown}
-                placeholder={planAuth.ready ? `Talk to the ${meta.label}…  (Enter to send · Shift+Enter for a new line · paste a doc to attach)` : (planAuth.reason ?? "Add your API key above to start")}
+                placeholder={planAuth.ready ? `Talk to the ${meta.label}…  (Enter to send · Shift+Enter for a new line · 📎 or paste to attach a file)` : (planAuth.reason ?? "Add your API key above to start")}
                 disabled={!planAuth.ready}
                 style={{
                   flex: 1,

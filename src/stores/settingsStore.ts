@@ -268,6 +268,38 @@ export const themePresets: ThemePreset[] = [
       termWhite: "#abb2bf",
     },
   },
+  {
+    // Opt-in mint theme. Tunes the terminal + chrome (--bg-*/--accent/--green)
+    // toward Cadre's mint success hue; the violet brand tokens (--c-*) are
+    // unaffected, so primary buttons keep the brand identity.
+    id: "mint",
+    name: "Mint",
+    colors: {
+      bgPrimary: "#0c1512",
+      bgSecondary: "#0f1a16",
+      bgTertiary: "#13221c",
+      bgElevated: "#182a23",
+      bgSurface: "#22392f",
+      textPrimary: "#e6f4ee",
+      textSecondary: "#9db8ac",
+      textMuted: "#5a7268",
+      accent: "#8ce0c0",
+      green: "#5fd3a3",
+      border: "rgba(140, 224, 192, 0.1)",
+      borderStrong: "rgba(140, 224, 192, 0.18)",
+      termBg: "#0c1512",
+      termFg: "#e6f4ee",
+      termCursor: "#8ce0c0",
+      termBlack: "#22392f",
+      termRed: "#ff6b6b",
+      termGreen: "#5fd3a3",
+      termYellow: "#f2cd7a",
+      termBlue: "#5fb8d3",
+      termMagenta: "#b6a0f0",
+      termCyan: "#8ce0c0",
+      termWhite: "#e6f4ee",
+    },
+  },
 ];
 
 export interface WorkspacePreset {
@@ -363,10 +395,32 @@ interface SettingsStore extends Settings {
   deleteWorkspace: (id: string) => void;
 }
 
+// Bump when a settings migration must run once against persisted state.
+const SETTINGS_MIGRATION_KEY = "cadre-settings-migration";
+const CURRENT_MIGRATION = 1; // 1 = mint is the new default theme
+
 function loadSettings(): Partial<Settings> {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    return raw ? JSON.parse(raw) : {};
+    const parsed: Partial<Settings> = raw ? JSON.parse(raw) : {};
+
+    // One-time migration: move existing users off the old default theme
+    // ("github-dark") onto the new Mint default. Runs exactly once — a theme the
+    // user deliberately picks afterward is preserved (they re-persist, and the
+    // migration marker prevents a re-run).
+    const migrated = Number(localStorage.getItem(SETTINGS_MIGRATION_KEY) ?? 0);
+    if (migrated < CURRENT_MIGRATION) {
+      if (parsed.themeId === "github-dark" || parsed.themeId === undefined) {
+        parsed.themeId = "mint";
+      }
+      try {
+        localStorage.setItem(SETTINGS_MIGRATION_KEY, String(CURRENT_MIGRATION));
+      } catch {
+        /* storage unavailable — migration is best-effort */
+      }
+    }
+
+    return parsed;
   } catch {
     return {};
   }
@@ -392,7 +446,7 @@ function persistWorkspaces(w: WorkspacePreset[]) {
 }
 
 const defaults: Settings = {
-  themeId: "github-dark",
+  themeId: "mint",
   customColors: null,
   fontSize: 14,
   fontFamily: '"JetBrains Mono", "SF Mono", "Fira Code", "Cascadia Code", monospace',
