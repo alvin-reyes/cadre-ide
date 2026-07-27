@@ -235,12 +235,19 @@ export async function enterDemoMode(): Promise<void> {
   const { useSettingsStore } = await import("../../stores/settingsStore");
   const { useModelsStore } = await import("../../stores/modelsStore");
 
-  // Enable Claude login-mode so resolveFleetAuth succeeds without a key — the mock
-  // agent ignores env, but dispatch bails if no credential path is configured.
-  // Use setState (in-memory only) rather than setDispatchUseLogin so persistSettings
-  // is NOT called and dispatchUseLogin:true is NOT written to localStorage["cadre-settings"],
-  // which would silently leak login-mode into a later real (non-demo) browser session.
-  useSettingsStore.setState({ dispatchUseLogin: true });
+  // Seed a dummy Anthropic key so BOTH planning and fleet dispatch resolve
+  // "ready" — the mock backend fakes the LLM, so the value is never used for a
+  // real request. Without this, login-mode with no key makes planning report
+  // "Planning needs an API key" (resolvePlanningAuth) — noise in the demo.
+  //
+  // The store copy is in-memory ONLY (no persistSettings), and the mock secret
+  // store lives only in the mock backend, so neither the dummy key nor login-mode
+  // leaks into a later real (non-demo) browser session.
+  useSettingsStore.setState({ dispatchUseLogin: true, anthropicApiKey: "demo-key" });
+  // planningAuth reads the key via secretGet (the mock secret store), not the
+  // settings store — seed it there too so resolvePlanningAuth returns ready.
+  const { secretSet } = await import("../secrets");
+  await secretSet("anthropic_api_key", "demo-key").catch(() => {});
 
   // openProject sets the active root, seeds the BmadSlice, and hydrates the board
   // (reads story files + state files from the mock FS via invoke).
