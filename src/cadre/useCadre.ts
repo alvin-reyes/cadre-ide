@@ -660,7 +660,6 @@ export const useCadre = create<CadreState>((set, get) => {
   dispatchStory: async (epic, story, opts) => {
     const key = `${epic}.${story}`;
     const silent = opts?.silent ?? false;
-    const agentId = opts?.agentId;
     // Capture the target project ONCE at the top. Every per-project write in this
     // action (logs, active, codeReviews, busy, error) targets THIS root — never
     // get().activeRoot — so a background dispatch never corrupts the foreground.
@@ -682,6 +681,38 @@ export const useCadre = create<CadreState>((set, get) => {
       logs: { ...(get().projects[root]?.logs ?? {}), [key]: "" },
       active: { ...(get().projects[root]?.active ?? {}), [key]: true },
     });
+
+    // Resolve the fleet agent for this story. The role pump (dispatchReady)
+    // passes an explicit agentId; single-story dispatches (Kanban "run", the
+    // orchestrator) do not. Without one, the story would go InProgress but no
+    // fleet slot would ever show "working" — the board and the org chart would
+    // disagree. So when no agentId is given, claim an idle Dev slot so every
+    // running story is reflected on the fleet.
+    //
+    // The claim is SYNCHRONOUS: we pick an idle Dev slot AND flip it to "working"
+    // for THIS story in the same patchRoot, before any await. Two concurrent
+    // manual dispatches therefore can't both grab the same slot — the second
+    // reads the first as busy and takes the next idle Dev slot.
+    let agentId = opts?.agentId;
+    if (!agentId) {
+      const maxDev = useSettingsStore.getState().maxDevAgents;
+      const roster = composeRoster(maxDev, get().projects[root]?.agentSlots ?? []);
+      const freeDev = roster.find((s) => s.role === "dev" && s.status === "idle");
+      // Fall back to the first Dev slot if all are busy (over-subscribed single
+      // dispatch) — it still surfaces the work rather than showing an idle fleet.
+      const claimed = freeDev ?? roster.find((s) => s.role === "dev");
+      agentId = claimed?.agentId;
+      // Seed the roster AND claim the slot synchronously so a concurrent dispatch
+      // sees it as busy. The full working/verifying/idle lifecycle below still
+      // targets this slot by agentId.
+      patchRoot(root, {
+        agentSlots: roster.map((s) =>
+          s.agentId === claimed?.agentId
+            ? { ...s, currentStory: key, status: "working" as const }
+            : s
+        ),
+      });
+    }
     const onOutput = (chunk: string) => {
       aiLog(`story ${key}`, chunk);
       const prev = get().projects[root]?.logs?.[key] ?? "";
