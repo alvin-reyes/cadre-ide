@@ -180,6 +180,23 @@ export function DiagramEditor({
     ]);
   }, [setUmlNodes]);
 
+  // Double-click a class node to rename it (matches the Flow tab + the modal
+  // subtitle's "double-click to rename"). Renames the class `name`.
+  const onUmlNodeDoubleClick = useCallback(
+    (_: React.MouseEvent, node: Node) => {
+      const current = typeof node.data.name === "string" ? node.data.name : node.id;
+      const name = window.prompt("Rename class", current);
+      if (name !== null && name.trim()) {
+        setUmlNodes((nds) =>
+          nds.map((n) =>
+            n.id === node.id ? { ...n, data: { ...n.data, name: name.trim() } } : n
+          )
+        );
+      }
+    },
+    [setUmlNodes]
+  );
+
   // ---------------------------------------------------------------------------
   // Mermaid export helpers
   // ---------------------------------------------------------------------------
@@ -227,8 +244,6 @@ export function DiagramEditor({
   // ---------------------------------------------------------------------------
 
   // Suppress unused variable warnings for setters we keep for symmetry
-  void setFlowNodes;
-  void setUmlNodes;
   void onUmlNodesChange;
   void onFlowNodesChange;
   void onFlowEdgesChange;
@@ -352,6 +367,7 @@ export function DiagramEditor({
             onNodesChange={onUmlNodesChange}
             onEdgesChange={onUmlEdgesChange}
             onConnect={onUmlConnect}
+            onNodeDoubleClick={onUmlNodeDoubleClick}
             nodeTypes={nodeTypes}
             deleteKeyCode="Delete"
             colorMode="dark"
