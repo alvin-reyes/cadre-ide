@@ -37,12 +37,9 @@ the work.
 2. **Approve** — sign off the plan and **freeze a verification command**. No approval, no fleet.
 3. **Shard** — the Scrum Master breaks the plan into a full-lifecycle backlog of stories
    (`epic.story`), each context-engineered for an agent.
-4. **Dispatch** — a **role-composed fleet** runs **in parallel**, each agent in its own isolated git
-   worktree on a per-story branch. Stories are routed by role: a dedicated **QA** agent and a
-   **DevOps** agent (one story at a time each), plus **Dev** agents that scale to demand up to a cap.
-   File-disjoint scheduling keeps concurrent agents from colliding; if a role agent is busy, its work
-   falls back to an idle Dev so nothing stalls. A shared **Context Store** keeps their contracts
-   consistent.
+4. **Dispatch** — a fleet of Dev agents runs **in parallel**, each in its own isolated git worktree
+   on a per-story branch. File-disjoint scheduling keeps concurrent agents from colliding; a shared
+   **Context Store** keeps their contracts consistent.
 5. **Verify** — the engine runs the frozen command against each worktree and writes the authoritative
    status. An **adversarial code-review fleet** (diverse lenses) can gate the merge.
 6. **Integrate** — verified work merges back to main (serialized); a conflict marks the story
@@ -53,9 +50,6 @@ the work.
 - **Three views** — an **Orchestrator** board (plan → shard → fleet → done), a **File** view (Monaco
   editor + tree + integrated terminal + project-wide search & replace), and a **Terminal** view
   (tabbed, with split panes).
-- **Role-composed, auto-scaling fleet** — a dedicated QA agent + a DevOps agent are always on, and Dev
-  agents scale up and down with the ready work (capped by a **Max Dev agents** setting). Each story is
-  routed to the matching-role agent; busy roles fall back to an idle Dev so the board never blocks.
 - **Parallel, live multi-project** — open several projects as tabs; a background project's agents keep
   advancing its board while you work in another; open tabs restore on relaunch.
 - **Engine-owned status machine** — `Draft → Approved → InProgress → InReview → Done / Failed /
@@ -76,7 +70,7 @@ the work.
 
 ## Build from source
 
-Prerequisites: **Node.js 20+**, **Rust (stable)**, and [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
+Prerequisites: **Node.js 18+**, **Rust (stable)**, and [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
 (`npm install -g @anthropic-ai/claude-code`) for the agent features.
 
 ```bash
@@ -94,14 +88,13 @@ cd src-tauri && cargo test   # Rust state machine + commands
 
 ## Status & roadmap
 
-Actively built. The disciplined loop — plan, approve, shard, role-composed parallel dispatch, verify,
-review, merge-back — works end to end, across multiple live projects.
+Actively built. The disciplined loop — plan, approve, shard, parallel dispatch, verify, review,
+merge-back — works end to end, across multiple live projects.
 
-Recently landed: the **role-composed auto-scaling fleet** (QA + DevOps + demand-scaled Dev) as the
-default execution model, **polyrepo support** (one Cadre project orchestrating several code repos,
-each story targeting a repo), and a **provider sign-in** (one credential — Claude login / Anthropic /
-DeepSeek / Kimi — driving both planning and dispatch). See
-[`docs/superpowers/plans/`](docs/superpowers/plans/) for the design specs and implementation plans.
+In progress: **polyrepo support** (one Cadre project orchestrating several code repos, each story
+targeting a repo) and a **provider sign-in** (one credential — Claude login / Anthropic / DeepSeek /
+Kimi — driving both planning and dispatch). See [`docs/superpowers/plans/`](docs/superpowers/plans/)
+for the design specs and implementation plans.
 
 Cadre is the evolution of [ADE](https://github.com/alvin-reyes/better-agentic-ide) (a keyboard-first
 agentic terminal), refocused around the disciplined loop.

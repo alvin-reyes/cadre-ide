@@ -395,32 +395,10 @@ interface SettingsStore extends Settings {
   deleteWorkspace: (id: string) => void;
 }
 
-// Bump when a settings migration must run once against persisted state.
-const SETTINGS_MIGRATION_KEY = "cadre-settings-migration";
-const CURRENT_MIGRATION = 1; // 1 = mint is the new default theme
-
 function loadSettings(): Partial<Settings> {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    const parsed: Partial<Settings> = raw ? JSON.parse(raw) : {};
-
-    // One-time migration: move existing users off the old default theme
-    // ("github-dark") onto the new Mint default. Runs exactly once — a theme the
-    // user deliberately picks afterward is preserved (they re-persist, and the
-    // migration marker prevents a re-run).
-    const migrated = Number(localStorage.getItem(SETTINGS_MIGRATION_KEY) ?? 0);
-    if (migrated < CURRENT_MIGRATION) {
-      if (parsed.themeId === "github-dark" || parsed.themeId === undefined) {
-        parsed.themeId = "mint";
-      }
-      try {
-        localStorage.setItem(SETTINGS_MIGRATION_KEY, String(CURRENT_MIGRATION));
-      } catch {
-        /* storage unavailable — migration is best-effort */
-      }
-    }
-
-    return parsed;
+    return raw ? JSON.parse(raw) : {};
   } catch {
     return {};
   }
@@ -446,7 +424,7 @@ function persistWorkspaces(w: WorkspacePreset[]) {
 }
 
 const defaults: Settings = {
-  themeId: "mint",
+  themeId: "github-dark",
   customColors: null,
   fontSize: 14,
   fontFamily: '"JetBrains Mono", "SF Mono", "Fira Code", "Cascadia Code", monospace',
