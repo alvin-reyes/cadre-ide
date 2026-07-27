@@ -110,3 +110,49 @@ describe("bmadStore.setStatus — root routing", () => {
     expect(state.projects["/b"]?.board.stories["1.1"]).toBeUndefined();
   });
 });
+
+describe("bmadStore.openProject — git-repo gate", () => {
+  // Route invoke by command so we can simulate a git / non-git folder. run_git's
+  // rev-parse --is-inside-work-tree drives the gate; list_directory returns empty.
+  function mockGit(isGit: boolean) {
+    invokeStub.mockImplementation((cmd: string) => {
+      if (cmd === "run_git") {
+        return Promise.resolve({
+          exit_code: isGit ? 0 : 128,
+          stdout: isGit ? "true\n" : "",
+          stderr: isGit ? "" : "fatal: not a git repository",
+          timed_out: false,
+        });
+      }
+      if (cmd === "list_directory") return Promise.resolve([]);
+      return Promise.resolve(undefined); // open_project, watch_directory, …
+    });
+  }
+
+  it("rejects a non-git folder and does NOT seed the slice or open the project", async () => {
+    useBmadStore.setState({ projects: {}, activeRoot: "/existing" });
+    mockGit(false);
+
+    await expect(
+      useBmadStore.getState().openProject("/not-a-repo")
+    ).rejects.toThrow(/not a git repository/);
+
+    const state = useBmadStore.getState();
+    // No slice seeded, active root unchanged, open_project never invoked.
+    expect(state.projects["/not-a-repo"]).toBeUndefined();
+    expect(state.activeRoot).toBe("/existing");
+    expect(invokeStub).not.toHaveBeenCalledWith("open_project", expect.anything());
+  });
+
+  it("opens a git repo: seeds the slice, makes it active, and calls open_project", async () => {
+    useBmadStore.setState({ projects: {}, activeRoot: "/existing" });
+    mockGit(true);
+
+    await useBmadStore.getState().openProject("/a-repo");
+
+    const state = useBmadStore.getState();
+    expect(state.projects["/a-repo"]).toBeDefined();
+    expect(state.activeRoot).toBe("/a-repo");
+    expect(invokeStub).toHaveBeenCalledWith("open_project", { root: "/a-repo" });
+  });
+});
