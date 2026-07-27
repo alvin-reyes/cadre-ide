@@ -660,7 +660,6 @@ export const useCadre = create<CadreState>((set, get) => {
   dispatchStory: async (epic, story, opts) => {
     const key = `${epic}.${story}`;
     const silent = opts?.silent ?? false;
-    const agentId = opts?.agentId;
     // Capture the target project ONCE at the top. Every per-project write in this
     // action (logs, active, codeReviews, busy, error) targets THIS root — never
     // get().activeRoot — so a background dispatch never corrupts the foreground.
@@ -682,6 +681,25 @@ export const useCadre = create<CadreState>((set, get) => {
       logs: { ...(get().projects[root]?.logs ?? {}), [key]: "" },
       active: { ...(get().projects[root]?.active ?? {}), [key]: true },
     });
+
+    // Resolve the fleet agent for this story. The role pump (dispatchReady)
+    // passes an explicit agentId; single-story dispatches (Kanban "run", the
+    // orchestrator) do not. Without one, the story would go InProgress but no
+    // fleet slot would ever show "working" — the board and the org chart would
+    // disagree. So when no agentId is given, claim an idle Dev slot (seeding the
+    // role roster if it's empty) so every running story is reflected on the fleet.
+    let agentId = opts?.agentId;
+    if (!agentId) {
+      const maxDev = useSettingsStore.getState().maxDevAgents;
+      const roster = composeRoster(maxDev, get().projects[root]?.agentSlots ?? []);
+      const freeDev = roster.find((s) => s.role === "dev" && s.status === "idle");
+      // Fall back to the first Dev slot if all are busy (over-subscribed single
+      // dispatch) — it still surfaces the work rather than showing an idle fleet.
+      agentId = freeDev?.agentId ?? roster.find((s) => s.role === "dev")?.agentId;
+      // Persist the (possibly newly-seeded) roster so the slot exists for the
+      // working/verifying/idle writes below to target.
+      patchRoot(root, { agentSlots: roster });
+    }
     const onOutput = (chunk: string) => {
       aiLog(`story ${key}`, chunk);
       const prev = get().projects[root]?.logs?.[key] ?? "";
