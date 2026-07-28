@@ -29,8 +29,8 @@ import { detectVerifyCommand } from "../lib/engine/detectVerify";
 import { storyRole } from "../lib/engine/kanban";
 import { pickAssignable, partitionByRole, type ReadyStory } from "../lib/engine/pool";
 import { integrateStory } from "../lib/engine/integrate";
-import { getProvider, resolveAgentEnv, type Provider } from "../lib/engine/providers";
-import { secretGet } from "../lib/secrets";
+import { getProvider, resolveAgentEnv, preferClaudeLogin, type Provider } from "../lib/engine/providers";
+import { secretGet, isClaudeLoggedIn } from "../lib/secrets";
 import { resolvePlanningAuth } from "../lib/planning/planningAuth";
 import type { Status } from "../lib/engine/status";
 import type { PlanApproval } from "../lib/engine/planApproval";
@@ -250,8 +250,17 @@ async function findStoryPath(root: string, epic: number, story: number): Promise
  * otherwise it needs a key. Centralized so dispatch/review/brownfield agree.
  */
 async function resolveFleetAuth(provider: Provider): Promise<{ env: Record<string, string>; model: string | undefined }> {
-  if (provider.id === "claude" && useSettingsStore.getState().dispatchUseLogin) {
-    return { env: {}, model: undefined };
+  if (provider.id === "claude") {
+    // Prefer the local claude.ai CLI login whenever one is present (or the user
+    // opted in). Empty env → the spawned `claude` uses its keychain login, which
+    // keeps billing on the subscription and lets the claude.ai connectors load;
+    // an injected ANTHROPIC_API_KEY would disable them. Falls back to a key only
+    // when no login is available. isClaudeLoggedIn() is cached, so this doesn't
+    // re-probe the Keychain on every dispatch.
+    const loginAvailable = await isClaudeLoggedIn();
+    if (preferClaudeLogin(loginAvailable, useSettingsStore.getState().dispatchUseLogin)) {
+      return { env: {}, model: undefined };
+    }
   }
   let token = await secretGet(provider.secretKey);
   if (!token && provider.id === "claude") {
