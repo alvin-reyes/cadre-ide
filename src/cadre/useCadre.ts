@@ -21,7 +21,10 @@ import { reportError } from "../lib/reportError";
 import { appendSessionEntry, SESSION_LOG_PATH } from "../lib/engine/sessionLog";
 import { resolveStorySession } from "../lib/engine/agentSessions";
 import { nextStoryNumber, parseStoryFiles, parseStoryRepo, shardStory } from "../lib/engine/shard";
-import { parseRepos, resolveRepoPath, findRepo } from "../lib/engine/repos";
+import { parseRepos, resolveRepoPath, findRepo, DEFAULT_REPO_ID } from "../lib/engine/repos";
+import type { ProjectMode } from "../lib/engine/projectMode";
+import { makeTask, setTaskStatus, type MaintainTask } from "../lib/maintain/tasks";
+import { runMaintainTask } from "../lib/maintain/dispatchOrchestration";
 import { useRepos } from "../stores/reposStore";
 import { CREATE_BACKLOG_TOOL, backlogFromTool } from "../lib/planning/storyTool";
 import { composeRoster, QA_AGENT_ID, DEVOPS_AGENT_ID } from "../lib/engine/agentSlots";
@@ -188,6 +191,10 @@ interface CadreState {
    * Mirror-derived: reflects projects[activeRoot].error.
    */
   error: string | null;
+  /** Build (greenfield plan/shard/dispatch) vs Maintain (existing app, ad-hoc tasks). */
+  mode: ProjectMode;
+  /** Maintenance/support tasks dispatched for the active project. */
+  tasks: MaintainTask[];
 
   setPhase: (phase: Phase) => void;
   setPrd: (md: string) => void;
@@ -204,6 +211,10 @@ interface CadreState {
   setActiveProject: (root: string) => void;
   /** Mark the active project's plan as needing re-approval (e.g. after registry change). */
   markNeedsReplan: () => void;
+  /** Set the active project's mode (Build vs Maintain). */
+  setMode: (mode: ProjectMode) => void;
+  /** Mint + queue a maintenance task, then dispatch it (worktree + agent spawn). */
+  addMaintainTask: (prompt: string) => Promise<void>;
 
   /** Freeze the verification command, write the plan to disk, unlock the fleet. */
   approvePlan: (verification: string[]) => Promise<void>;
@@ -459,6 +470,8 @@ export const useCadre = create<CadreState>((set, get) => {
   // busy/error are mirror fields; initialize from emptyCadreSlice defaults.
   busy: null,
   error: null,
+  mode: "build",
+  tasks: [],
 
   setActiveProject: (root) => {
     // Seed an empty slice on first activation so the mirror is stable.
@@ -514,6 +527,31 @@ export const useCadre = create<CadreState>((set, get) => {
   markNeedsReplan: () => {
     const root = get().activeRoot;
     if (root && get().verification.length > 0) patchRoot(root, { needsReplan: true });
+  },
+  setMode: (mode) => {
+    const root = get().activeRoot;
+    if (root) patchRoot(root, { mode });
+  },
+  addMaintainTask: async (prompt) => {
+    const root = requireRoot();
+    const id = Math.random().toString(36).slice(2, 8); // slice-1 id; replace with a Tauri uuid later
+    const task = makeTask(id, prompt, Date.now());
+    patchRoot(root, { tasks: [task, ...(get().projects[root]?.tasks ?? [])] });
+    const repos = parseRepos(await readManifest(root));
+    const repoPath = resolveRepoPath(root, findRepo(repos, DEFAULT_REPO_ID).path);
+    const provider = getProvider(fleetProviderId());
+    const { env, model } = await resolveFleetAuth(provider);
+    const onOutput = (chunk: string) => aiLog(`task ${id}`, chunk);
+    const deps = tauriOrchestratorDeps(root, onOutput);
+    await runMaintainTask(deps, {
+      repoPath,
+      worktreeRoot: root,
+      id,
+      prompt,
+      env,
+      model,
+      onStatus: (s) => patchRoot(root, { tasks: setTaskStatus(get().projects[root]?.tasks ?? [], id, s) }),
+    });
   },
 
   approvePlan: async (verification) => {

@@ -1,6 +1,8 @@
 import { emptyBoard, type BoardState, type StoryCard } from "./board";
 import type { LensReview } from "./reviewFleet";
 import type { Phase } from "../../cadre/components/PhaseStepper";
+import type { ProjectMode } from "./projectMode";
+import type { MaintainTask } from "../maintain/tasks";
 
 /** One persistent agent slot in the team pool. */
 export interface AgentSlot {
@@ -57,6 +59,10 @@ export interface CadreSlice {
   busy: string | null;
   /** Last error message for this project (null = none). */
   error: string | null;
+  /** Build (greenfield plan/shard/dispatch) vs Maintain (existing app, ad-hoc tasks). */
+  mode: ProjectMode;
+  /** Maintenance/support tasks dispatched for this project (Maintain mode). */
+  tasks: MaintainTask[];
 }
 
 export function emptyCadreSlice(): CadreSlice {
@@ -83,6 +89,8 @@ export function emptyCadreSlice(): CadreSlice {
     agentLogs: {},
     busy: null,
     error: null,
+    mode: "build",
+    tasks: [],
   };
 }
 
@@ -130,5 +138,7 @@ export function mirrorCadre(
     agentLogs: s.agentLogs,
     busy: s.busy,
     error: s.error,
+    mode: s.mode,
+    tasks: s.tasks,
   };
 }
