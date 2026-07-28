@@ -25,6 +25,7 @@ import { parseRepos, resolveRepoPath, findRepo, DEFAULT_REPO_ID } from "../lib/e
 import type { ProjectMode } from "../lib/engine/projectMode";
 import { makeTask, setTaskStatus, type MaintainTask } from "../lib/maintain/tasks";
 import { runMaintainTask } from "../lib/maintain/dispatchOrchestration";
+import { saveModeChoice } from "../lib/maintain/modePreference";
 import { useRepos } from "../stores/reposStore";
 import { CREATE_BACKLOG_TOOL, backlogFromTool } from "../lib/planning/storyTool";
 import { composeRoster, QA_AGENT_ID, DEVOPS_AGENT_ID } from "../lib/engine/agentSlots";
@@ -545,7 +546,10 @@ export const useCadre = create<CadreState>((set, get) => {
   },
   chooseMode: (mode) => {
     const root = get().activeRoot;
-    if (root) patchRoot(root, { mode, modeChoicePending: false });
+    if (root) {
+      patchRoot(root, { mode, modeChoicePending: false });
+      saveModeChoice(root, mode); // remember it so we don't ask again next open
+    }
   },
   addMaintainTask: async (prompt) => {
     const root = requireRoot();

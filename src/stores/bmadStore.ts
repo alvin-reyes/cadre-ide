@@ -20,6 +20,7 @@ import {
 import { useTrackerStore } from "./trackerStore";
 import { useCadre } from "../cadre/useCadre";
 import { detectProjectMode } from "../lib/engine/projectMode";
+import { loadModeChoice } from "../lib/maintain/modePreference";
 
 /**
  * bmadStore: the live Fleet board. Opens a project, hydrates the board from the
@@ -237,9 +238,15 @@ export const useBmadStore = create<BmadState>((set, get) => {
       }).catch(() => []);
       const hasStories = storyEntries.some((e) => !e.is_dir && e.path.endsWith(".md"));
       useCadre.getState().setActiveProject(root);
-      // Suggest the detected mode, but ask the user to confirm Build vs Maintain
-      // (shows the ModeChoiceDialog) — opening a project should never force a mode.
-      useCadre.getState().requestModeChoice(detectProjectMode({ hasPrd, hasStories }));
+      // If the user already chose a mode for this project, apply it silently. Only
+      // a project we've never seen shows the ModeChoiceDialog — suggesting the
+      // detected mode but letting the user confirm. Opening never forces a mode.
+      const remembered = loadModeChoice(root);
+      if (remembered) {
+        useCadre.getState().chooseMode(remembered);
+      } else {
+        useCadre.getState().requestModeChoice(detectProjectMode({ hasPrd, hasStories }));
+      }
 
       // Seed the slice for this project and make it active, then sync the mirror.
       set((s) => ({
