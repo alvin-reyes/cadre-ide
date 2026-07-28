@@ -20,12 +20,17 @@ import { useBmadStore } from "../stores/bmadStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre } from "./useCadre";
 import { useOpenProjects } from "../stores/openProjectsStore";
+import { loadView, saveView } from "../stores/viewPreference";
 import { useRepos } from "../stores/reposStore";
 import { useModelsStore } from "../stores/modelsStore";
 import { ContextView } from "./ContextView";
 
 /** The four top-level views, switched via the dock rail. Orchestrator is default. */
 type MainView = "orchestrator" | "files" | "terminal" | "context";
+
+function isMainView(v: string | null): v is MainView {
+  return v === "orchestrator" || v === "files" || v === "terminal" || v === "context";
+}
 
 /** The Cadre Cockpit shell — three main views (Orchestrator · File · Terminal). */
 export function CadreApp() {
@@ -70,16 +75,23 @@ export function CadreApp() {
     if (mode === "maintain") setMaintainMounted(true);
   }, [mode]);
 
-  // A different project resets to the Orchestrator and drops the other views —
-  // including the Maintain cockpit, so a project switch doesn't leak the previous
-  // project's Claude terminal into the newly-active one.
+  // A different project drops the other views — including the Maintain cockpit, so
+  // a project switch doesn't leak the previous project's Claude terminal into the
+  // newly-active one — then restores the view this project was last left on.
   useEffect(() => {
-    setView("orchestrator");
-    setFilesMounted(false);
-    setTermMounted(false);
-    setCtxMounted(false);
+    const saved = projectRoot ? loadView(projectRoot) : null;
+    const restored: MainView = isMainView(saved) ? saved : "orchestrator";
+    setView(restored);
+    setFilesMounted(restored === "files");
+    setTermMounted(restored === "terminal");
+    setCtxMounted(restored === "context");
     setMaintainMounted(false);
   }, [projectRoot]);
+
+  // Persist the active view for this project so reopening lands on it.
+  useEffect(() => {
+    if (projectRoot) saveView(projectRoot, view);
+  }, [projectRoot, view]);
 
   // Phase gating: EXECUTE opens once the plan is approved; DONE only when all stories are Done.
   const planApproved = useCadre((s) => s.verification.length > 0);
