@@ -33,7 +33,7 @@ function xtermTheme() {
   };
 }
 
-export function TerminalPanel({ cwd }: { cwd: string }) {
+export function TerminalPanel({ cwd, startupCommand }: { cwd: string; startupCommand?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
   const theme = useThemeStore((s) => s.theme);
@@ -105,6 +105,13 @@ export function TerminalPanel({ cwd }: { cwd: string }) {
           return;
         }
         ptyId = id;
+        // Preload a startup command once (e.g. `claude` for the Maintain view) so
+        // the user lands in a ready session rather than a bare shell. Written into
+        // the login shell (not spawned as the PTY command) so the shell survives
+        // when the command exits. The tty buffers input until the shell is ready.
+        if (startupCommand) {
+          invoke("write_pty", { id, data: Array.from(encoder.encode(startupCommand + "\n")) }).catch(() => {});
+        }
       } catch (e) {
         term.write(`\r\n\x1b[31mfailed to start shell: ${String(e)}\x1b[0m\r\n`);
       }
@@ -138,7 +145,7 @@ export function TerminalPanel({ cwd }: { cwd: string }) {
       term.dispose();
       termRef.current = null;
     };
-  }, [cwd]);
+  }, [cwd, startupCommand]);
 
   return <div ref={ref} style={{ width: "100%", height: "100%", padding: "6px 8px", background: "var(--c-code-bg)" }} />;
 }

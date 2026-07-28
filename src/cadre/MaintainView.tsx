@@ -1,20 +1,17 @@
 /**
  * MaintainView — the Maintenance/Support cockpit for an existing app.
  *
- * Shown (instead of the Build orchestrator / PlanningStudio) when a project is
- * opened that carries no greenfield plan artifacts — see `detectProjectMode`
- * and the routing in CadreApp. Three columns:
+ * Shown (instead of the Build orchestrator / PlanningStudio) when the user
+ * chooses to maintain an opened project rather than build features in it.
  *
- *   TaskQueue  |  Fleet (AgentOrgChart)  |  Terminal (TerminalPanel)
- *
- * The middle and right columns are the exact same components the Build flow
- * uses — reused, not reimplemented.
+ * Deliberately simple: it opens a Claude Code CLI terminal rooted at the project.
+ * `claude` auto-loads the project's context (CLAUDE.md and the repo) on start, so
+ * the user lands in a ready, project-aware session — the way a maintainer works.
+ * No plan → shard → dispatch cycle; you just talk to Claude about the codebase.
  */
 
 import { Wrench } from "lucide-react";
 import { useBmadStore } from "../stores/bmadStore";
-import { TaskQueue } from "./maintain/TaskQueue";
-import { AgentOrgChart } from "./AgentOrgChart";
 import { TerminalPanel } from "./TerminalPanel";
 
 function basename(path: string): string {
@@ -22,11 +19,11 @@ function basename(path: string): string {
   return parts[parts.length - 1] ?? path;
 }
 
-const columnBorder = "1px solid var(--c-border)";
-
 export function MaintainView() {
   const projectRoot = useBmadStore((s) => s.projectRoot);
-  const repo = projectRoot ? basename(projectRoot) : "";
+  // Routing only mounts this when a project is open; guard anyway.
+  if (!projectRoot) return null;
+  const repo = basename(projectRoot);
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0, background: "var(--c-bg)" }}>
@@ -37,7 +34,7 @@ export function MaintainView() {
           alignItems: "center",
           gap: "var(--c-space-2)",
           padding: "var(--c-space-2) var(--c-space-4)",
-          borderBottom: columnBorder,
+          borderBottom: "1px solid var(--c-border)",
           background: "var(--c-surface-1)",
           flexShrink: 0,
         }}
@@ -57,43 +54,18 @@ export function MaintainView() {
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
           }}
-          title={projectRoot ?? undefined}
+          title={projectRoot}
         >
           {repo}
         </span>
+        <span style={{ marginLeft: "auto", fontSize: "var(--c-fs-xs)", color: "var(--c-text-faint)" }}>
+          Claude is loaded in this project
+        </span>
       </div>
 
-      {/* ── Three columns ── */}
-      <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
-        {/* Column 1 — task intake + queue */}
-        <div style={{ width: 340, flexShrink: 0, minWidth: 0, borderRight: columnBorder }}>
-          <TaskQueue />
-        </div>
-
-        {/* Column 2 — the live fleet org-chart */}
-        <div style={{ flex: 1, minWidth: 0, borderRight: columnBorder }}>
-          <AgentOrgChart />
-        </div>
-
-        {/* Column 3 — a real terminal rooted at the project */}
-        <div style={{ width: 420, flexShrink: 0, minWidth: 0, display: "flex", flexDirection: "column", minHeight: 0 }}>
-          {projectRoot ? (
-            <TerminalPanel cwd={projectRoot} />
-          ) : (
-            <div
-              style={{
-                height: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "var(--c-text-muted)",
-                fontSize: "var(--c-fs-xs)",
-              }}
-            >
-              No project open
-            </div>
-          )}
-        </div>
+      {/* ── The project's Claude terminal ── */}
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <TerminalPanel cwd={projectRoot} startupCommand="claude" />
       </div>
     </div>
   );
