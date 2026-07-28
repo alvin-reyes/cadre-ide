@@ -4,6 +4,7 @@ import { TopBar } from "./components/TopBar";
 import { PhaseStepper } from "./components/PhaseStepper";
 import { PlanningStudio } from "./PlanningStudio";
 import { ExecuteView } from "./ExecuteView";
+import { MaintainView } from "./MaintainView";
 import { Workbench } from "./Workbench";
 import { TerminalTabs } from "./TerminalTabs";
 import { Team } from "./Team";
@@ -28,6 +29,7 @@ type MainView = "orchestrator" | "files" | "terminal" | "context";
 /** The Cadre Cockpit shell — three main views (Orchestrator · File · Terminal). */
 export function CadreApp() {
   const phase = useCadre((s) => s.phase);
+  const mode = useCadre((s) => s.mode);
   const setPhase = useCadre((s) => s.setPhase);
   const hydrateFromProject = useCadre((s) => s.hydrateFromProject);
   const setActiveProject = useCadre((s) => s.setActiveProject);
@@ -151,8 +153,9 @@ export function CadreApp() {
       {/* Project tab strip — shows when at least one project is open. */}
       {projectRoot && <ProjectTabs />}
 
-      {/* The Orchestrator carries the discipline stepper; the other views don't. */}
-      {view === "orchestrator" && (
+      {/* The Orchestrator carries the discipline stepper; the other views don't.
+          Maintain mode is not plan-gated, so it hides the stepper entirely. */}
+      {view === "orchestrator" && mode !== "maintain" && (
         <div
           style={{
             display: "flex",
@@ -170,9 +173,13 @@ export function CadreApp() {
 
       <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
         <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
-          {/* Orchestrator — always mounted (holds chat/plan state), just hidden. */}
+          {/* Orchestrator — always mounted (holds chat/plan state), just hidden.
+              For an existing app opened in Maintain mode we swap the Build
+              plan/execute shell for the Maintenance cockpit. */}
           <div style={hidden(view === "orchestrator")}>
-            {phase === "PLAN" ? (
+            {projectRoot && mode === "maintain" ? (
+              <MaintainView />
+            ) : phase === "PLAN" ? (
               <PlanningStudio />
             ) : (
               <ExecuteView />
@@ -207,7 +214,7 @@ export function CadreApp() {
       {teamOpen && <Team onClose={() => setTeamOpen(false)} />}
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
       {logOpen && <AiLog onClose={() => setLogOpen(false)} />}
-      {projectRoot && <OrchestratorChat />}
+      {projectRoot && mode !== "maintain" && <OrchestratorChat />}
       <Toaster />
     </div>
   );

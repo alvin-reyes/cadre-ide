@@ -19,6 +19,7 @@ import {
 } from "../lib/engine/projectSlices";
 import { useTrackerStore } from "./trackerStore";
 import { useCadre } from "../cadre/useCadre";
+import { detectProjectMode } from "../lib/engine/projectMode";
 
 /**
  * bmadStore: the live Fleet board. Opens a project, hydrates the board from the
@@ -180,6 +181,10 @@ export const useBmadStore = create<BmadState>((set, get) => {
       await invoke("run_git", { cwd: path, args: [...idc, "add", "-A"] }).catch(() => {});
       await invoke("run_git", { cwd: path, args: [...idc, "commit", "-m", "cadre: init"] }).catch(() => {});
       await get().openProject(path);
+      // openProject detects "maintain" for a PRD-less folder, but a freshly
+      // scaffolded project is always a Build project — force it.
+      useCadre.getState().setActiveProject(path);
+      useCadre.getState().setMode("build");
     },
 
     openProject: async (root: string) => {
@@ -213,6 +218,22 @@ export const useBmadStore = create<BmadState>((set, get) => {
       }
 
       await invoke("open_project", { root });
+
+      // Resolve the project's working mode (Build vs Maintain). A repo that
+      // already carries greenfield plan artifacts (a PRD, or sharded stories) is
+      // a Build project being resumed; a repo with neither is an existing app
+      // opened for Maintenance/Support. detectProjectMode owns the policy.
+      const docsEntries = await invoke<{ path: string; is_dir: boolean }[]>("list_directory", {
+        path: `${root}/docs`,
+      }).catch(() => []);
+      const hasPrd = docsEntries.some((e) => !e.is_dir && e.path.endsWith("prd.md"));
+      const storyEntries = await invoke<{ path: string; is_dir: boolean }[]>("list_directory", {
+        path: `${root}/docs/stories`,
+      }).catch(() => []);
+      const hasStories = storyEntries.some((e) => !e.is_dir && e.path.endsWith(".md"));
+      useCadre.getState().setActiveProject(root);
+      useCadre.getState().setMode(detectProjectMode({ hasPrd, hasStories }));
+
       // Seed the slice for this project and make it active, then sync the mirror.
       set((s) => ({
         projects: { ...s.projects, [root]: emptyBmadSlice() },
