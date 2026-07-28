@@ -15,9 +15,12 @@ interface Tab {
   panes: number[];
 }
 
-export function TerminalTabs({ cwd }: { cwd: string }) {
+export function TerminalTabs({ cwd, startupCommand }: { cwd: string; startupCommand?: string }) {
   const [tabs, setTabs] = useState<Tab[]>(() => [{ id: ++seq, panes: [++seq] }]);
   const [active, setActive] = useState<number>(tabs[0].id);
+  // The very first pane preloads `startupCommand` (e.g. `claude` in Maintenance);
+  // panes spawned afterward are plain shells. Captured once so tab churn can't move it.
+  const [initialPaneId] = useState<number>(() => tabs[0].panes[0]);
 
   function addTab() {
     const id = ++seq;
@@ -135,7 +138,7 @@ export function TerminalTabs({ cwd }: { cwd: string }) {
                     <X size={10} strokeWidth={2.5} />
                   </button>
                 )}
-                <TerminalPanel cwd={cwd} />
+                <TerminalPanel cwd={cwd} startupCommand={paneId === initialPaneId ? startupCommand : undefined} />
               </div>
             ))}
           </div>

@@ -4,15 +4,16 @@
  * Shown (instead of the Build orchestrator / PlanningStudio) when the user
  * chooses to maintain an opened project rather than build features in it.
  *
- * Deliberately simple: it opens a Claude Code CLI terminal rooted at the project.
- * `claude` auto-loads the project's context (CLAUDE.md and the repo) on start, so
- * the user lands in a ready, project-aware session — the way a maintainer works.
- * No plan → shard → dispatch cycle; you just talk to Claude about the codebase.
+ * Deliberately simple: it opens Claude Code CLI terminals rooted at the project.
+ * The first terminal preloads `claude`, which auto-loads the project's context
+ * (CLAUDE.md and the repo), so the user lands in a ready, project-aware session —
+ * the way a maintainer works. Additional plain terminals can be spawned (tabs /
+ * split / Ctrl+T) via the standard TerminalTabs manager. No plan → shard → dispatch.
  */
 
 import { Wrench } from "lucide-react";
 import { useBmadStore } from "../stores/bmadStore";
-import { TerminalPanel } from "./TerminalPanel";
+import { TerminalTabs } from "./TerminalTabs";
 
 function basename(path: string): string {
   const parts = path.split("/").filter(Boolean);
@@ -59,13 +60,13 @@ export function MaintainView() {
           {repo}
         </span>
         <span style={{ marginLeft: "auto", fontSize: "var(--c-fs-xs)", color: "var(--c-text-faint)" }}>
-          Claude is loaded in this project
+          Claude is loaded · use + to open more terminals
         </span>
       </div>
 
-      {/* ── The project's Claude terminal ── */}
+      {/* ── The project's terminals — first tab preloads claude; + / split for more ── */}
       <div style={{ flex: 1, minHeight: 0 }}>
-        <TerminalPanel cwd={projectRoot} startupCommand="claude" />
+        <TerminalTabs cwd={projectRoot} startupCommand="claude" />
       </div>
     </div>
   );
