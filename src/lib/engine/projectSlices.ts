@@ -61,6 +61,8 @@ export interface CadreSlice {
   error: string | null;
   /** Build (greenfield plan/shard/dispatch) vs Maintain (existing app, ad-hoc tasks). */
   mode: ProjectMode;
+  /** True right after opening a project until the user picks Build vs Maintain. */
+  modeChoicePending: boolean;
   /** Maintenance/support tasks dispatched for this project (Maintain mode). */
   tasks: MaintainTask[];
 }
@@ -90,6 +92,7 @@ export function emptyCadreSlice(): CadreSlice {
     busy: null,
     error: null,
     mode: "build",
+    modeChoicePending: false,
     tasks: [],
   };
 }
@@ -139,6 +142,7 @@ export function mirrorCadre(
     busy: s.busy,
     error: s.error,
     mode: s.mode,
+    modeChoicePending: s.modeChoicePending,
     tasks: s.tasks,
   };
 }

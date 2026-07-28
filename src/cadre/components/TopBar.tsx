@@ -1,7 +1,56 @@
-import { ArrowUp, ArrowDown, PanelRight, Users, Sun, Moon, SunMoon, Settings as SettingsIcon, ScrollText } from "lucide-react";
+import { ArrowUp, ArrowDown, PanelRight, Users, Sun, Moon, SunMoon, Settings as SettingsIcon, ScrollText, Blocks, Wrench } from "lucide-react";
 import { useUsageStore } from "../../stores/usageStore";
 import { useThemeStore } from "../../stores/themeStore";
+import { useBmadStore } from "../../stores/bmadStore";
+import { useCadre } from "../useCadre";
+import type { ProjectMode } from "../../lib/engine/projectMode";
 import { BrandLogo } from "../BrandLogo";
+
+/** Build ⇄ Maintain switch — lets the user change how they work on the open project
+ *  at any time (the on-open ModeChoiceDialog is the first prompt; this is the escape). */
+function ModeSwitch() {
+  const projectRoot = useBmadStore((s) => s.projectRoot);
+  const mode = useCadre((s) => s.mode);
+  const modeChoicePending = useCadre((s) => s.modeChoicePending);
+  const chooseMode = useCadre((s) => s.chooseMode);
+  // Hidden until a project is open and the initial choice has been made.
+  if (!projectRoot || modeChoicePending) return null;
+
+  const seg = (m: ProjectMode, label: string, Icon: typeof Blocks) => {
+    const on = mode === m;
+    return (
+      <button
+        onClick={() => chooseMode(m)}
+        aria-pressed={on}
+        title={m === "build" ? "Build — plan & add features" : "Maintain — Claude terminal in the project"}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 5,
+          height: 24,
+          padding: "0 10px",
+          borderRadius: "var(--c-radius-sm)",
+          background: on ? "var(--c-surface-3)" : "transparent",
+          border: "none",
+          color: on ? "var(--c-accent)" : "var(--c-text-muted)",
+          fontSize: "var(--c-fs-xs)",
+          fontWeight: 600 as const,
+          cursor: "pointer",
+        }}
+      >
+        <Icon size={13} strokeWidth={2} />
+        {label}
+      </button>
+    );
+  };
+
+  return (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 2, padding: 2, borderRadius: "var(--c-radius-md)", background: "var(--c-surface-2)", border: "1px solid var(--c-border)" }}>
+      {seg("build", "Build", Blocks)}
+      {seg("maintain", "Maintain", Wrench)}
+    </div>
+  );
+}
 
 function fmtK(n: number): string {
   return n < 1000 ? String(n) : `${(n / 1000).toFixed(1)}k`;
@@ -58,6 +107,8 @@ export function TopBar({
       <div style={{ display: "flex", alignItems: "center", gap: 7, pointerEvents: "none" }}>
         <BrandLogo size={20} />
       </div>
+
+      <ModeSwitch />
 
       <div style={{ flex: 1 }} />
 

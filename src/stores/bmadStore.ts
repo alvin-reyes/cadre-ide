@@ -181,10 +181,10 @@ export const useBmadStore = create<BmadState>((set, get) => {
       await invoke("run_git", { cwd: path, args: [...idc, "add", "-A"] }).catch(() => {});
       await invoke("run_git", { cwd: path, args: [...idc, "commit", "-m", "cadre: init"] }).catch(() => {});
       await get().openProject(path);
-      // openProject detects "maintain" for a PRD-less folder, but a freshly
-      // scaffolded project is always a Build project — force it.
+      // openProject requests a mode choice, but a freshly scaffolded project is
+      // always a Build project — choose it outright (no picker).
       useCadre.getState().setActiveProject(path);
-      useCadre.getState().setMode("build");
+      useCadre.getState().chooseMode("build");
     },
 
     openProject: async (root: string) => {
@@ -232,7 +232,9 @@ export const useBmadStore = create<BmadState>((set, get) => {
       }).catch(() => []);
       const hasStories = storyEntries.some((e) => !e.is_dir && e.path.endsWith(".md"));
       useCadre.getState().setActiveProject(root);
-      useCadre.getState().setMode(detectProjectMode({ hasPrd, hasStories }));
+      // Suggest the detected mode, but ask the user to confirm Build vs Maintain
+      // (shows the ModeChoiceDialog) — opening a project should never force a mode.
+      useCadre.getState().requestModeChoice(detectProjectMode({ hasPrd, hasStories }));
 
       // Seed the slice for this project and make it active, then sync the mirror.
       set((s) => ({

@@ -193,6 +193,8 @@ interface CadreState {
   error: string | null;
   /** Build (greenfield plan/shard/dispatch) vs Maintain (existing app, ad-hoc tasks). */
   mode: ProjectMode;
+  /** True right after opening a project until the user picks Build vs Maintain. */
+  modeChoicePending: boolean;
   /** Maintenance/support tasks dispatched for the active project. */
   tasks: MaintainTask[];
 
@@ -213,6 +215,10 @@ interface CadreState {
   markNeedsReplan: () => void;
   /** Set the active project's mode (Build vs Maintain). */
   setMode: (mode: ProjectMode) => void;
+  /** Open-time: set the suggested mode and mark the choice pending (shows the picker). */
+  requestModeChoice: (suggested: ProjectMode) => void;
+  /** The user picked a mode: set it and clear the pending picker. */
+  chooseMode: (mode: ProjectMode) => void;
   /** Mint + queue a maintenance task, then dispatch it (worktree + agent spawn). */
   addMaintainTask: (prompt: string) => Promise<void>;
 
@@ -471,6 +477,7 @@ export const useCadre = create<CadreState>((set, get) => {
   busy: null,
   error: null,
   mode: "build",
+  modeChoicePending: false,
   tasks: [],
 
   setActiveProject: (root) => {
@@ -531,6 +538,14 @@ export const useCadre = create<CadreState>((set, get) => {
   setMode: (mode) => {
     const root = get().activeRoot;
     if (root) patchRoot(root, { mode });
+  },
+  requestModeChoice: (suggested) => {
+    const root = get().activeRoot;
+    if (root) patchRoot(root, { mode: suggested, modeChoicePending: true });
+  },
+  chooseMode: (mode) => {
+    const root = get().activeRoot;
+    if (root) patchRoot(root, { mode, modeChoicePending: false });
   },
   addMaintainTask: async (prompt) => {
     const root = requireRoot();

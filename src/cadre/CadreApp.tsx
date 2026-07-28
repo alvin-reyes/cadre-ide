@@ -5,6 +5,7 @@ import { PhaseStepper } from "./components/PhaseStepper";
 import { PlanningStudio } from "./PlanningStudio";
 import { ExecuteView } from "./ExecuteView";
 import { MaintainView } from "./MaintainView";
+import { ModeChoiceDialog } from "./ModeChoiceDialog";
 import { Workbench } from "./Workbench";
 import { TerminalTabs } from "./TerminalTabs";
 import { Team } from "./Team";
@@ -30,6 +31,7 @@ type MainView = "orchestrator" | "files" | "terminal" | "context";
 export function CadreApp() {
   const phase = useCadre((s) => s.phase);
   const mode = useCadre((s) => s.mode);
+  const modeChoicePending = useCadre((s) => s.modeChoicePending);
   const setPhase = useCadre((s) => s.setPhase);
   const hydrateFromProject = useCadre((s) => s.hydrateFromProject);
   const setActiveProject = useCadre((s) => s.setActiveProject);
@@ -210,6 +212,8 @@ export function CadreApp() {
 
         {projectRoot && <DockRail active={view} onSelect={setView} />}
       </div>
+
+      {projectRoot && modeChoicePending && <ModeChoiceDialog />}
 
       {teamOpen && <Team onClose={() => setTeamOpen(false)} />}
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
