@@ -188,33 +188,38 @@ export const useBmadStore = create<BmadState>((set, get) => {
     },
 
     openProject: async (root: string) => {
-      // ENFORCED GATE: Cadre dispatches each story into an isolated git worktree,
-      // so the project folder MUST be a git repository. Check this FIRST — before
-      // open_project, before seeding the slice, before any watcher — and ABORT if
-      // it isn't a repo. Opening a non-git folder anyway cascades into "Not a
-      // directory" watcher errors on .cadre/state and docs/stories.
-      // (newProject already runs `git init`, so this only gates opened folders.)
-      const notGit = new Error(
-        `"${root}" is not a git repository. Cadre runs each story in an isolated ` +
-        `git worktree, so the project must be a git repo. Run \`git init\` in the ` +
-        `folder (and make an initial commit), then reopen.`
-      );
+      // Cadre dispatches each story into an isolated git worktree, so the project
+      // folder must be a git repository. Rather than block a non-git folder, we
+      // just initialize one — opening should be frictionless. (This runs FIRST,
+      // before open_project / seeding / watchers, so the folder is a valid repo
+      // before anything reads .cadre/state or docs/stories.)
+      interface RunResult { exit_code: number | null; stdout: string; stderr: string; timed_out: boolean }
       let isGit = false;
       try {
-        interface RunResult { exit_code: number | null; stdout: string; stderr: string; timed_out: boolean }
         const res = await invoke<RunResult>("run_git", {
           cwd: root,
           args: ["rev-parse", "--is-inside-work-tree"],
         });
         isGit = res.exit_code === 0 && res.stdout.trim() === "true";
       } catch {
-        // run_git itself may throw if git is not installed or the path is invalid —
-        // treat as "not a repo" and surface the same actionable message.
+        // run_git threw (e.g. git not installed, or the path isn't a repo yet).
         isGit = false;
       }
       if (!isGit) {
-        reportError("open project", notGit);
-        throw notGit;
+        // Auto-initialize. We do NOT auto-commit the working tree (an existing
+        // folder may contain node_modules/large or sensitive files) — `git init`
+        // is enough to open and to work in Maintenance; the user commits when ready.
+        try {
+          const res = await invoke<RunResult>("run_git", { cwd: root, args: ["init"] });
+          if (res.exit_code !== 0) throw new Error(res.stderr || "git init failed");
+        } catch (e) {
+          const cannotInit = new Error(
+            `Could not initialize a git repository in "${root}". Make sure git is ` +
+            `installed and the folder is writable, then try again.`
+          );
+          reportError("open project", cannotInit);
+          throw cannotInit;
+        }
       }
 
       await invoke("open_project", { root });
