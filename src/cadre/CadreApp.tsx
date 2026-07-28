@@ -47,6 +47,9 @@ export function CadreApp() {
   const [filesMounted, setFilesMounted] = useState(false);
   const [termMounted, setTermMounted] = useState(false);
   const [ctxMounted, setCtxMounted] = useState(false);
+  // Maintain cockpit mounts the first time a project enters Maintain mode and then
+  // stays mounted (hidden in Build mode) so its Claude terminal survives mode switches.
+  const [maintainMounted, setMaintainMounted] = useState(false);
   const [teamOpen, setTeamOpen] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
   const projectRoot = useBmadStore((s) => s.projectRoot);
@@ -60,12 +63,22 @@ export function CadreApp() {
     if (view === "context") setCtxMounted(true);
   }, [view]);
 
-  // A different project resets to the Orchestrator and drops the other views.
+  // Mount the Maintain cockpit the first time this project enters Maintain mode;
+  // once mounted it stays mounted (just hidden) so toggling Build⇄Maintain keeps
+  // the Claude terminal alive instead of killing its PTY.
+  useEffect(() => {
+    if (mode === "maintain") setMaintainMounted(true);
+  }, [mode]);
+
+  // A different project resets to the Orchestrator and drops the other views —
+  // including the Maintain cockpit, so a project switch doesn't leak the previous
+  // project's Claude terminal into the newly-active one.
   useEffect(() => {
     setView("orchestrator");
     setFilesMounted(false);
     setTermMounted(false);
     setCtxMounted(false);
+    setMaintainMounted(false);
   }, [projectRoot]);
 
   // Phase gating: EXECUTE opens once the plan is approved; DONE only when all stories are Done.
@@ -176,15 +189,21 @@ export function CadreApp() {
       <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
         <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
           {/* Orchestrator — always mounted (holds chat/plan state), just hidden.
-              For an existing app opened in Maintain mode we swap the Build
-              plan/execute shell for the Maintenance cockpit. */}
+              The Build plan/execute shell and the Maintain cockpit BOTH stay
+              mounted and toggle by visibility, so switching Build⇄Maintain never
+              tears down the other's state (notably the Claude terminal's PTY). */}
           <div style={hidden(view === "orchestrator")}>
-            {projectRoot && mode === "maintain" ? (
-              <MaintainView />
-            ) : phase === "PLAN" ? (
-              <PlanningStudio />
-            ) : (
-              <ExecuteView />
+            {/* Build plan/execute shell — shown in Build mode. */}
+            <div style={hidden(mode !== "maintain")}>
+              {phase === "PLAN" ? <PlanningStudio /> : <ExecuteView />}
+            </div>
+
+            {/* Maintenance cockpit — lazy-mounted, then kept mounted (hidden in
+                Build mode) so the Claude session survives mode switches. */}
+            {maintainMounted && projectRoot && (
+              <div style={hidden(mode === "maintain")}>
+                <MaintainView />
+              </div>
             )}
           </div>
 
