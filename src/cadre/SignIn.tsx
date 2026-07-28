@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
 import { Eye, EyeOff, Check, LogIn, Zap } from "lucide-react";
 import { BrandLogo } from "./BrandLogo";
-import { invoke } from "@tauri-apps/api/core";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre } from "./useCadre";
-import { secretGet, secretSet, secretHas, isTauri } from "../lib/secrets";
+import { secretGet, secretSet, secretHas, isTauri, isClaudeLoggedIn, refreshClaudeLoginStatus } from "../lib/secrets";
 import { reportError } from "../lib/reportError";
 
 /**
@@ -88,7 +87,10 @@ export function SignIn({ onDone }: { onDone: () => void }) {
     if (checkingClaudeLogin) return;
     setCheckingClaudeLogin(true);
     try {
-      const result = await invoke<boolean>("claude_auth_status");
+      // Re-probe (bypass the session cache) so the manual "check" reflects a login
+      // the user may have just completed, and keep the shared cache in sync.
+      refreshClaudeLoginStatus();
+      const result = await isClaudeLoggedIn();
       setClaudeLoginStatus(result);
     } catch {
       // Treat any IPC error as "not detected" — purely advisory
@@ -463,6 +465,7 @@ export function useHasCredential(): { checked: boolean; hasCredential: boolean }
   const dispatchUseLogin = useSettingsStore((s) => s.dispatchUseLogin);
   const [checked, setChecked] = useState(false);
   const [keychainHas, setKeychainHas] = useState(false);
+  const [claudeLogin, setClaudeLogin] = useState(false);
 
   useEffect(() => {
     // If already in settings store (hydrateSecrets already ran), use that
@@ -471,19 +474,24 @@ export function useHasCredential(): { checked: boolean; hasCredential: boolean }
       setChecked(true);
       return;
     }
-    // Otherwise probe the keychain for any provider key.
+    // Otherwise probe the keychain for any provider key AND for a `claude` CLI
+    // subscription login — a login-only user (no API key, toggle off) is fully
+    // able to run the fleet on their subscription, so they must clear the gate.
     // Part B fix 1: .catch ensures checked is set even if IPC rejects,
     // so the app never shows a permanent blank screen.
     Promise.all([
       secretHas("anthropic_api_key"),
       secretHas("deepseek_api_key"),
       secretHas("moonshot_api_key"),
-    ]).then(([a, d, m]) => {
+      isClaudeLoggedIn(),
+    ]).then(([a, d, m, login]) => {
       setKeychainHas(a || d || m);
+      setClaudeLogin(login);
       setChecked(true);
     }).catch(() => setChecked(true));
   }, [anthropicKey]);
 
-  const hasCredential = dispatchUseLogin || anthropicKey.trim().length > 0 || keychainHas;
+  const hasCredential =
+    dispatchUseLogin || anthropicKey.trim().length > 0 || keychainHas || claudeLogin;
   return { checked, hasCredential };
 }

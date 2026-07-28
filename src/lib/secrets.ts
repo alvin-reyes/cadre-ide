@@ -45,3 +45,26 @@ export async function secretDelete(key: string): Promise<void> {
     /* keychain unavailable */
   }
 }
+
+/**
+ * Advisory: is the local `claude` CLI logged in (subscription login on disk or in
+ * the macOS Keychain)? Backed by the `claude_auth_status` Rust probe.
+ *
+ * Cached for the app session: the answer is stable, and this must NOT run on every
+ * fleet dispatch (it would be a repeated IPC + Keychain round-trip on a hot path).
+ * The in-flight promise is memoized so concurrent dispatches share one probe. Call
+ * `refreshClaudeLoginStatus()` after the user signs in/out to invalidate.
+ */
+let claudeLoginProbe: Promise<boolean> | null = null;
+
+export function isClaudeLoggedIn(): Promise<boolean> {
+  if (!isTauri()) return Promise.resolve(false);
+  if (!claudeLoginProbe) {
+    claudeLoginProbe = invoke<boolean>("claude_auth_status").catch(() => false);
+  }
+  return claudeLoginProbe;
+}
+
+export function refreshClaudeLoginStatus(): void {
+  claudeLoginProbe = null;
+}

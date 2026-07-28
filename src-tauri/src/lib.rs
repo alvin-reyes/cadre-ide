@@ -206,6 +206,28 @@ fn claude_auth_status() -> Result<bool, String> {
         }
     }
 
+    // Recent Claude CLI builds store the subscription login in the macOS Keychain
+    // rather than a file — on macOS there is often no ~/.claude/.credentials.json.
+    // Detect it with a data-less item search by SERVICE only:
+    //   - no account guess (the account name is version-specific), and
+    //   - no secret read, so it never decrypts and never triggers the Keychain
+    //     "allow access" prompt — keeping this advisory, non-blocking check honest.
+    // Presence of the item == a stored login. Any error → treated as "not found".
+    #[cfg(target_os = "macos")]
+    {
+        use security_framework::item::{ItemClass, ItemSearchOptions, Limit};
+        let found = ItemSearchOptions::new()
+            .class(ItemClass::generic_password())
+            .service("Claude Code-credentials")
+            .limit(Limit::Max(1))
+            .search()
+            .map(|results| !results.is_empty())
+            .unwrap_or(false);
+        if found {
+            return Ok(true);
+        }
+    }
+
     Ok(false)
 }
 
