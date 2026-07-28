@@ -5,6 +5,7 @@ import { useBmadStore } from "../../stores/bmadStore";
 import { useCadre } from "../useCadre";
 import type { ProjectMode } from "../../lib/engine/projectMode";
 import { BrandLogo } from "../BrandLogo";
+import { WorkspacesMenu } from "./WorkspacesMenu";
 
 /** Build ⇄ Maintain switch — lets the user change how they work on the open project
  *  at any time (the on-open ModeChoiceDialog is the first prompt; this is the escape). */
@@ -111,6 +112,8 @@ export function TopBar({
       <ModeSwitch />
 
       <div style={{ flex: 1 }} />
+
+      <WorkspacesMenu />
 
       {onOpenTeam && (
         <button
