@@ -66,7 +66,7 @@ export function MaintainView() {
 
       {/* ── The project's terminals — first tab preloads claude; + / split for more ── */}
       <div style={{ flex: 1, minHeight: 0 }}>
-        <TerminalTabs cwd={projectRoot} startupCommand="claude" />
+        <TerminalTabs key={projectRoot} cwd={projectRoot} startupCommand="claude" surfaceId={`maintain:${projectRoot}`} />
       </div>
     </div>
   );

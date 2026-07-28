@@ -1,59 +1,100 @@
 import { useEffect, useState } from "react";
 import { Plus, X, SplitSquareHorizontal } from "lucide-react";
 import { TerminalPanel } from "./TerminalPanel";
+import {
+  loadStructure,
+  saveStructure,
+  clearBuffer,
+  type TabSnap,
+  type PaneSnap,
+} from "../stores/terminalSession";
 
 /**
  * Terminal sessions in one panel. Each TAB can be SPLIT into several side-by-side
  * panes (each its own shell). Every tab + pane stays mounted (only the active tab is
  * visible) so PTYs, scrollback, and running processes survive tab switches — closing a
  * pane/tab is what kills its shell.
+ *
+ * The tab/pane layout AND each pane's scrollback are persisted per `surfaceId`
+ * (e.g. `maintain:/path` vs `dock:/path`), so relaunching the app restores the
+ * terminals. A pane's live process can't survive a quit — on restore each pane
+ * re-spawns a fresh shell beneath its restored scrollback (and re-runs its startup
+ * command, e.g. `claude` for the Maintain view's first tab).
  */
 
-let seq = 0;
-interface Tab {
-  id: number;
-  panes: number[];
+function genKey(): string {
+  try {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  } catch {
+    /* fall through */
+  }
+  return `p_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
 }
 
-export function TerminalTabs({ cwd, startupCommand }: { cwd: string; startupCommand?: string }) {
-  const [tabs, setTabs] = useState<Tab[]>(() => [{ id: ++seq, panes: [++seq] }]);
-  const [active, setActive] = useState<number>(tabs[0].id);
-  // The very first pane preloads `startupCommand` (e.g. `claude` in Maintenance);
-  // panes spawned afterward are plain shells. Captured once so tab churn can't move it.
-  const [initialPaneId] = useState<number>(() => tabs[0].panes[0]);
+export function TerminalTabs({
+  cwd,
+  startupCommand,
+  surfaceId,
+}: {
+  cwd: string;
+  startupCommand?: string;
+  /** Persistence namespace for this terminal surface. When omitted, no persistence. */
+  surfaceId?: string;
+}) {
+  const [tabs, setTabs] = useState<TabSnap[]>(() => {
+    const restored = surfaceId ? loadStructure(surfaceId) : null;
+    if (restored) return restored;
+    // Fresh surface: one tab, one pane; the first pane carries the startup command.
+    return [{ id: genKey(), panes: [{ key: genKey(), cwd, startupCommand }] }];
+  });
+  const [active, setActive] = useState<string>(tabs[0].id);
+
+  // Persist the layout whenever it changes so a relaunch restores these terminals.
+  useEffect(() => {
+    if (surfaceId) saveStructure(surfaceId, tabs);
+  }, [tabs, surfaceId]);
+
+  const newPane = (): PaneSnap => ({ key: genKey(), cwd });
+  const forgetPane = (p: PaneSnap) => {
+    if (surfaceId) clearBuffer(`${surfaceId}::${p.key}`);
+  };
 
   function addTab() {
-    const id = ++seq;
-    setTabs((t) => [...t, { id, panes: [++seq] }]);
-    setActive(id);
+    const tab: TabSnap = { id: genKey(), panes: [newPane()] };
+    setTabs((t) => [...t, tab]);
+    setActive(tab.id);
   }
 
-  function removeTab(list: Tab[], tabId: number): Tab[] {
+  function removeTab(list: TabSnap[], tabId: string): TabSnap[] {
     const idx = list.findIndex((x) => x.id === tabId);
+    const closing = list.find((x) => x.id === tabId);
+    closing?.panes.forEach(forgetPane);
     const next = list.filter((x) => x.id !== tabId);
     if (next.length === 0) {
-      const nid = ++seq;
-      setActive(nid);
-      return [{ id: nid, panes: [++seq] }];
+      const tab: TabSnap = { id: genKey(), panes: [newPane()] };
+      setActive(tab.id);
+      return [tab];
     }
     if (active === tabId) setActive(next[Math.min(idx, next.length - 1)].id);
     return next;
   }
 
-  function closeTab(tabId: number) {
+  function closeTab(tabId: string) {
     setTabs((t) => removeTab(t, tabId));
   }
 
   // Split the active tab into another side-by-side pane.
   function splitActive() {
-    setTabs((t) => t.map((x) => (x.id === active ? { ...x, panes: [...x.panes, ++seq] } : x)));
+    setTabs((t) => t.map((x) => (x.id === active ? { ...x, panes: [...x.panes, newPane()] } : x)));
   }
 
-  function closePane(tabId: number, paneId: number) {
+  function closePane(tabId: string, paneKey: string) {
     setTabs((t) => {
       const tab = t.find((x) => x.id === tabId);
       if (!tab) return t;
-      const panes = tab.panes.filter((p) => p !== paneId);
+      const removed = tab.panes.find((p) => p.key === paneKey);
+      if (removed) forgetPane(removed);
+      const panes = tab.panes.filter((p) => p.key !== paneKey);
       if (panes.length === 0) return removeTab(t, tabId); // closed the last pane → close the tab
       return t.map((x) => (x.id === tabId ? { ...x, panes } : x));
     });
@@ -62,13 +103,13 @@ export function TerminalTabs({ cwd, startupCommand }: { cwd: string; startupComm
   // Ctrl+T (dispatched from CadreApp) opens a new tab. Setters are stable.
   useEffect(() => {
     const onNew = () => {
-      const id = ++seq;
-      setTabs((t) => [...t, { id, panes: [++seq] }]);
-      setActive(id);
+      const tab: TabSnap = { id: genKey(), panes: [{ key: genKey(), cwd }] };
+      setTabs((t) => [...t, tab]);
+      setActive(tab.id);
     };
     window.addEventListener("cadre:new-terminal", onNew);
     return () => window.removeEventListener("cadre:new-terminal", onNew);
-  }, []);
+  }, [cwd]);
 
   const railBtn = {
     display: "inline-flex" as const,
@@ -126,11 +167,11 @@ export function TerminalTabs({ cwd, startupCommand }: { cwd: string; startupComm
       <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
         {tabs.map((tab) => (
           <div key={tab.id} style={{ position: "absolute", inset: 0, display: active === tab.id ? "flex" : "none" }}>
-            {tab.panes.map((paneId, pi) => (
-              <div key={paneId} style={{ flex: 1, minWidth: 0, minHeight: 0, position: "relative", borderLeft: pi > 0 ? "1px solid var(--c-border-strong)" : "none" }}>
+            {tab.panes.map((pane, pi) => (
+              <div key={pane.key} style={{ flex: 1, minWidth: 0, minHeight: 0, position: "relative", borderLeft: pi > 0 ? "1px solid var(--c-border-strong)" : "none" }}>
                 {tab.panes.length > 1 && (
                   <button
-                    onClick={() => closePane(tab.id, paneId)}
+                    onClick={() => closePane(tab.id, pane.key)}
                     title="Close this pane"
                     aria-label="Close pane"
                     style={{ position: "absolute", top: 3, right: 3, zIndex: 2, display: "inline-flex", alignItems: "center", justifyContent: "center", width: 18, height: 18, borderRadius: "var(--c-radius-sm)", background: "var(--c-surface-2)", border: "1px solid var(--c-border)", color: "var(--c-text-muted)", cursor: "pointer", padding: 0, opacity: 0.85 }}
@@ -138,7 +179,11 @@ export function TerminalTabs({ cwd, startupCommand }: { cwd: string; startupComm
                     <X size={10} strokeWidth={2.5} />
                   </button>
                 )}
-                <TerminalPanel cwd={cwd} startupCommand={paneId === initialPaneId ? startupCommand : undefined} />
+                <TerminalPanel
+                  cwd={pane.cwd}
+                  startupCommand={pane.startupCommand}
+                  persistId={surfaceId ? `${surfaceId}::${pane.key}` : undefined}
+                />
               </div>
             ))}
           </div>

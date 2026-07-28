@@ -1,9 +1,11 @@
 import { useEffect, useRef } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { SerializeAddon } from "@xterm/addon-serialize";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useThemeStore } from "../stores/themeStore";
+import { loadBuffer, saveBuffer } from "../stores/terminalSession";
 import "@xterm/xterm/css/xterm.css";
 
 /**
@@ -33,7 +35,16 @@ function xtermTheme() {
   };
 }
 
-export function TerminalPanel({ cwd, startupCommand }: { cwd: string; startupCommand?: string }) {
+export function TerminalPanel({
+  cwd,
+  startupCommand,
+  persistId,
+}: {
+  cwd: string;
+  startupCommand?: string;
+  /** Stable id for this pane; when set, its scrollback is restored + persisted. */
+  persistId?: string;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
   const theme = useThemeStore((s) => s.theme);
@@ -71,11 +82,19 @@ export function TerminalPanel({ cwd, startupCommand }: { cwd: string; startupCom
 
     const fit = new FitAddon();
     term.loadAddon(fit);
+    const serialize = new SerializeAddon();
+    term.loadAddon(serialize);
     term.open(host);
     try {
       fit.fit();
     } catch {
       /* not laid out yet */
+    }
+
+    // Restore this pane's previous scrollback (if any) beneath the fresh session.
+    if (persistId) {
+      const prior = loadBuffer(persistId);
+      if (prior) term.write(prior);
     }
 
     let ptyId: number | null = null;
@@ -137,15 +156,36 @@ export function TerminalPanel({ cwd, startupCommand }: { cwd: string; startupCom
     ro.observe(host);
     term.focus();
 
+    // Persist scrollback on an interval (survives any way the app closes, not just
+    // a graceful unmount) and once more on teardown.
+    const persistTimer =
+      persistId != null
+        ? setInterval(() => {
+            try {
+              saveBuffer(persistId, serialize.serialize());
+            } catch {
+              /* serialize/storage hiccup — best effort */
+            }
+          }, 4000)
+        : null;
+
     return () => {
       disposed = true;
+      if (persistTimer != null) clearInterval(persistTimer);
+      if (persistId != null) {
+        try {
+          saveBuffer(persistId, serialize.serialize());
+        } catch {
+          /* best effort */
+        }
+      }
       dataSub.dispose();
       ro.disconnect();
       if (ptyId != null) invoke("kill_pty", { id: ptyId }).catch(() => {});
       term.dispose();
       termRef.current = null;
     };
-  }, [cwd, startupCommand]);
+  }, [cwd, startupCommand, persistId]);
 
   return <div ref={ref} style={{ width: "100%", height: "100%", padding: "6px 8px", background: "var(--c-code-bg)" }} />;
 }

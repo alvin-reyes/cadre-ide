@@ -229,7 +229,7 @@ export function CadreApp() {
           {/* Terminal view — multi-session, PTYs persist while hidden. */}
           {termMounted && projectRoot && (
             <div style={hidden(view === "terminal")}>
-              <TerminalTabs cwd={projectRoot} />
+              <TerminalTabs key={projectRoot} cwd={projectRoot} surfaceId={`dock:${projectRoot}`} />
             </div>
           )}
 
