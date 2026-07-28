@@ -1,6 +1,5 @@
-import { ArrowUp, ArrowDown, PanelRight, Users, Sun, Moon, SunMoon, Settings as SettingsIcon, ScrollText, Blocks, Wrench } from "lucide-react";
+import { ArrowUp, ArrowDown, PanelRight, Users, Settings as SettingsIcon, ScrollText, Blocks, Wrench } from "lucide-react";
 import { useUsageStore } from "../../stores/usageStore";
-import { useThemeStore } from "../../stores/themeStore";
 import { useBmadStore } from "../../stores/bmadStore";
 import { useCadre } from "../useCadre";
 import type { ProjectMode } from "../../lib/engine/projectMode";
@@ -81,16 +80,6 @@ export function TopBar({
   const output = useUsageStore((s) => s.output);
   const cost = useUsageStore((s) => s.costUsd);
   const calls = useUsageStore((s) => s.calls);
-  const themeMode = useThemeStore((s) => s.mode);
-  const cycleTheme = useThemeStore((s) => s.cycle);
-  const ThemeIcon = themeMode === "auto" ? SunMoon : themeMode === "light" ? Sun : Moon;
-  const themeTitle =
-    themeMode === "auto"
-      ? "Theme: Auto (follows time of day) — click for Light"
-      : themeMode === "light"
-        ? "Theme: Light — click for Dark"
-        : "Theme: Dark — click for Auto";
-
   return (
     <div
       data-tauri-drag-region
@@ -161,25 +150,6 @@ export function TopBar({
         </button>
       )}
 
-      <button
-        onClick={cycleTheme}
-        title={themeTitle}
-        aria-label={themeTitle}
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          width: 28,
-          height: 24,
-          borderRadius: "var(--c-radius-sm)",
-          background: "transparent",
-          border: "1px solid var(--c-border)",
-          color: themeMode === "auto" ? "var(--c-accent)" : "var(--c-text-secondary)",
-          cursor: "pointer",
-        }}
-      >
-        <ThemeIcon size={15} strokeWidth={2} />
-      </button>
 
       {onOpenSettings && (
         <button

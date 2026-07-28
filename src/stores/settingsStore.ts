@@ -641,8 +641,31 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   },
 }));
 
+/**
+ * Whether a hex background reads as "light" (perceptual luminance > ~0.5). Used to
+ * keep the --c-* token layer in sync with the active preset so text and background
+ * never mismatch (the dark-on-dark bug when data-theme drifted to "light").
+ */
+export function isLightHex(hex: string): boolean {
+  const h = hex.replace("#", "").trim();
+  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  const n = parseInt(full.slice(0, 6), 16);
+  if (Number.isNaN(n)) return false;
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.5;
+}
+
 export function applyThemeToDOM(colors: ThemeColors) {
   const root = document.documentElement;
+  // The settings preset is the single source of truth for light/dark: sync the
+  // --c-* token layer (tokens.css keys off data-theme) to this preset's lightness.
+  try {
+    root.setAttribute("data-theme", isLightHex(colors.bgPrimary) ? "light" : "dark");
+  } catch {
+    /* non-browser */
+  }
   root.style.setProperty("--bg-primary", colors.bgPrimary);
   root.style.setProperty("--bg-secondary", colors.bgSecondary);
   root.style.setProperty("--bg-tertiary", colors.bgTertiary);

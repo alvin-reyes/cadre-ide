@@ -36,12 +36,11 @@ function readMode(): ThemeMode {
   return "auto";
 }
 
-function applyTheme(theme: Theme) {
-  try {
-    document.documentElement.setAttribute("data-theme", theme);
-  } catch {
-    /* no-op outside the browser */
-  }
+function applyTheme(_theme: Theme) {
+  // data-theme is owned by the settings THEME PRESET (see settingsStore.applyThemeToDOM),
+  // which is the single source of truth for light/dark. All current presets are dark,
+  // so a light/dark override here would only re-create the dark-on-dark mismatch.
+  // This is intentionally a no-op; kept so callers/state stay unchanged.
 }
 
 function persistMode(mode: ThemeMode) {
