@@ -4,16 +4,20 @@
  * Shown (instead of the Build orchestrator / PlanningStudio) when the user
  * chooses to maintain an opened project rather than build features in it.
  *
- * Deliberately simple: it opens Claude Code CLI terminals rooted at the project.
- * The first terminal preloads `claude`, which auto-loads the project's context
- * (CLAUDE.md and the repo), so the user lands in a ready, project-aware session —
- * the way a maintainer works. Additional plain terminals can be spawned (tabs /
- * split / Ctrl+T) via the standard TerminalTabs manager. No plan → shard → dispatch.
+ * Two panes:
+ *  - LEFT: the TaskQueue — describe a change and it dispatches a real agent on an
+ *    isolated `task/<id>` worktree (queued → running), listed by status.
+ *  - RIGHT: Claude Code CLI terminals rooted at the project. The first terminal
+ *    preloads `claude` (auto-loads CLAUDE.md + the repo) so the maintainer lands in
+ *    a ready, project-aware session; more open via tabs / split / Ctrl+T.
+ *
+ * No plan → shard → dispatch: maintenance work is ad-hoc, not plan-gated.
  */
 
 import { Wrench } from "lucide-react";
 import { useBmadStore } from "../stores/bmadStore";
 import { TerminalTabs } from "./TerminalTabs";
+import { TaskQueue } from "./maintain/TaskQueue";
 
 function basename(path: string): string {
   const parts = path.split("/").filter(Boolean);
@@ -60,13 +64,29 @@ export function MaintainView() {
           {repo}
         </span>
         <span style={{ marginLeft: "auto", fontSize: "var(--c-fs-xs)", color: "var(--c-text-faint)" }}>
-          Claude is loaded · use + to open more terminals
+          Dispatch tasks on the left · Claude terminal on the right
         </span>
       </div>
 
-      {/* ── The project's terminals — first tab preloads claude; + / split for more ── */}
-      <div style={{ flex: 1, minHeight: 0 }}>
-        <TerminalTabs key={projectRoot} cwd={projectRoot} startupCommand="claude" surfaceId={`maintain:${projectRoot}`} />
+      {/* ── Two panes: Task queue (left) · terminals (right) ── */}
+      <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+        {/* Task queue — fixed rail; describe a change → agent on a task/<id> worktree. */}
+        <div
+          style={{
+            width: 340,
+            flexShrink: 0,
+            minHeight: 0,
+            borderRight: "1px solid var(--c-border)",
+            background: "var(--c-surface-1)",
+          }}
+        >
+          <TaskQueue />
+        </div>
+
+        {/* Project terminals — first tab preloads claude; + / split for more. */}
+        <div style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+          <TerminalTabs key={projectRoot} cwd={projectRoot} startupCommand="claude" surfaceId={`maintain:${projectRoot}`} />
+        </div>
       </div>
     </div>
   );
