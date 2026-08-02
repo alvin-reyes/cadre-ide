@@ -101,11 +101,15 @@ export function TerminalPanel({
     let disposed = false;
     const encoder = new TextEncoder();
 
+    // Set whenever the terminal emits new output, so the persist interval can skip
+    // serializing (and rewriting localStorage) while the terminal is idle.
+    let dirty = false;
     const channel = new Channel<PtyEvent>();
     channel.onmessage = (ev) => {
       if (ev.type === "output") term.write(new Uint8Array(ev.data));
       else if (ev.type === "exit") term.write(`\r\n\x1b[90m[process exited: ${ev.code ?? "?"}]\x1b[0m\r\n`);
       else if (ev.type === "error") term.write(`\r\n\x1b[31m[pty error: ${ev.message}]\x1b[0m\r\n`);
+      dirty = true;
     };
 
     (async () => {
@@ -161,6 +165,8 @@ export function TerminalPanel({
     const persistTimer =
       persistId != null
         ? setInterval(() => {
+            if (!dirty) return; // nothing new since the last flush — skip serialize + write
+            dirty = false;
             try {
               saveBuffer(persistId, serialize.serialize());
             } catch {

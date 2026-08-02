@@ -213,13 +213,13 @@ export const useBmadStore = create<BmadState>((set, get) => {
         try {
           const res = await invoke<RunResult>("run_git", { cwd: root, args: ["init"] });
           if (res.exit_code !== 0) throw new Error(res.stderr || "git init failed");
-        } catch (e) {
-          const cannotInit = new Error(
+        } catch {
+          // Throw for the caller to surface — every caller already reports (or shows)
+          // the failure, so reporting here too would double the toast + AI Log entry.
+          throw new Error(
             `Could not initialize a git repository in "${root}". Make sure git is ` +
             `installed and the folder is writable, then try again.`
           );
-          reportError("open project", cannotInit);
-          throw cannotInit;
         }
       }
 

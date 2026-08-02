@@ -102,14 +102,18 @@ export function TerminalTabs({
 
   // Ctrl+T (dispatched from CadreApp) opens a new tab. Setters are stable.
   useEffect(() => {
-    const onNew = () => {
+    const onNew = (e: Event) => {
+      // The event may target a specific surface; ignore it when it names another
+      // one, so a hidden sibling TerminalTabs doesn't also spawn a tab/PTY.
+      const target = (e as CustomEvent<{ surfaceId?: string }>).detail?.surfaceId;
+      if (target && target !== surfaceId) return;
       const tab: TabSnap = { id: genKey(), panes: [{ key: genKey(), cwd }] };
       setTabs((t) => [...t, tab]);
       setActive(tab.id);
     };
     window.addEventListener("cadre:new-terminal", onNew);
     return () => window.removeEventListener("cadre:new-terminal", onNew);
-  }, [cwd]);
+  }, [cwd, surfaceId]);
 
   const railBtn = {
     display: "inline-flex" as const,

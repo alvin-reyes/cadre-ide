@@ -21,6 +21,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre } from "./useCadre";
 import { useOpenProjects } from "../stores/openProjectsStore";
 import { loadView, saveView } from "../stores/viewPreference";
+import { reportError } from "../lib/reportError";
 import { useRepos } from "../stores/reposStore";
 import { useModelsStore } from "../stores/modelsStore";
 import { ContextView } from "./ContextView";
@@ -85,7 +86,14 @@ export function CadreApp() {
     setFilesMounted(restored === "files");
     setTermMounted(restored === "terminal");
     setCtxMounted(restored === "context");
-    setMaintainMounted(false);
+    // Drop the previous project's Maintain cockpit, but if THIS project already
+    // opens in Maintain mode keep it mounted. A hard `false` here would race the
+    // [mode] effect (both fire in the same commit on open) and win, leaving the
+    // cockpit unmounted and the main area blank. Reading `mode` (committed value
+    // at the time projectRoot changed) is deliberate; it must NOT be a dep, or a
+    // mere Build⇄Maintain toggle would reset the active view.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setMaintainMounted(mode === "maintain");
   }, [projectRoot]);
 
   // Persist the active view for this project so reopening lands on it.
@@ -113,7 +121,13 @@ export function CadreApp() {
     if (roots.length === 0) return;
     const target = activeRoot ?? roots[0];
     // Open each project in the background (registers watchers + hydrates board).
-    Promise.all(roots.map((r) => useBmadStore.getState().openProject(r))).then(() => {
+    // A project that fails to open (e.g. git-init failure) is surfaced but must not
+    // abort the others or become an unhandled rejection.
+    Promise.all(
+      roots.map((r) =>
+        useBmadStore.getState().openProject(r).catch((e) => reportError("open project", e))
+      )
+    ).then(() => {
       // After all projects are open, point the foreground at the previously-active one.
       useBmadStore.getState().setActiveProject(target);
       useCadre.getState().setActiveProject(target);
@@ -152,7 +166,10 @@ export function CadreApp() {
       } else if ((e.ctrlKey || e.metaKey) && (e.key === "t" || e.key === "T")) {
         e.preventDefault();
         setView("terminal");
-        if (termMounted) window.dispatchEvent(new CustomEvent("cadre:new-terminal"));
+        // Target the dock terminal surface specifically — other mounted TerminalTabs
+        // (e.g. the hidden Maintain cockpit) must not also spawn a tab/PTY.
+        if (termMounted && projectRoot)
+          window.dispatchEvent(new CustomEvent("cadre:new-terminal", { detail: { surfaceId: `dock:${projectRoot}` } }));
       }
     };
     window.addEventListener("keydown", onKey);

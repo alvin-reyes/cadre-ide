@@ -68,7 +68,11 @@ export function loadBuffer(persistId: string): string | null {
 export function saveBuffer(persistId: string, buffer: string): void {
   const map = readJson<BufferMap>(BUF_KEY, {});
   // Keep only the tail when a buffer is very large.
-  map[persistId] = buffer.length > MAX_BUFFER ? buffer.slice(buffer.length - MAX_BUFFER) : buffer;
+  const next = buffer.length > MAX_BUFFER ? buffer.slice(buffer.length - MAX_BUFFER) : buffer;
+  // Skip the rewrite when nothing changed — panes serialize on an interval, and an
+  // idle terminal would otherwise re-stringify the whole map every tick for nothing.
+  if (map[persistId] === next) return;
+  map[persistId] = next;
   writeJson(BUF_KEY, map);
 }
 

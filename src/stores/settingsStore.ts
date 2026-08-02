@@ -649,8 +649,10 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 export function isLightHex(hex: string): boolean {
   const h = hex.replace("#", "").trim();
   const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
-  const n = parseInt(full.slice(0, 6), 16);
-  if (Number.isNaN(n)) return false;
+  // Require six clean hex digits — parseInt would otherwise accept a partially
+  // valid string like "12345g" (stops at the bad char) and return a wrong value.
+  if (!/^[0-9a-f]{6}$/i.test(full)) return false;
+  const n = parseInt(full, 16);
   const r = (n >> 16) & 255;
   const g = (n >> 8) & 255;
   const b = n & 255;
