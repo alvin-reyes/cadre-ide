@@ -24,9 +24,6 @@ import { nextStoryNumber, parseStoryFiles, parseStoryRepo, shardStory } from "..
 import { parseRepos, resolveRepoPath, findRepo, DEFAULT_REPO_ID } from "../lib/engine/repos";
 import type { ProjectMode } from "../lib/engine/projectMode";
 import {
-  makeTask,
-  setTaskStatus,
-  type MaintainTask,
   makeStagedTask,
   removeStaged,
   makeBatch,
@@ -35,7 +32,6 @@ import {
   type StagedTask,
   type FleetBatch,
 } from "../lib/maintain/tasks";
-import { runMaintainTask } from "../lib/maintain/dispatchOrchestration";
 import { runSubagent, type RunSubagentDeps } from "../lib/maintain/runBatch";
 import { loadStaged, saveStaged } from "../stores/maintainStaging";
 import { saveModeChoice } from "../lib/maintain/modePreference";
@@ -209,8 +205,6 @@ interface CadreState {
   mode: ProjectMode;
   /** True right after opening a project until the user picks Build vs Maintain. */
   modeChoicePending: boolean;
-  /** Maintenance/support tasks dispatched for the active project. */
-  tasks: MaintainTask[];
   /** Maintenance tasks staged (not yet run) for the active project (Maintain mode). */
   stagedTasks: StagedTask[];
   /** Live fleet batches launched from the staged list for the active project (session-only). */
@@ -237,8 +231,6 @@ interface CadreState {
   requestModeChoice: (suggested: ProjectMode) => void;
   /** The user picked a mode: set it and clear the pending picker. */
   chooseMode: (mode: ProjectMode) => void;
-  /** Mint + queue a maintenance task, then dispatch it (worktree + agent spawn). */
-  addMaintainTask: (prompt: string) => Promise<void>;
   /** Stage a new maintenance task (persisted, not yet dispatched). */
   stageTask: (prompt: string) => void;
   /** Remove a staged task before it's launched. */
@@ -502,7 +494,6 @@ export const useCadre = create<CadreState>((set, get) => {
   error: null,
   mode: "build",
   modeChoicePending: false,
-  tasks: [],
   stagedTasks: [],
   batches: [],
 
@@ -580,28 +571,6 @@ export const useCadre = create<CadreState>((set, get) => {
       saveModeChoice(root, mode); // remember it so we don't ask again next open
     }
   },
-  addMaintainTask: async (prompt) => {
-    const root = requireRoot();
-    const id = Math.random().toString(36).slice(2, 8); // slice-1 id; replace with a Tauri uuid later
-    const task = makeTask(id, prompt, Date.now());
-    patchRoot(root, { tasks: [task, ...(get().projects[root]?.tasks ?? [])] });
-    const repos = parseRepos(await readManifest(root));
-    const repoPath = resolveRepoPath(root, findRepo(repos, DEFAULT_REPO_ID).path);
-    const provider = getProvider(fleetProviderId());
-    const { env, model } = await resolveFleetAuth(provider);
-    const onOutput = (chunk: string) => aiLog(`task ${id}`, chunk);
-    const deps = tauriOrchestratorDeps(root, onOutput);
-    await runMaintainTask(deps, {
-      repoPath,
-      worktreeRoot: root,
-      id,
-      prompt,
-      env,
-      model,
-      onStatus: (s) => patchRoot(root, { tasks: setTaskStatus(get().projects[root]?.tasks ?? [], id, s) }),
-    });
-  },
-
   stageTask: (prompt) => {
     const root = requireRoot();
     const text = prompt.trim();

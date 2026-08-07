@@ -2,7 +2,7 @@ import { emptyBoard, type BoardState, type StoryCard } from "./board";
 import type { LensReview } from "./reviewFleet";
 import type { Phase } from "../../cadre/components/PhaseStepper";
 import type { ProjectMode } from "./projectMode";
-import type { MaintainTask, StagedTask, FleetBatch } from "../maintain/tasks";
+import type { StagedTask, FleetBatch } from "../maintain/tasks";
 
 /** One persistent agent slot in the team pool. */
 export interface AgentSlot {
@@ -63,8 +63,6 @@ export interface CadreSlice {
   mode: ProjectMode;
   /** True right after opening a project until the user picks Build vs Maintain. */
   modeChoicePending: boolean;
-  /** Maintenance/support tasks dispatched for this project (Maintain mode). */
-  tasks: MaintainTask[];
   /** Maintenance tasks staged (not yet run) for this project (Maintain mode). */
   stagedTasks: StagedTask[];
   /** Live fleet batches launched from the staged list (session-only). */
@@ -97,7 +95,6 @@ export function emptyCadreSlice(): CadreSlice {
     error: null,
     mode: "build",
     modeChoicePending: false,
-    tasks: [],
     stagedTasks: [],
     batches: [],
   };
@@ -149,7 +146,6 @@ export function mirrorCadre(
     error: s.error,
     mode: s.mode,
     modeChoicePending: s.modeChoicePending,
-    tasks: s.tasks,
     stagedTasks: s.stagedTasks,
     batches: s.batches,
   };
