@@ -33,7 +33,7 @@ export function SubagentCard({ run, maximized, onToggleMax }: { run: SubagentRun
         <span className="cadre-label-mono" style={{ fontSize: "9px", fontWeight: 700, color: info.color, background: `color-mix(in srgb, ${info.color} 15%, transparent)`, border: `1px solid color-mix(in srgb, ${info.color} 35%, transparent)`, borderRadius: "var(--c-radius-full)", padding: "1px 7px" }}>
           {run.branch}
         </span>
-        {info.live && <span className={info.dot} />}
+        <span className={info.dot} />
         <span style={{ fontSize: "var(--c-fs-xs)", color: info.color, fontWeight: 500 }}>{info.label}</span>
         <button
           onClick={onToggleMax}
