@@ -1,45 +1,45 @@
 import { describe, it, expect, vi } from "vitest";
-import { startSubagent } from "./runBatch";
+import { createTaskWorktree, subagentCommand } from "./runBatch";
 
-// waitForExit resolves on a later macrotask — a real process never exits in the
-// same microtask it was spawned. This lets a test observe "running" (set right
-// after the awaited spawn) BEFORE the detached exit-watch drives done/failed.
-const exitAfterTick = (exitCode: number) =>
-  vi.fn(() => new Promise<{ exitCode: number }>((r) => setTimeout(() => r({ exitCode }), 0)));
-
-const baseDeps = (over = {}) => ({
-  runGit: vi.fn().mockResolvedValue(undefined),
-  runGitQuery: vi.fn().mockResolvedValue({ exitCode: 0, stdout: "" }),
-  spawnAgent: vi.fn().mockResolvedValue(42),
-  waitForExit: exitAfterTick(0),
-  ...over,
+describe("createTaskWorktree", () => {
+  it("adds a task/<id> worktree at the deterministic path and returns it", async () => {
+    const runGit = vi.fn().mockResolvedValue(undefined);
+    const wt = await createTaskWorktree({ runGit }, { repoPath: "/repo", worktreeRoot: "/root", id: "a1" });
+    expect(wt).toBe("/root/.cadre/worktrees/task-a1");
+    // The final call is the `worktree add`, run in the repo.
+    expect(runGit).toHaveBeenLastCalledWith(
+      ["worktree", "add", "-b", "task/a1", "/root/.cadre/worktrees/task-a1", "HEAD"],
+      "/repo",
+    );
+  });
+  it("swallows cleanup failures but propagates an `add` failure", async () => {
+    // Cleanup (remove/prune/branch -D) rejects; the final add rejects too.
+    const runGit = vi.fn().mockRejectedValue(new Error("boom"));
+    await expect(
+      createTaskWorktree({ runGit }, { repoPath: "/repo", worktreeRoot: "/root", id: "a1" }),
+    ).rejects.toThrow("boom");
+  });
+  it("does not throw when only cleanup fails and the add succeeds", async () => {
+    const runGit = vi.fn()
+      .mockRejectedValueOnce(new Error("no worktree")) // remove
+      .mockRejectedValueOnce(new Error("nothing"))     // prune
+      .mockRejectedValueOnce(new Error("no branch"))   // branch -D
+      .mockResolvedValueOnce(undefined);               // add
+    await expect(
+      createTaskWorktree({ runGit }, { repoPath: "/repo", worktreeRoot: "/root", id: "a1" }),
+    ).resolves.toBe("/root/.cadre/worktrees/task-a1");
+  });
 });
 
-describe("startSubagent", () => {
-  it("spawns → running synchronously, done after exit resolves", async () => {
-    const statuses: string[] = [];
-    const deps = baseDeps();
-    const pty = await startSubagent(deps as any, { repoPath: "/r", worktreeRoot: "/r", id: "a", prompt: "x", onStatus: (s) => statuses.push(s) });
-    expect(pty).toBe(42);
-    expect(statuses).toEqual(["running"]); // "running" set right after the awaited spawn
-    await new Promise((r) => setTimeout(r, 0)); // flush the detached exit-watch
-    expect(statuses).toEqual(["running", "done"]);
-    expect(deps.waitForExit).toHaveBeenCalledWith(42);
+describe("subagentCommand", () => {
+  it("launches an INTERACTIVE claude (no -p) seeded with the task, quoted", () => {
+    const cmd = subagentCommand("bump deps");
+    expect(cmd.startsWith("claude --dangerously-skip-permissions '")).toBe(true);
+    expect(cmd).not.toContain(" -p ");
+    expect(cmd).toContain("## Task\nbump deps");
   });
-  it("failed after non-zero exit resolves", async () => {
-    const statuses: string[] = [];
-    const deps = baseDeps({ waitForExit: exitAfterTick(1) });
-    const pty = await startSubagent(deps as any, { repoPath: "/r", worktreeRoot: "/r", id: "a", prompt: "x", onStatus: (s) => statuses.push(s) });
-    expect(pty).toBe(42);
-    expect(statuses).toEqual(["running"]);
-    await new Promise((r) => setTimeout(r, 0)); // flush the detached exit-watch
-    expect(statuses).toEqual(["running", "failed"]);
-  });
-  it("failed on spawn throw, never running, returns null", async () => {
-    const statuses: string[] = [];
-    const deps = baseDeps({ spawnAgent: vi.fn().mockRejectedValue(new Error("no worktree")) });
-    const pty = await startSubagent(deps as any, { repoPath: "/r", worktreeRoot: "/r", id: "a", prompt: "x", onStatus: (s) => statuses.push(s) });
-    expect(pty).toBeNull();
-    expect(statuses).toEqual(["failed"]);
+  it("escapes single quotes in the prompt so the shell arg stays intact", () => {
+    const cmd = subagentCommand("don't break");
+    expect(cmd).toContain(`don'\\''t break`);
   });
 });

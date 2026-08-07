@@ -13,7 +13,7 @@ import { runApprovedStory } from "../lib/engine/orchestrator";
 import { reviewStory as reviewStoryFleet, aggregateReviews, type LensReview } from "../lib/engine/reviewFleet";
 import { documentAllRepos, composeAggregateAnalysis, BROWNFIELD_DOC_PATH } from "../lib/engine/brownfield";
 import { CODE_REVIEW_LENSES } from "../lib/planning/review";
-import { tauriOrchestratorDeps, tauriReviewFleetDeps, tauriResolveConflictDeps, waitForExit } from "../lib/engine/tauriDeps";
+import { tauriOrchestratorDeps, tauriReviewFleetDeps, tauriResolveConflictDeps } from "../lib/engine/tauriDeps";
 import { composeDispatchPrompt, storyBranch, type AlwaysFile } from "../lib/engine/dispatch";
 import { ADR_DECISIONS_DIR } from "../lib/engine/adr";
 import { resolveMergeConflict, composeResolverPrompt } from "../lib/engine/resolveConflict";
@@ -27,15 +27,13 @@ import {
   makeStagedTask,
   removeStaged,
   makeBatch,
-  appendSubagentLog,
   setSubagentStatus,
-  setSubagentPty,
   removeSubagent,
   removeBatch,
   type StagedTask,
   type FleetBatch,
 } from "../lib/maintain/tasks";
-import { startSubagent, type RunSubagentDeps } from "../lib/maintain/runBatch";
+import { createTaskWorktree } from "../lib/maintain/runBatch";
 import { loadStaged, saveStaged } from "../stores/maintainStaging";
 import { saveModeChoice } from "../lib/maintain/modePreference";
 import { useRepos } from "../stores/reposStore";
@@ -240,10 +238,12 @@ interface CadreState {
   unstageTask: (id: string) => void;
   /** Freeze the staged list into a fleet batch and launch every subagent. Returns the new batch id, or null if nothing staged. */
   runStagedBatch: () => Promise<string | null>;
-  /** Close one subagent card — kills its agent process if still running, then drops it. */
-  closeSubagent: (batchId: string, taskId: string) => Promise<void>;
-  /** Close a Fleet tab — kills all still-running agents in the batch, then drops the batch. */
-  closeBatch: (batchId: string) => Promise<void>;
+  /** Flip a subagent to "exited" when its claude session ends (driven by the terminal). */
+  markSubagentExited: (batchId: string, taskId: string) => void;
+  /** Close one subagent card — dropping it unmounts its terminal, which kills the session. */
+  closeSubagent: (batchId: string, taskId: string) => void;
+  /** Close a Fleet tab — dropping the batch unmounts its terminals, killing the sessions. */
+  closeBatch: (batchId: string) => void;
 
   /** Freeze the verification command, write the plan to disk, unlock the fleet. */
   approvePlan: (verification: string[]) => Promise<void>;
@@ -598,36 +598,31 @@ export const useCadre = create<CadreState>((set, get) => {
     const staged = get().projects[root]?.stagedTasks ?? [];
     if (staged.length === 0) return null;
 
-    // Resolve repo + auth BEFORE mutating state (F2): a setup error (e.g. no API
-    // key) must not strand cards or lose the staged list — it propagates to the
-    // caller (IntakeRail.runAll surfaces it) with staging intact.
+    // Resolve the repo BEFORE mutating state: a bad manifest must not strand cards
+    // or lose the staged list — it propagates to the caller (IntakeRail.runAll)
+    // with staging intact. No auth is resolved here — subagents run interactive
+    // `claude` inheriting the app's login (same as the main Maintain terminal).
     const repos = parseRepos(await readManifest(root));
     const repoPath = resolveRepoPath(root, findRepo(repos, DEFAULT_REPO_ID).path);
-    const provider = getProvider(fleetProviderId());
-    const { env, model } = await resolveFleetAuth(provider);
 
-    // Freeze staged -> batch and clear staging.
+    // Freeze staged -> batch and clear staging. Return the batchId immediately so
+    // the caller focuses the new Fleet tab (cards render as their worktrees land).
     const batchId = `b_${Math.random().toString(36).slice(2, 8)}`;
-    const batch = makeBatch(batchId, staged, Date.now());
+    const batch = makeBatch(batchId, staged, Date.now(), root);
     saveStaged(root, []);
     patchRoot(root, { stagedTasks: [], batches: [batch, ...(get().projects[root]?.batches ?? [])] });
 
-    // Launch in the background (F1: caller focuses the tab now). SERIALIZE the
-    // spawn/worktree phase (F3: concurrent `git worktree add` on one repo races)
-    // by awaiting each startSubagent before the next; each agent's exit-watch runs
-    // detached inside startSubagent, so agents still execute concurrently.
+    // Create each isolated worktree SERIALLY (concurrent `git worktree add` on one
+    // repo races on git's locks). "preparing" → "running" once the worktree lands
+    // (the card then mounts its live claude terminal); a git failure → "failed".
+    const deps = tauriOrchestratorDeps(root);
     void (async () => {
       for (const sa of batch.subagents) {
-        const onOutput = (chunk: string) =>
-          patchRoot(root, { batches: appendSubagentLog(get().projects[root]?.batches ?? [], batchId, sa.taskId, chunk) });
-        const deps: RunSubagentDeps = { ...tauriOrchestratorDeps(root, onOutput), waitForExit };
-        const ptyId = await startSubagent(deps, {
-          repoPath, worktreeRoot: root, id: sa.taskId, prompt: sa.prompt, env, model,
-          onStatus: (s) => patchRoot(root, { batches: setSubagentStatus(get().projects[root]?.batches ?? [], batchId, sa.taskId, s) }),
-        });
-        // Record the PTY id so the user can kill this agent when closing its card.
-        if (ptyId != null) {
-          patchRoot(root, { batches: setSubagentPty(get().projects[root]?.batches ?? [], batchId, sa.taskId, ptyId) });
+        try {
+          await createTaskWorktree(deps, { repoPath, worktreeRoot: root, id: sa.taskId });
+          patchRoot(root, { batches: setSubagentStatus(get().projects[root]?.batches ?? [], batchId, sa.taskId, "running") });
+        } catch {
+          patchRoot(root, { batches: setSubagentStatus(get().projects[root]?.batches ?? [], batchId, sa.taskId, "failed") });
         }
       }
     })();
@@ -635,28 +630,21 @@ export const useCadre = create<CadreState>((set, get) => {
     return batchId;
   },
 
-  closeSubagent: async (batchId, taskId) => {
+  markSubagentExited: (batchId, taskId) => {
+    const root = get().activeRoot;
+    if (!root) return;
+    patchRoot(root, { batches: setSubagentStatus(get().projects[root]?.batches ?? [], batchId, taskId, "exited") });
+  },
+
+  // The card's TerminalPanel kills its PTY on unmount, so closing just drops the
+  // subagent/batch from state; the resulting unmount stops any live claude session.
+  closeSubagent: (batchId, taskId) => {
     const root = requireRoot();
-    const batch = (get().projects[root]?.batches ?? []).find((b) => b.id === batchId);
-    const sa = batch?.subagents.find((s) => s.taskId === taskId);
-    // Kill the agent process if it's still running (no zombie agents).
-    if (sa?.status === "running" && sa.ptyId != null) {
-      await invoke("kill_pty", { id: sa.ptyId }).catch(() => {});
-    }
     patchRoot(root, { batches: removeSubagent(get().projects[root]?.batches ?? [], batchId, taskId) });
   },
 
-  closeBatch: async (batchId) => {
+  closeBatch: (batchId) => {
     const root = requireRoot();
-    const batch = (get().projects[root]?.batches ?? []).find((b) => b.id === batchId);
-    if (batch) {
-      // Kill every still-running agent in the batch before dropping the tab.
-      await Promise.all(
-        batch.subagents
-          .filter((s) => s.status === "running" && s.ptyId != null)
-          .map((s) => invoke("kill_pty", { id: s.ptyId! }).catch(() => {})),
-      );
-    }
     patchRoot(root, { batches: removeBatch(get().projects[root]?.batches ?? [], batchId) });
   },
 

@@ -39,15 +39,21 @@ export function TerminalPanel({
   cwd,
   startupCommand,
   persistId,
+  onExit,
 }: {
   cwd: string;
   startupCommand?: string;
   /** Stable id for this pane; when set, its scrollback is restored + persisted. */
   persistId?: string;
+  /** Called when the PTY's process exits (e.g. a subagent's claude session ends). */
+  onExit?: (code: number | null) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
   const theme = useThemeStore((s) => s.theme);
+  // Read the latest onExit without re-creating the PTY when the callback identity changes.
+  const onExitRef = useRef(onExit);
+  onExitRef.current = onExit;
 
   // Re-theme the live terminal when the app theme flips (no PTY churn).
   useEffect(() => {
@@ -107,7 +113,7 @@ export function TerminalPanel({
     const channel = new Channel<PtyEvent>();
     channel.onmessage = (ev) => {
       if (ev.type === "output") term.write(new Uint8Array(ev.data));
-      else if (ev.type === "exit") term.write(`\r\n\x1b[90m[process exited: ${ev.code ?? "?"}]\x1b[0m\r\n`);
+      else if (ev.type === "exit") { term.write(`\r\n\x1b[90m[process exited: ${ev.code ?? "?"}]\x1b[0m\r\n`); onExitRef.current?.(ev.code); }
       else if (ev.type === "error") term.write(`\r\n\x1b[31m[pty error: ${ev.message}]\x1b[0m\r\n`);
       dirty = true;
     };

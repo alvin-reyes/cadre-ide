@@ -1,48 +1,62 @@
 /**
- * startSubagent — start ONE maintenance subagent: create its isolated task/<id>
- * worktree + spawn the agent (dispatchTask), set "running", then watch for exit
- * in a DETACHED promise that drives status from the PROCESS (done on exit 0,
- * failed on non-zero or a spawn error). Status is process-derived, never
- * self-reported — the fix for the old frozen "running" badge.
+ * Maintenance subagents are now INTERACTIVE: each runs a live `claude` session in
+ * its own isolated task/<id> worktree, so the user can watch AND steer it. This
+ * module owns the two pure pieces the store/UI need:
  *
- * The awaited part is just the spawn/worktree phase; the caller serializes that
- * across a batch (concurrent `git worktree add` on one repo races on git locks)
- * while the detached exit-watch lets the agents themselves still run concurrently.
- * Returns the ptyId, or null on a spawn failure.
+ *  - createTaskWorktree — make the isolated worktree/branch (no agent spawn). The
+ *    caller serializes this across a batch, because concurrent `git worktree add`
+ *    on one repo races on git's locks.
+ *  - subagentCommand — the shell command each card's terminal launches to seed an
+ *    interactive claude with the maintenance persona + the task prompt.
+ *
+ * Auth is inherited from the app's environment (same path as the main Maintain
+ * terminal), so subagents use your claude.ai login when no key is set — which
+ * also keeps org connectors available.
  */
-import { dispatchTask } from "../engine/dispatchTask";
-import type { DispatchDeps } from "../engine/dispatch";
-import type { SubagentStatus } from "./tasks";
+import { MAINTAIN_SYSTEM_PROMPT } from "../engine/dispatchTask";
+import { taskBranch } from "./tasks";
 
-export type RunSubagentDeps = DispatchDeps & {
-  waitForExit: (ptyId: number) => Promise<{ exitCode: number | null }>;
-};
+export interface CreateWorktreeDeps {
+  runGit: (args: string[], cwd: string) => Promise<void>;
+}
 
-export async function startSubagent(
-  deps: RunSubagentDeps,
-  input: {
-    repoPath: string;
-    worktreeRoot: string;
-    id: string;
-    prompt: string;
-    env?: Record<string, string>;
-    model?: string;
-    onStatus: (s: SubagentStatus) => void;
-  },
-): Promise<number | null> {
-  let ptyId: number;
-  try {
-    const res = await dispatchTask(deps, input);
-    ptyId = res.ptyId;
-  } catch {
-    input.onStatus("failed");
-    return null;
-  }
-  input.onStatus("running");
-  // Detached: lets the caller serialize the spawn phase (git worktree creation)
-  // while agents still run concurrently. Status stays process-derived.
-  void deps.waitForExit(ptyId)
-    .then(({ exitCode }) => input.onStatus(exitCode === 0 ? "done" : "failed"))
-    .catch(() => input.onStatus("failed"));
-  return ptyId;
+/**
+ * Create the isolated worktree for a task and return its path. Idempotent: clears
+ * any stale worktree/branch from an interrupted prior run before adding.
+ */
+export async function createTaskWorktree(
+  deps: CreateWorktreeDeps,
+  input: { repoPath: string; worktreeRoot: string; id: string },
+): Promise<string> {
+  const branch = taskBranch(input.id);
+  const worktree = `${input.worktreeRoot}/.cadre/worktrees/task-${input.id}`;
+
+  const tryGit = async (args: string[]) => {
+    try { await deps.runGit(args, input.repoPath); } catch { /* nothing to clean */ }
+  };
+  await tryGit(["worktree", "remove", "--force", worktree]);
+  await tryGit(["worktree", "prune"]);
+  await tryGit(["branch", "-D", branch]);
+
+  await deps.runGit(["worktree", "add", "-b", branch, worktree, "HEAD"], input.repoPath);
+  return worktree;
+}
+
+/** POSIX single-quote a string so it survives being written into a shell verbatim. */
+function shq(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * The shell command a subagent card's terminal runs: an INTERACTIVE claude
+ * (no `-p`), seeded with the maintenance persona + the task as its first message,
+ * with permission prompts skipped so it can act. The user can type to steer it.
+ */
+export function subagentCommand(prompt: string): string {
+  const seeded = `${MAINTAIN_SYSTEM_PROMPT}\n\n## Task\n${prompt}\n`;
+  // `; exit` closes the login shell once the claude session ends, so the card's
+  // PTY-exit event fires and it flips to "exited". Until then the terminal is live
+  // and the user can type to steer the agent. The login shell resolves `claude` on
+  // PATH and inherits the app's auth (claude.ai login → org connectors).
+  return `claude --dangerously-skip-permissions ${shq(seeded)}; exit`;
 }

@@ -4,7 +4,12 @@ export function taskBranch(id: string): string {
 
 // Staged tasks + fleet batch model (reducers).
 
-export type SubagentStatus = "running" | "done" | "failed";
+// A subagent is an interactive `claude` session in its own worktree:
+//  preparing → creating the git worktree
+//  running   → worktree ready, the claude terminal is live (user can steer it)
+//  exited    → the claude process ended
+//  failed    → the worktree could not be created (never started)
+export type SubagentStatus = "preparing" | "running" | "exited" | "failed";
 
 export interface StagedTask {
   id: string;
@@ -16,10 +21,9 @@ export interface SubagentRun {
   taskId: string;
   prompt: string;
   branch: string;
+  /** Absolute path of the isolated worktree this subagent's claude session runs in. */
+  worktree: string;
   status: SubagentStatus;
-  log: string;
-  /** PTY id once the agent is spawned — lets us kill it when the user closes the card. */
-  ptyId?: number;
 }
 
 export interface FleetBatch {
@@ -36,8 +40,13 @@ export function removeStaged(list: StagedTask[], id: string): StagedTask[] {
   return list.filter((t) => t.id !== id);
 }
 
-/** Freeze a staged list into a batch of running subagents (each on task/<id>). */
-export function makeBatch(id: string, staged: StagedTask[], createdAt: number): FleetBatch {
+/** Where a task's isolated worktree lives (deterministic, so cards can mount before creation finishes). */
+export function taskWorktreePath(root: string, id: string): string {
+  return `${root}/.cadre/worktrees/task-${id}`;
+}
+
+/** Freeze a staged list into a batch of subagents (each starts "preparing" its task/<id> worktree). */
+export function makeBatch(id: string, staged: StagedTask[], createdAt: number, root: string): FleetBatch {
   return {
     id,
     createdAt,
@@ -45,8 +54,8 @@ export function makeBatch(id: string, staged: StagedTask[], createdAt: number): 
       taskId: t.id,
       prompt: t.prompt,
       branch: taskBranch(t.id),
-      status: "running" as const,
-      log: "",
+      worktree: taskWorktreePath(root, t.id),
+      status: "preparing" as const,
     })),
   };
 }
@@ -62,15 +71,6 @@ function mapSubagent(
   );
 }
 
-export function appendSubagentLog(
-  batches: FleetBatch[],
-  batchId: string,
-  taskId: string,
-  chunk: string,
-): FleetBatch[] {
-  return mapSubagent(batches, batchId, taskId, (s) => ({ ...s, log: s.log + chunk }));
-}
-
 export function setSubagentStatus(
   batches: FleetBatch[],
   batchId: string,
@@ -78,16 +78,6 @@ export function setSubagentStatus(
   status: SubagentStatus,
 ): FleetBatch[] {
   return mapSubagent(batches, batchId, taskId, (s) => ({ ...s, status }));
-}
-
-/** Record a subagent's PTY id once spawned (so the UI can kill it on close). */
-export function setSubagentPty(
-  batches: FleetBatch[],
-  batchId: string,
-  taskId: string,
-  ptyId: number,
-): FleetBatch[] {
-  return mapSubagent(batches, batchId, taskId, (s) => ({ ...s, ptyId }));
 }
 
 /** Drop one subagent from its batch (used when the user closes a card). */
