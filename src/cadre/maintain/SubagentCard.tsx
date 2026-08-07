@@ -24,23 +24,20 @@ export function SubagentCard({
   projectDir,
   maximized,
   termFontSize,
-  draggable,
+  onDragHandlePointerDown,
   onToggleMax,
   onClose,
   onExit,
-  onDragStart,
-  onDragEnd,
 }: {
   run: SubagentRun;
   projectDir: string;
   maximized: boolean;
   termFontSize?: number;
-  draggable?: boolean;
+  /** Pointer-down on the drag grip — FleetTab drives the tile move from here. */
+  onDragHandlePointerDown?: (e: React.PointerEvent) => void;
   onToggleMax: () => void;
   onClose: () => void;
   onExit: () => void;
-  onDragStart?: () => void;
-  onDragEnd?: () => void;
 }) {
   const info = statusInfo(run.status);
   const live = run.status === "running";
@@ -49,20 +46,22 @@ export function SubagentCard({
     <div
       className={live ? "cadre-generating" : undefined}
       style={{
-        display: "flex", flexDirection: "column", minHeight: 0,
+        display: "flex", flexDirection: "column", minHeight: 0, height: "100%",
         background: "var(--c-surface-1)",
         border: `1.5px solid ${live ? "color-mix(in srgb, var(--c-accent) 55%, var(--c-border))" : "var(--c-border-strong)"}`,
         borderRadius: "var(--c-radius)", overflow: "hidden",
       }}
     >
-      {/* Header doubles as the drag handle (draggable), so dragging the terminal body still selects text. */}
-      <div
-        draggable={draggable}
-        onDragStart={onDragStart}
-        onDragEnd={onDragEnd}
-        style={{ display: "flex", alignItems: "center", gap: 6, padding: "var(--c-space-2) var(--c-space-3)", background: "var(--c-surface-2)", borderBottom: "1px solid var(--c-border)", cursor: draggable ? "grab" : "default" }}
-      >
-        {draggable && <GripVertical size={12} strokeWidth={2} style={{ color: "var(--c-text-faint)", flexShrink: 0 }} />}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "var(--c-space-2) var(--c-space-3)", background: "var(--c-surface-2)", borderBottom: "1px solid var(--c-border)" }}>
+        {onDragHandlePointerDown && (
+          <span
+            onPointerDown={onDragHandlePointerDown}
+            title="Drag to move"
+            style={{ display: "inline-flex", flexShrink: 0, color: "var(--c-text-faint)", cursor: "grab", touchAction: "none" }}
+          >
+            <GripVertical size={13} strokeWidth={2} />
+          </span>
+        )}
         <span className="cadre-label-mono" style={{ fontSize: "9px", fontWeight: 700, color: info.color, background: `color-mix(in srgb, ${info.color} 15%, transparent)`, border: `1px solid color-mix(in srgb, ${info.color} 35%, transparent)`, borderRadius: "var(--c-radius-full)", padding: "1px 7px" }}>
           {run.branch}
         </span>
