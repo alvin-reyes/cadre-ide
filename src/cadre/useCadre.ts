@@ -30,6 +30,7 @@ import {
   setSubagentStatus,
   removeSubagent,
   removeBatch,
+  moveSubagent,
   type StagedTask,
   type FleetBatch,
 } from "../lib/maintain/tasks";
@@ -244,6 +245,8 @@ interface CadreState {
   closeSubagent: (batchId: string, taskId: string) => void;
   /** Close a Fleet tab — dropping the batch unmounts its terminals, killing the sessions. */
   closeBatch: (batchId: string) => void;
+  /** Drag-to-reorder a subagent within its batch's grid. */
+  reorderSubagent: (batchId: string, fromTaskId: string, toTaskId: string) => void;
 
   /** Freeze the verification command, write the plan to disk, unlock the fleet. */
   approvePlan: (verification: string[]) => Promise<void>;
@@ -646,6 +649,11 @@ export const useCadre = create<CadreState>((set, get) => {
   closeBatch: (batchId) => {
     const root = requireRoot();
     patchRoot(root, { batches: removeBatch(get().projects[root]?.batches ?? [], batchId) });
+  },
+
+  reorderSubagent: (batchId, fromTaskId, toTaskId) => {
+    const root = requireRoot();
+    patchRoot(root, { batches: moveSubagent(get().projects[root]?.batches ?? [], batchId, fromTaskId, toTaskId) });
   },
 
   approvePlan: async (verification) => {

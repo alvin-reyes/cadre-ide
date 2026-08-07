@@ -16,6 +16,7 @@ export function MaintainMainTabs({ projectRoot }: { projectRoot: string }) {
   const closeBatch = useCadre((s) => s.closeBatch);
   const closeSubagent = useCadre((s) => s.closeSubagent);
   const markSubagentExited = useCadre((s) => s.markSubagentExited);
+  const reorderSubagent = useCadre((s) => s.reorderSubagent);
   const [active, setActive] = useState<string>("terminal");
   const [railCollapsed, setRailCollapsed] = useState(false);
 
@@ -88,6 +89,7 @@ export function MaintainMainTabs({ projectRoot }: { projectRoot: string }) {
                 projectDir={projectRoot}
                 onCloseSubagent={(taskId) => closeSubagent(b.id, taskId)}
                 onExitSubagent={(taskId) => markSubagentExited(b.id, taskId)}
+                onReorderSubagent={(from, to) => reorderSubagent(b.id, from, to)}
               />
             </div>
           ))}

@@ -40,6 +40,7 @@ export function TerminalPanel({
   startupCommand,
   persistId,
   onExit,
+  fontSize,
 }: {
   cwd: string;
   startupCommand?: string;
@@ -47,13 +48,26 @@ export function TerminalPanel({
   persistId?: string;
   /** Called when the PTY's process exits (e.g. a subagent's claude session ends). */
   onExit?: (code: number | null) => void;
+  /** Override the terminal font size (e.g. the Fleet tab's size control). */
+  fontSize?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
+  const doFitRef = useRef<() => void>(() => {});
   const theme = useThemeStore((s) => s.theme);
   // Read the latest onExit without re-creating the PTY when the callback identity changes.
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
+
+  // Apply a font-size change LIVE (e.g. the Fleet size control) without recreating
+  // the PTY — recreating would restart the subagent's claude session.
+  useEffect(() => {
+    const term = termRef.current;
+    if (term && fontSize) {
+      term.options.fontSize = fontSize;
+      doFitRef.current();
+    }
+  }, [fontSize]);
 
   // Re-theme the live terminal when the app theme flips (no PTY churn).
   useEffect(() => {
@@ -69,7 +83,7 @@ export function TerminalPanel({
     const s = useSettingsStore.getState();
     const term = new XTerm({
       fontFamily: s.fontFamily,
-      fontSize: s.fontSize,
+      fontSize: fontSize ?? s.fontSize,
       lineHeight: s.lineHeight,
       cursorStyle: s.cursorStyle,
       cursorBlink: s.cursorBlink,
@@ -162,6 +176,7 @@ export function TerminalPanel({
         invoke("resize_pty", { id: ptyId, rows: term.rows, cols: term.cols }).catch(() => {});
       }
     };
+    doFitRef.current = doFit;
     const ro = new ResizeObserver(doFit);
     ro.observe(host);
     term.focus();

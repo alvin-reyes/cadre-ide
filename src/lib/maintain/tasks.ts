@@ -91,3 +91,22 @@ export function removeSubagent(batches: FleetBatch[], batchId: string, taskId: s
 export function removeBatch(batches: FleetBatch[], batchId: string): FleetBatch[] {
   return batches.filter((b) => b.id !== batchId);
 }
+
+/** Move a subagent so it sits at another subagent's position (drag-to-reorder the grid). */
+export function moveSubagent(
+  batches: FleetBatch[],
+  batchId: string,
+  fromTaskId: string,
+  toTaskId: string,
+): FleetBatch[] {
+  return batches.map((b) => {
+    if (b.id !== batchId) return b;
+    const from = b.subagents.findIndex((s) => s.taskId === fromTaskId);
+    const to = b.subagents.findIndex((s) => s.taskId === toTaskId);
+    if (from < 0 || to < 0 || from === to) return b;
+    const next = b.subagents.slice();
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    return { ...b, subagents: next };
+  });
+}

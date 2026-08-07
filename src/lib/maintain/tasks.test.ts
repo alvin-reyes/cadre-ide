@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   taskBranch, makeStagedTask, removeStaged, makeBatch, taskWorktreePath,
-  setSubagentStatus, removeSubagent, removeBatch,
+  setSubagentStatus, removeSubagent, removeBatch, moveSubagent,
 } from "./tasks";
 
 describe("staging + batch", () => {
@@ -43,5 +43,12 @@ describe("staging + batch", () => {
     const b1 = makeBatch("b1", [makeStagedTask("a", "x", 1)], 1, "/r");
     const b2 = makeBatch("b2", [makeStagedTask("c", "z", 3)], 2, "/r");
     expect(removeBatch([b1, b2], "b1").map((b) => b.id)).toEqual(["b2"]);
+  });
+  it("moveSubagent reorders one subagent to another's position", () => {
+    const b = makeBatch("btch", [makeStagedTask("a", "x", 1), makeStagedTask("b", "y", 2), makeStagedTask("c", "z", 3)], 1, "/r");
+    // move "c" to where "a" is → c, a, b
+    expect(moveSubagent([b], "btch", "c", "a")[0].subagents.map((s) => s.taskId)).toEqual(["c", "a", "b"]);
+    // no-op when from === to
+    expect(moveSubagent([b], "btch", "a", "a")[0].subagents.map((s) => s.taskId)).toEqual(["a", "b", "c"]);
   });
 });

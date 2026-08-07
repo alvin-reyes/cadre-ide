@@ -5,7 +5,7 @@
  * user can watch AND steer the agent. Maximize (⤢) expands it; close (✕) drops it
  * (unmounting the terminal, which kills the session).
  */
-import { Maximize2, Minimize2, X, Loader2 } from "lucide-react";
+import { Maximize2, Minimize2, X, Loader2, GripVertical } from "lucide-react";
 import { TerminalPanel } from "../TerminalPanel";
 import { subagentCommand } from "../../lib/maintain/runBatch";
 import type { SubagentRun, SubagentStatus } from "../../lib/maintain/tasks";
@@ -23,16 +23,24 @@ export function SubagentCard({
   run,
   projectDir,
   maximized,
+  termFontSize,
+  draggable,
   onToggleMax,
   onClose,
   onExit,
+  onDragStart,
+  onDragEnd,
 }: {
   run: SubagentRun;
   projectDir: string;
   maximized: boolean;
+  termFontSize?: number;
+  draggable?: boolean;
   onToggleMax: () => void;
   onClose: () => void;
   onExit: () => void;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
 }) {
   const info = statusInfo(run.status);
   const live = run.status === "running";
@@ -47,7 +55,14 @@ export function SubagentCard({
         borderRadius: "var(--c-radius)", overflow: "hidden",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "var(--c-space-2) var(--c-space-3)", background: "var(--c-surface-2)", borderBottom: "1px solid var(--c-border)" }}>
+      {/* Header doubles as the drag handle (draggable), so dragging the terminal body still selects text. */}
+      <div
+        draggable={draggable}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+        style={{ display: "flex", alignItems: "center", gap: 6, padding: "var(--c-space-2) var(--c-space-3)", background: "var(--c-surface-2)", borderBottom: "1px solid var(--c-border)", cursor: draggable ? "grab" : "default" }}
+      >
+        {draggable && <GripVertical size={12} strokeWidth={2} style={{ color: "var(--c-text-faint)", flexShrink: 0 }} />}
         <span className="cadre-label-mono" style={{ fontSize: "9px", fontWeight: 700, color: info.color, background: `color-mix(in srgb, ${info.color} 15%, transparent)`, border: `1px solid color-mix(in srgb, ${info.color} 35%, transparent)`, borderRadius: "var(--c-radius-full)", padding: "1px 7px" }}>
           {run.branch}
         </span>
@@ -84,7 +99,7 @@ export function SubagentCard({
       <div style={{ flex: 1, minHeight: 0, padding: "var(--c-space-2) var(--c-space-3) var(--c-space-3)" }}>
         {hasTerminal ? (
           <div style={{ height: "100%", minHeight: 0, borderRadius: "var(--c-radius)", overflow: "hidden", border: "1px solid var(--c-border)" }}>
-            <TerminalPanel cwd={run.worktree} startupCommand={subagentCommand(run.prompt, projectDir)} onExit={onExit} />
+            <TerminalPanel cwd={run.worktree} startupCommand={subagentCommand(run.prompt, projectDir)} onExit={onExit} fontSize={termFontSize} />
           </div>
         ) : run.status === "failed" ? (
           <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", color: "var(--c-warning)", fontSize: "var(--c-fs-sm)", background: "var(--c-code-bg)", borderRadius: "var(--c-radius)", padding: "var(--c-space-4)" }}>
