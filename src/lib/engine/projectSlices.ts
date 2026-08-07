@@ -2,7 +2,7 @@ import { emptyBoard, type BoardState, type StoryCard } from "./board";
 import type { LensReview } from "./reviewFleet";
 import type { Phase } from "../../cadre/components/PhaseStepper";
 import type { ProjectMode } from "./projectMode";
-import type { MaintainTask } from "../maintain/tasks";
+import type { MaintainTask, StagedTask, FleetBatch } from "../maintain/tasks";
 
 /** One persistent agent slot in the team pool. */
 export interface AgentSlot {
@@ -65,6 +65,10 @@ export interface CadreSlice {
   modeChoicePending: boolean;
   /** Maintenance/support tasks dispatched for this project (Maintain mode). */
   tasks: MaintainTask[];
+  /** Maintenance tasks staged (not yet run) for this project (Maintain mode). */
+  stagedTasks: StagedTask[];
+  /** Live fleet batches launched from the staged list (session-only). */
+  batches: FleetBatch[];
 }
 
 export function emptyCadreSlice(): CadreSlice {
@@ -94,6 +98,8 @@ export function emptyCadreSlice(): CadreSlice {
     mode: "build",
     modeChoicePending: false,
     tasks: [],
+    stagedTasks: [],
+    batches: [],
   };
 }
 
@@ -144,5 +150,7 @@ export function mirrorCadre(
     mode: s.mode,
     modeChoicePending: s.modeChoicePending,
     tasks: s.tasks,
+    stagedTasks: s.stagedTasks,
+    batches: s.batches,
   };
 }

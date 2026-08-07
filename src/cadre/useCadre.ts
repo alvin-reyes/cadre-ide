@@ -13,7 +13,7 @@ import { runApprovedStory } from "../lib/engine/orchestrator";
 import { reviewStory as reviewStoryFleet, aggregateReviews, type LensReview } from "../lib/engine/reviewFleet";
 import { documentAllRepos, composeAggregateAnalysis, BROWNFIELD_DOC_PATH } from "../lib/engine/brownfield";
 import { CODE_REVIEW_LENSES } from "../lib/planning/review";
-import { tauriOrchestratorDeps, tauriReviewFleetDeps, tauriResolveConflictDeps } from "../lib/engine/tauriDeps";
+import { tauriOrchestratorDeps, tauriReviewFleetDeps, tauriResolveConflictDeps, waitForExit } from "../lib/engine/tauriDeps";
 import { composeDispatchPrompt, storyBranch, type AlwaysFile } from "../lib/engine/dispatch";
 import { ADR_DECISIONS_DIR } from "../lib/engine/adr";
 import { resolveMergeConflict, composeResolverPrompt } from "../lib/engine/resolveConflict";
@@ -23,8 +23,21 @@ import { resolveStorySession } from "../lib/engine/agentSessions";
 import { nextStoryNumber, parseStoryFiles, parseStoryRepo, shardStory } from "../lib/engine/shard";
 import { parseRepos, resolveRepoPath, findRepo, DEFAULT_REPO_ID } from "../lib/engine/repos";
 import type { ProjectMode } from "../lib/engine/projectMode";
-import { makeTask, setTaskStatus, type MaintainTask } from "../lib/maintain/tasks";
+import {
+  makeTask,
+  setTaskStatus,
+  type MaintainTask,
+  makeStagedTask,
+  removeStaged,
+  makeBatch,
+  appendSubagentLog,
+  setSubagentStatus,
+  type StagedTask,
+  type FleetBatch,
+} from "../lib/maintain/tasks";
 import { runMaintainTask } from "../lib/maintain/dispatchOrchestration";
+import { runSubagent, type RunSubagentDeps } from "../lib/maintain/runBatch";
+import { loadStaged, saveStaged } from "../stores/maintainStaging";
 import { saveModeChoice } from "../lib/maintain/modePreference";
 import { useRepos } from "../stores/reposStore";
 import { CREATE_BACKLOG_TOOL, backlogFromTool } from "../lib/planning/storyTool";
@@ -198,6 +211,10 @@ interface CadreState {
   modeChoicePending: boolean;
   /** Maintenance/support tasks dispatched for the active project. */
   tasks: MaintainTask[];
+  /** Maintenance tasks staged (not yet run) for the active project (Maintain mode). */
+  stagedTasks: StagedTask[];
+  /** Live fleet batches launched from the staged list for the active project (session-only). */
+  batches: FleetBatch[];
 
   setPhase: (phase: Phase) => void;
   setPrd: (md: string) => void;
@@ -222,6 +239,12 @@ interface CadreState {
   chooseMode: (mode: ProjectMode) => void;
   /** Mint + queue a maintenance task, then dispatch it (worktree + agent spawn). */
   addMaintainTask: (prompt: string) => Promise<void>;
+  /** Stage a new maintenance task (persisted, not yet dispatched). */
+  stageTask: (prompt: string) => void;
+  /** Remove a staged task before it's launched. */
+  unstageTask: (id: string) => void;
+  /** Freeze the staged list into a fleet batch and launch every subagent. Returns the new batch id, or null if nothing staged. */
+  runStagedBatch: () => Promise<string | null>;
 
   /** Freeze the verification command, write the plan to disk, unlock the fleet. */
   approvePlan: (verification: string[]) => Promise<void>;
@@ -480,11 +503,17 @@ export const useCadre = create<CadreState>((set, get) => {
   mode: "build",
   modeChoicePending: false,
   tasks: [],
+  stagedTasks: [],
+  batches: [],
 
   setActiveProject: (root) => {
-    // Seed an empty slice on first activation so the mirror is stable.
+    // Seed an empty slice on first activation so the mirror is stable. Hydrate
+    // the staged list (persisted, not the live batches — those hold PTYs that
+    // die on quit) from localStorage so a reopened project remembers its queue.
     set((s) => ({
-      projects: s.projects[root] ? s.projects : { ...s.projects, [root]: emptyCadreSlice() },
+      projects: s.projects[root]
+        ? s.projects
+        : { ...s.projects, [root]: { ...emptyCadreSlice(), stagedTasks: loadStaged(root) } },
       activeRoot: root,
     }));
     syncCadreMirror();
@@ -571,6 +600,48 @@ export const useCadre = create<CadreState>((set, get) => {
       model,
       onStatus: (s) => patchRoot(root, { tasks: setTaskStatus(get().projects[root]?.tasks ?? [], id, s) }),
     });
+  },
+
+  stageTask: (prompt) => {
+    const root = requireRoot();
+    const text = prompt.trim();
+    if (!text) return;
+    const id = Math.random().toString(36).slice(2, 8);
+    const next = [makeStagedTask(id, text, Date.now()), ...(get().projects[root]?.stagedTasks ?? [])];
+    saveStaged(root, next);
+    patchRoot(root, { stagedTasks: next });
+  },
+  unstageTask: (id) => {
+    const root = requireRoot();
+    const next = removeStaged(get().projects[root]?.stagedTasks ?? [], id);
+    saveStaged(root, next);
+    patchRoot(root, { stagedTasks: next });
+  },
+  runStagedBatch: async () => {
+    const root = requireRoot();
+    const staged = get().projects[root]?.stagedTasks ?? [];
+    if (staged.length === 0) return null;
+    const batchId = `b_${Math.random().toString(36).slice(2, 8)}`;
+    const batch = makeBatch(batchId, staged, Date.now());
+    // Freeze the staged list into the batch and clear staging.
+    saveStaged(root, []);
+    patchRoot(root, { stagedTasks: [], batches: [batch, ...(get().projects[root]?.batches ?? [])] });
+
+    const repos = parseRepos(await readManifest(root));
+    const repoPath = resolveRepoPath(root, findRepo(repos, DEFAULT_REPO_ID).path);
+    const provider = getProvider(fleetProviderId());
+    const { env, model } = await resolveFleetAuth(provider);
+
+    await Promise.all(batch.subagents.map((sa) => {
+      const onOutput = (chunk: string) =>
+        patchRoot(root, { batches: appendSubagentLog(get().projects[root]?.batches ?? [], batchId, sa.taskId, chunk) });
+      const deps: RunSubagentDeps = { ...tauriOrchestratorDeps(root, onOutput), waitForExit };
+      return runSubagent(deps, {
+        repoPath, worktreeRoot: root, id: sa.taskId, prompt: sa.prompt, env, model,
+        onStatus: (s) => patchRoot(root, { batches: setSubagentStatus(get().projects[root]?.batches ?? [], batchId, sa.taskId, s) }),
+      });
+    }));
+    return batchId;
   },
 
   approvePlan: async (verification) => {

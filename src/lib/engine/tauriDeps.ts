@@ -83,7 +83,7 @@ function makeSpawnAgent(onOutput?: OutputSink) {
   };
 }
 
-function waitForExit(ptyId: number): Promise<{ exitCode: number | null }> {
+export function waitForExit(ptyId: number): Promise<{ exitCode: number | null }> {
   return exits.wait(ptyId);
 }
 
