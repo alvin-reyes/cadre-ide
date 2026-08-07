@@ -5,7 +5,7 @@
  * PTYs must survive tab switches); only the active one is shown.
  */
 import { useEffect, useState } from "react";
-import { Terminal as TerminalIcon, Network } from "lucide-react";
+import { Terminal as TerminalIcon, Network, X } from "lucide-react";
 import { TerminalTabs } from "../TerminalTabs";
 import { FleetTab } from "./FleetTab";
 import { IntakeRail } from "./IntakeRail";
@@ -13,6 +13,8 @@ import { useCadre } from "../useCadre";
 
 export function MaintainMainTabs({ projectRoot }: { projectRoot: string }) {
   const batches = useCadre((s) => s.batches);
+  const closeBatch = useCadre((s) => s.closeBatch);
+  const closeSubagent = useCadre((s) => s.closeSubagent);
   const [active, setActive] = useState<string>("terminal");
 
   // If the active Fleet tab's batch disappears (e.g. project switch), fall back to Terminal.
@@ -35,7 +37,14 @@ export function MaintainMainTabs({ projectRoot }: { projectRoot: string }) {
         <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "3px 6px", borderBottom: "1px solid var(--c-border)", background: "var(--c-surface-1)", flexShrink: 0, overflowX: "auto" }}>
           <TabButton icon={<TerminalIcon size={12} strokeWidth={2} />} label="Terminal" on={active === "terminal"} onClick={() => setActive("terminal")} />
           {batches.map((b) => (
-            <TabButton key={b.id} icon={<Network size={12} strokeWidth={2} />} label={`Fleet · ${fmt(b.createdAt)}`} on={active === b.id} onClick={() => setActive(b.id)} />
+            <TabButton
+              key={b.id}
+              icon={<Network size={12} strokeWidth={2} />}
+              label={`Fleet · ${fmt(b.createdAt)}`}
+              on={active === b.id}
+              onClick={() => setActive(b.id)}
+              onClose={() => void closeBatch(b.id)}
+            />
           ))}
         </div>
         <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
@@ -44,7 +53,7 @@ export function MaintainMainTabs({ projectRoot }: { projectRoot: string }) {
           </div>
           {batches.map((b) => (
             <div key={b.id} style={hidden(active === b.id)}>
-              <FleetTab batch={b} />
+              <FleetTab batch={b} onCloseSubagent={(taskId) => void closeSubagent(b.id, taskId)} />
             </div>
           ))}
         </div>
@@ -53,10 +62,22 @@ export function MaintainMainTabs({ projectRoot }: { projectRoot: string }) {
   );
 }
 
-function TabButton({ icon, label, on, onClick }: { icon: React.ReactNode; label: string; on: boolean; onClick: () => void }) {
+function TabButton({ icon, label, on, onClick, onClose }: { icon: React.ReactNode; label: string; on: boolean; onClick: () => void; onClose?: () => void }) {
   return (
-    <button onClick={onClick} aria-pressed={on} className="cadre-hover" style={{ display: "inline-flex", alignItems: "center", gap: 5, height: 26, fontSize: "var(--c-fs-xs)", fontWeight: 550, padding: "0 10px", borderRadius: "var(--c-radius-sm)", background: on ? "var(--c-surface-3)" : "transparent", border: "none", color: on ? "var(--c-text)" : "var(--c-text-muted)", cursor: "pointer", flexShrink: 0 }}>
-      {icon}{label}
-    </button>
+    <div style={{ display: "inline-flex", alignItems: "center", borderRadius: "var(--c-radius-sm)", background: on ? "var(--c-surface-3)" : "transparent", flexShrink: 0 }}>
+      <button onClick={onClick} aria-pressed={on} className="cadre-hover" style={{ display: "inline-flex", alignItems: "center", gap: 5, height: 26, fontSize: "var(--c-fs-xs)", fontWeight: 550, padding: onClose ? "0 4px 0 10px" : "0 10px", borderRadius: onClose ? "var(--c-radius-sm) 0 0 var(--c-radius-sm)" : "var(--c-radius-sm)", background: "transparent", border: "none", color: on ? "var(--c-text)" : "var(--c-text-muted)", cursor: "pointer" }}>
+        {icon}{label}
+      </button>
+      {onClose && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onClose(); }}
+          title="Close Fleet tab (stops running agents)"
+          aria-label="Close Fleet tab"
+          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 20, height: 26, borderRadius: "0 var(--c-radius-sm) var(--c-radius-sm) 0", background: "transparent", border: "none", color: on ? "var(--c-text-secondary)" : "var(--c-text-faint)", cursor: "pointer", padding: 0 }}
+        >
+          <X size={11} strokeWidth={2.5} />
+        </button>
+      )}
+    </div>
   );
 }

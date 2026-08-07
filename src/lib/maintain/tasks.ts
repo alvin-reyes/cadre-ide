@@ -18,6 +18,8 @@ export interface SubagentRun {
   branch: string;
   status: SubagentStatus;
   log: string;
+  /** PTY id once the agent is spawned — lets us kill it when the user closes the card. */
+  ptyId?: number;
 }
 
 export interface FleetBatch {
@@ -76,4 +78,26 @@ export function setSubagentStatus(
   status: SubagentStatus,
 ): FleetBatch[] {
   return mapSubagent(batches, batchId, taskId, (s) => ({ ...s, status }));
+}
+
+/** Record a subagent's PTY id once spawned (so the UI can kill it on close). */
+export function setSubagentPty(
+  batches: FleetBatch[],
+  batchId: string,
+  taskId: string,
+  ptyId: number,
+): FleetBatch[] {
+  return mapSubagent(batches, batchId, taskId, (s) => ({ ...s, ptyId }));
+}
+
+/** Drop one subagent from its batch (used when the user closes a card). */
+export function removeSubagent(batches: FleetBatch[], batchId: string, taskId: string): FleetBatch[] {
+  return batches.map((b) =>
+    b.id !== batchId ? b : { ...b, subagents: b.subagents.filter((s) => s.taskId !== taskId) }
+  );
+}
+
+/** Drop a whole batch (used when the user closes a Fleet tab). */
+export function removeBatch(batches: FleetBatch[], batchId: string): FleetBatch[] {
+  return batches.filter((b) => b.id !== batchId);
 }

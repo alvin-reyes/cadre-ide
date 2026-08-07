@@ -29,6 +29,9 @@ import {
   makeBatch,
   appendSubagentLog,
   setSubagentStatus,
+  setSubagentPty,
+  removeSubagent,
+  removeBatch,
   type StagedTask,
   type FleetBatch,
 } from "../lib/maintain/tasks";
@@ -237,6 +240,10 @@ interface CadreState {
   unstageTask: (id: string) => void;
   /** Freeze the staged list into a fleet batch and launch every subagent. Returns the new batch id, or null if nothing staged. */
   runStagedBatch: () => Promise<string | null>;
+  /** Close one subagent card — kills its agent process if still running, then drops it. */
+  closeSubagent: (batchId: string, taskId: string) => Promise<void>;
+  /** Close a Fleet tab — kills all still-running agents in the batch, then drops the batch. */
+  closeBatch: (batchId: string) => Promise<void>;
 
   /** Freeze the verification command, write the plan to disk, unlock the fleet. */
   approvePlan: (verification: string[]) => Promise<void>;
@@ -614,14 +621,43 @@ export const useCadre = create<CadreState>((set, get) => {
         const onOutput = (chunk: string) =>
           patchRoot(root, { batches: appendSubagentLog(get().projects[root]?.batches ?? [], batchId, sa.taskId, chunk) });
         const deps: RunSubagentDeps = { ...tauriOrchestratorDeps(root, onOutput), waitForExit };
-        await startSubagent(deps, {
+        const ptyId = await startSubagent(deps, {
           repoPath, worktreeRoot: root, id: sa.taskId, prompt: sa.prompt, env, model,
           onStatus: (s) => patchRoot(root, { batches: setSubagentStatus(get().projects[root]?.batches ?? [], batchId, sa.taskId, s) }),
         });
+        // Record the PTY id so the user can kill this agent when closing its card.
+        if (ptyId != null) {
+          patchRoot(root, { batches: setSubagentPty(get().projects[root]?.batches ?? [], batchId, sa.taskId, ptyId) });
+        }
       }
     })();
 
     return batchId;
+  },
+
+  closeSubagent: async (batchId, taskId) => {
+    const root = requireRoot();
+    const batch = (get().projects[root]?.batches ?? []).find((b) => b.id === batchId);
+    const sa = batch?.subagents.find((s) => s.taskId === taskId);
+    // Kill the agent process if it's still running (no zombie agents).
+    if (sa?.status === "running" && sa.ptyId != null) {
+      await invoke("kill_pty", { id: sa.ptyId }).catch(() => {});
+    }
+    patchRoot(root, { batches: removeSubagent(get().projects[root]?.batches ?? [], batchId, taskId) });
+  },
+
+  closeBatch: async (batchId) => {
+    const root = requireRoot();
+    const batch = (get().projects[root]?.batches ?? []).find((b) => b.id === batchId);
+    if (batch) {
+      // Kill every still-running agent in the batch before dropping the tab.
+      await Promise.all(
+        batch.subagents
+          .filter((s) => s.status === "running" && s.ptyId != null)
+          .map((s) => invoke("kill_pty", { id: s.ptyId! }).catch(() => {})),
+      );
+    }
+    patchRoot(root, { batches: removeBatch(get().projects[root]?.batches ?? [], batchId) });
   },
 
   approvePlan: async (verification) => {

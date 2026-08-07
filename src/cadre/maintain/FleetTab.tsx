@@ -7,7 +7,7 @@ import { useState } from "react";
 import { SubagentCard } from "./SubagentCard";
 import type { FleetBatch } from "../../lib/maintain/tasks";
 
-export function FleetTab({ batch }: { batch: FleetBatch }) {
+export function FleetTab({ batch, onCloseSubagent }: { batch: FleetBatch; onCloseSubagent: (taskId: string) => void }) {
   const [maxId, setMaxId] = useState<string | null>(null);
   const runs = maxId ? batch.subagents.filter((s) => s.taskId === maxId) : batch.subagents;
   const toggle = (id: string) => setMaxId((cur) => (cur === id ? null : id));
@@ -26,7 +26,12 @@ export function FleetTab({ batch }: { batch: FleetBatch }) {
         {runs.map((run) => (
           <div key={run.taskId} style={{ minHeight: maxId ? 0 : 220, height: maxId ? "100%" : undefined, display: "flex" }}>
             <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex" }}>
-              <SubagentCard run={run} maximized={maxId === run.taskId} onToggleMax={() => toggle(run.taskId)} />
+              <SubagentCard
+                run={run}
+                maximized={maxId === run.taskId}
+                onToggleMax={() => toggle(run.taskId)}
+                onClose={() => { if (maxId === run.taskId) setMaxId(null); onCloseSubagent(run.taskId); }}
+              />
             </div>
           </div>
         ))}

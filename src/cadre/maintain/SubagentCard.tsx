@@ -4,7 +4,7 @@
  * status label, and a LiveTerminal tailing this subagent's output. A maximize
  * (⤢) control lets the user expand one card to watch its progress in detail.
  */
-import { Maximize2, Minimize2 } from "lucide-react";
+import { Maximize2, Minimize2, X } from "lucide-react";
 import { LiveTerminal } from "../agentShared";
 import type { SubagentRun, SubagentStatus } from "../../lib/maintain/tasks";
 
@@ -16,7 +16,7 @@ function statusInfo(status: SubagentStatus): { label: string; color: string; dot
   }
 }
 
-export function SubagentCard({ run, maximized, onToggleMax }: { run: SubagentRun; maximized: boolean; onToggleMax: () => void }) {
+export function SubagentCard({ run, maximized, onToggleMax, onClose }: { run: SubagentRun; maximized: boolean; onToggleMax: () => void; onClose: () => void }) {
   const info = statusInfo(run.status);
   const isRunning = run.status === "running";
   return (
@@ -43,6 +43,15 @@ export function SubagentCard({ run, maximized, onToggleMax }: { run: SubagentRun
           style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: "var(--c-radius-sm)", background: "transparent", border: "1px solid var(--c-border)", color: "var(--c-text-secondary)", cursor: "pointer" }}
         >
           {maximized ? <Minimize2 size={12} strokeWidth={2} /> : <Maximize2 size={12} strokeWidth={2} />}
+        </button>
+        <button
+          onClick={onClose}
+          title={isRunning ? "Stop & close this subagent" : "Close this subagent"}
+          aria-label="Close subagent"
+          className="cadre-hover"
+          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: "var(--c-radius-sm)", background: "transparent", border: "1px solid var(--c-border)", color: "var(--c-text-secondary)", cursor: "pointer" }}
+        >
+          <X size={12} strokeWidth={2} />
         </button>
       </div>
       <div style={{ padding: "var(--c-space-2) var(--c-space-3)", flex: 1, minHeight: 0, overflow: "hidden" }}>
