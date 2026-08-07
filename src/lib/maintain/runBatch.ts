@@ -1,12 +1,14 @@
 /**
- * runSubagent — orchestrate ONE maintenance subagent: create its isolated
- * task/<id> worktree + spawn the agent (dispatchTask), then drive status from
- * the PROCESS via waitForExit (running while alive → done on exit 0, failed on
- * non-zero or a spawn error). This is the fix for the old frozen "running"
- * badge: status is process-derived, never self-reported.
+ * startSubagent — start ONE maintenance subagent: create its isolated task/<id>
+ * worktree + spawn the agent (dispatchTask), set "running", then watch for exit
+ * in a DETACHED promise that drives status from the PROCESS (done on exit 0,
+ * failed on non-zero or a spawn error). Status is process-derived, never
+ * self-reported — the fix for the old frozen "running" badge.
  *
- * The batch layer calls this once per staged task, concurrently, each streaming
- * to its own SubagentRun.log via the deps' onOutput sink (wired by the caller).
+ * The awaited part is just the spawn/worktree phase; the caller serializes that
+ * across a batch (concurrent `git worktree add` on one repo races on git locks)
+ * while the detached exit-watch lets the agents themselves still run concurrently.
+ * Returns the ptyId, or null on a spawn failure.
  */
 import { dispatchTask } from "../engine/dispatchTask";
 import type { DispatchDeps } from "../engine/dispatch";
@@ -16,7 +18,7 @@ export type RunSubagentDeps = DispatchDeps & {
   waitForExit: (ptyId: number) => Promise<{ exitCode: number | null }>;
 };
 
-export async function runSubagent(
+export async function startSubagent(
   deps: RunSubagentDeps,
   input: {
     repoPath: string;
@@ -27,20 +29,20 @@ export async function runSubagent(
     model?: string;
     onStatus: (s: SubagentStatus) => void;
   },
-): Promise<void> {
+): Promise<number | null> {
   let ptyId: number;
   try {
     const res = await dispatchTask(deps, input);
     ptyId = res.ptyId;
   } catch {
     input.onStatus("failed");
-    return;
+    return null;
   }
   input.onStatus("running");
-  try {
-    const { exitCode } = await deps.waitForExit(ptyId);
-    input.onStatus(exitCode === 0 ? "done" : "failed");
-  } catch {
-    input.onStatus("failed");
-  }
+  // Detached: lets the caller serialize the spawn phase (git worktree creation)
+  // while agents still run concurrently. Status stays process-derived.
+  void deps.waitForExit(ptyId)
+    .then(({ exitCode }) => input.onStatus(exitCode === 0 ? "done" : "failed"))
+    .catch(() => input.onStatus("failed"));
+  return ptyId;
 }

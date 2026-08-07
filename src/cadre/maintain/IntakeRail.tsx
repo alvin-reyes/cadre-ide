@@ -9,6 +9,7 @@ import { ListTodo, Plus, Play, X } from "lucide-react";
 import { PromptsRail } from "./PromptsRail";
 import { useCadre } from "../useCadre";
 import { aiLog } from "../../stores/aiLogStore";
+import { toast } from "../../stores/toastStore";
 
 export function IntakeRail({ onBatchLaunched }: { onBatchLaunched: (batchId: string) => void }) {
   const staged = useCadre((s) => s.stagedTasks);
@@ -27,6 +28,7 @@ export function IntakeRail({ onBatchLaunched }: { onBatchLaunched: (batchId: str
       if (id) onBatchLaunched(id);
     } catch (e) {
       aiLog("maintain", `Run failed: ${String(e)}\n`, "error");
+      toast(`Run failed: ${String(e)}`, "error");
     } finally {
       setRunning(false);
     }

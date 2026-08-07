@@ -32,7 +32,7 @@ import {
   type StagedTask,
   type FleetBatch,
 } from "../lib/maintain/tasks";
-import { runSubagent, type RunSubagentDeps } from "../lib/maintain/runBatch";
+import { startSubagent, type RunSubagentDeps } from "../lib/maintain/runBatch";
 import { loadStaged, saveStaged } from "../stores/maintainStaging";
 import { saveModeChoice } from "../lib/maintain/modePreference";
 import { useRepos } from "../stores/reposStore";
@@ -590,26 +590,37 @@ export const useCadre = create<CadreState>((set, get) => {
     const root = requireRoot();
     const staged = get().projects[root]?.stagedTasks ?? [];
     if (staged.length === 0) return null;
-    const batchId = `b_${Math.random().toString(36).slice(2, 8)}`;
-    const batch = makeBatch(batchId, staged, Date.now());
-    // Freeze the staged list into the batch and clear staging.
-    saveStaged(root, []);
-    patchRoot(root, { stagedTasks: [], batches: [batch, ...(get().projects[root]?.batches ?? [])] });
 
+    // Resolve repo + auth BEFORE mutating state (F2): a setup error (e.g. no API
+    // key) must not strand cards or lose the staged list — it propagates to the
+    // caller (IntakeRail.runAll surfaces it) with staging intact.
     const repos = parseRepos(await readManifest(root));
     const repoPath = resolveRepoPath(root, findRepo(repos, DEFAULT_REPO_ID).path);
     const provider = getProvider(fleetProviderId());
     const { env, model } = await resolveFleetAuth(provider);
 
-    await Promise.all(batch.subagents.map((sa) => {
-      const onOutput = (chunk: string) =>
-        patchRoot(root, { batches: appendSubagentLog(get().projects[root]?.batches ?? [], batchId, sa.taskId, chunk) });
-      const deps: RunSubagentDeps = { ...tauriOrchestratorDeps(root, onOutput), waitForExit };
-      return runSubagent(deps, {
-        repoPath, worktreeRoot: root, id: sa.taskId, prompt: sa.prompt, env, model,
-        onStatus: (s) => patchRoot(root, { batches: setSubagentStatus(get().projects[root]?.batches ?? [], batchId, sa.taskId, s) }),
-      });
-    }));
+    // Freeze staged -> batch and clear staging.
+    const batchId = `b_${Math.random().toString(36).slice(2, 8)}`;
+    const batch = makeBatch(batchId, staged, Date.now());
+    saveStaged(root, []);
+    patchRoot(root, { stagedTasks: [], batches: [batch, ...(get().projects[root]?.batches ?? [])] });
+
+    // Launch in the background (F1: caller focuses the tab now). SERIALIZE the
+    // spawn/worktree phase (F3: concurrent `git worktree add` on one repo races)
+    // by awaiting each startSubagent before the next; each agent's exit-watch runs
+    // detached inside startSubagent, so agents still execute concurrently.
+    void (async () => {
+      for (const sa of batch.subagents) {
+        const onOutput = (chunk: string) =>
+          patchRoot(root, { batches: appendSubagentLog(get().projects[root]?.batches ?? [], batchId, sa.taskId, chunk) });
+        const deps: RunSubagentDeps = { ...tauriOrchestratorDeps(root, onOutput), waitForExit };
+        await startSubagent(deps, {
+          repoPath, worktreeRoot: root, id: sa.taskId, prompt: sa.prompt, env, model,
+          onStatus: (s) => patchRoot(root, { batches: setSubagentStatus(get().projects[root]?.batches ?? [], batchId, sa.taskId, s) }),
+        });
+      }
+    })();
+
     return batchId;
   },
 
