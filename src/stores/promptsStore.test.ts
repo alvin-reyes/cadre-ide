@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { usePromptsStore } from "./promptsStore";
+import { usePromptsStore, load } from "./promptsStore";
 import { BUILTIN_PROMPTS } from "../lib/maintain/promptCatalog";
 
 beforeEach(() => {
@@ -28,5 +28,25 @@ describe("promptsStore", () => {
     expect(usePromptsStore.getState().favoriteIds).toContain("test-add-failing");
     usePromptsStore.getState().toggleFavorite("test-add-failing");
     expect(usePromptsStore.getState().favoriteIds).not.toContain("test-add-failing");
+  });
+  it("load() defaults arrays for a partial/malformed-but-valid payload (no crash)", () => {
+    // A valid-JSON-but-partial blob must not leave userPrompts/favoriteIds
+    // undefined — otherwise the spreads in allPrompts/addPrompt throw
+    // "not iterable" and the prompt library crashes on first use.
+    for (const payload of ["{}", "null", '{"favoriteIds":["x"]}']) {
+      try { localStorage.setItem("cadre-prompts", payload); } catch { /* node env */ }
+      const state = load();
+      expect(Array.isArray(state.userPrompts)).toBe(true);
+      expect(Array.isArray(state.favoriteIds)).toBe(true);
+      // Hydrate the store from load() and prove the crash paths are closed.
+      usePromptsStore.setState({ userPrompts: state.userPrompts, favoriteIds: state.favoriteIds });
+      expect(() => usePromptsStore.getState().allPrompts()).not.toThrow();
+      expect(() =>
+        usePromptsStore.getState().addPrompt({ title: "x", body: "y", category: "Git" }),
+      ).not.toThrow();
+    }
+    // "null" and "{}" carry no favoriteIds → default to [].
+    try { localStorage.setItem("cadre-prompts", "{}"); } catch { /* node env */ }
+    expect(load()).toEqual({ userPrompts: [], favoriteIds: [] });
   });
 });

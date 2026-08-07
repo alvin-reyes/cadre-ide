@@ -12,10 +12,14 @@ const KEY = "cadre-prompts";
 
 interface Persisted { userPrompts: Prompt[]; favoriteIds: string[]; }
 
-function load(): Persisted {
+export function load(): Persisted {
   try {
     const raw = typeof localStorage !== "undefined" ? localStorage.getItem(KEY) : null;
-    if (raw) return JSON.parse(raw) as Persisted;
+    // Merge defaults BEFORE the parsed payload so a partial/malformed-but-valid
+    // JSON blob (e.g. "{}", "null", or an object missing a key) can never leave
+    // userPrompts/favoriteIds undefined — that would make the spreads in
+    // allPrompts/addPrompt throw "not iterable". Mirrors openProjectsStore.
+    if (raw) return { userPrompts: [], favoriteIds: [], ...(JSON.parse(raw) as Partial<Persisted>) };
   } catch { /* corrupt or unavailable */ }
   return { userPrompts: [], favoriteIds: [] };
 }
