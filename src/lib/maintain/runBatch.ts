@@ -52,8 +52,17 @@ function shq(s: string): string {
  * (no `-p`), seeded with the maintenance persona + the task as its first message,
  * with permission prompts skipped so it can act. The user can type to steer it.
  */
-export function subagentCommand(prompt: string): string {
-  const seeded = `${MAINTAIN_SYSTEM_PROMPT}\n\n## Task\n${prompt}\n`;
+export function subagentCommand(prompt: string, projectDir: string): string {
+  // Tell the agent where the project lives and that its current directory is an
+  // isolated worktree of it — otherwise `.cadre/worktrees/task-<id>` looks like a
+  // stray cache dir rather than the project it's meant to maintain.
+  const seeded =
+    `${MAINTAIN_SYSTEM_PROMPT}\n\n` +
+    `## Context\n` +
+    `Project directory: ${projectDir}\n` +
+    `Your current working directory is an isolated git worktree of this project — it ` +
+    `contains the full codebase on a dedicated branch. Make and commit your changes here.\n\n` +
+    `## Task\n${prompt}\n`;
   // `; exit` closes the login shell once the claude session ends, so the card's
   // PTY-exit event fires and it flips to "exited". Until then the terminal is live
   // and the user can type to steer the agent. The login shell resolves `claude` on

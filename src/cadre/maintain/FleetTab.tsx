@@ -10,10 +10,12 @@ import type { FleetBatch } from "../../lib/maintain/tasks";
 
 export function FleetTab({
   batch,
+  projectDir,
   onCloseSubagent,
   onExitSubagent,
 }: {
   batch: FleetBatch;
+  projectDir: string;
   onCloseSubagent: (taskId: string) => void;
   onExitSubagent: (taskId: string) => void;
 }) {
@@ -41,6 +43,7 @@ export function FleetTab({
               <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex" }}>
                 <SubagentCard
                   run={run}
+                  projectDir={projectDir}
                   maximized={maxId === run.taskId}
                   onToggleMax={() => toggle(run.taskId)}
                   onClose={() => { if (maxId === run.taskId) setMaxId(null); onCloseSubagent(run.taskId); }}

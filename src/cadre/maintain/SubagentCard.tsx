@@ -21,12 +21,14 @@ function statusInfo(status: SubagentStatus): { label: string; color: string; dot
 
 export function SubagentCard({
   run,
+  projectDir,
   maximized,
   onToggleMax,
   onClose,
   onExit,
 }: {
   run: SubagentRun;
+  projectDir: string;
   maximized: boolean;
   onToggleMax: () => void;
   onClose: () => void;
@@ -82,7 +84,7 @@ export function SubagentCard({
       <div style={{ flex: 1, minHeight: 0, padding: "var(--c-space-2) var(--c-space-3) var(--c-space-3)" }}>
         {hasTerminal ? (
           <div style={{ height: "100%", minHeight: 0, borderRadius: "var(--c-radius)", overflow: "hidden", border: "1px solid var(--c-border)" }}>
-            <TerminalPanel cwd={run.worktree} startupCommand={subagentCommand(run.prompt)} onExit={onExit} />
+            <TerminalPanel cwd={run.worktree} startupCommand={subagentCommand(run.prompt, projectDir)} onExit={onExit} />
           </div>
         ) : run.status === "failed" ? (
           <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", color: "var(--c-warning)", fontSize: "var(--c-fs-sm)", background: "var(--c-code-bg)", borderRadius: "var(--c-radius)", padding: "var(--c-space-4)" }}>

@@ -32,14 +32,16 @@ describe("createTaskWorktree", () => {
 });
 
 describe("subagentCommand", () => {
-  it("launches an INTERACTIVE claude (no -p) seeded with the task, quoted", () => {
-    const cmd = subagentCommand("bump deps");
+  it("launches an INTERACTIVE claude (no -p) seeded with the task + project dir, quoted", () => {
+    const cmd = subagentCommand("bump deps", "/proj");
     expect(cmd.startsWith("claude --dangerously-skip-permissions '")).toBe(true);
     expect(cmd).not.toContain(" -p ");
+    expect(cmd).toContain("Project directory: /proj");
     expect(cmd).toContain("## Task\nbump deps");
+    expect(cmd.endsWith("; exit")).toBe(true);
   });
   it("escapes single quotes in the prompt so the shell arg stays intact", () => {
-    const cmd = subagentCommand("don't break");
+    const cmd = subagentCommand("don't break", "/proj");
     expect(cmd).toContain(`don'\\''t break`);
   });
 });

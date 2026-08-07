@@ -85,6 +85,7 @@ export function MaintainMainTabs({ projectRoot }: { projectRoot: string }) {
             <div key={b.id} style={hidden(active === b.id)}>
               <FleetTab
                 batch={b}
+                projectDir={projectRoot}
                 onCloseSubagent={(taskId) => closeSubagent(b.id, taskId)}
                 onExitSubagent={(taskId) => markSubagentExited(b.id, taskId)}
               />
