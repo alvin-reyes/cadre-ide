@@ -17,7 +17,7 @@ export function MaintainMainTabs({ projectRoot }: { projectRoot: string }) {
   const closeSubagent = useCadre((s) => s.closeSubagent);
   const markSubagentExited = useCadre((s) => s.markSubagentExited);
   const [active, setActive] = useState<string>("terminal");
-  const [railCollapsed, setRailCollapsed] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(true);
 
   // If the active Fleet tab's batch disappears (e.g. project switch), fall back to Terminal.
   useEffect(() => {
