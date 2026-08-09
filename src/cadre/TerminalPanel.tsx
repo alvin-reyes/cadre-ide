@@ -6,6 +6,7 @@ import { invoke, Channel } from "@tauri-apps/api/core";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useThemeStore } from "../stores/themeStore";
 import { loadBuffer, saveBuffer } from "../stores/terminalSession";
+import { registerPane, unregisterPane, markActive } from "../lib/terminalBus";
 import "@xterm/xterm/css/xterm.css";
 
 /**
@@ -148,6 +149,9 @@ export function TerminalPanel({
           return;
         }
         ptyId = id;
+        // Register with the terminal bus so a docked thoughts composer can send
+        // text into this pane when it's the active one for its surface.
+        if (persistId) { registerPane(persistId, id); markActive(persistId); }
         // Preload a startup command once (e.g. `claude` for the Maintain view) so
         // the user lands in a ready session rather than a bare shell. Written into
         // the login shell (not spawned as the PTY command) so the shell survives
@@ -162,6 +166,7 @@ export function TerminalPanel({
 
     const dataSub = term.onData((data) => {
       if (ptyId != null) {
+        if (persistId) markActive(persistId); // typing here makes it the active pane for its surface
         invoke("write_pty", { id: ptyId, data: Array.from(encoder.encode(data)) }).catch(() => {});
       }
     });
@@ -208,6 +213,7 @@ export function TerminalPanel({
       }
       dataSub.dispose();
       ro.disconnect();
+      if (persistId) unregisterPane(persistId);
       if (ptyId != null) invoke("kill_pty", { id: ptyId }).catch(() => {});
       term.dispose();
       termRef.current = null;

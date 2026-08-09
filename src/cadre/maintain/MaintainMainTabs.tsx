@@ -9,6 +9,7 @@ import { Terminal as TerminalIcon, Network, X, PanelLeftClose, PanelLeftOpen } f
 import { TerminalTabs } from "../TerminalTabs";
 import { FleetTab } from "./FleetTab";
 import { IntakeRail } from "./IntakeRail";
+import { ThoughtsDock } from "./ThoughtsDock";
 import { useCadre } from "../useCadre";
 
 export function MaintainMainTabs({ projectRoot }: { projectRoot: string }) {
@@ -78,8 +79,11 @@ export function MaintainMainTabs({ projectRoot }: { projectRoot: string }) {
           ))}
         </div>
         <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
-          <div style={hidden(active === "terminal")}>
-            <TerminalTabs key={projectRoot} cwd={projectRoot} startupCommand="claude" surfaceId={`maintain:${projectRoot}`} />
+          <div style={{ position: "absolute", inset: 0, display: active === "terminal" ? "flex" : "none", flexDirection: "column", minHeight: 0 }}>
+            <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
+              <TerminalTabs key={projectRoot} cwd={projectRoot} startupCommand="claude" surfaceId={`maintain:${projectRoot}`} />
+            </div>
+            <ThoughtsDock surfaceId={`maintain:${projectRoot}`} projectRoot={projectRoot} />
           </div>
           {batches.map((b) => (
             <div key={b.id} style={hidden(active === b.id)}>
