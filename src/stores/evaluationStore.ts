@@ -2,8 +2,9 @@
  * evaluationStore — runs the background Guardian + Audit agents over a project's
  * current git changes and holds their findings for the top-bar notification bar.
  * Each agent runs headless (`claude -p`) in the project dir (inheriting the app's
- * claude.ai login), inspects the repo with its own tools, and returns a JSON array
- * of findings (parseFindings). On-demand via evaluate(); the indicator drives the
+ * claude.ai login) with a READ-ONLY tool allowlist (git + read/search only, no
+ * --dangerously-skip-permissions), inspects the repo, and returns a JSON array of
+ * findings (parseFindings). On-demand via evaluate(); the indicator drives the
  * optional interval.
  */
 import { create } from "zustand";
@@ -20,9 +21,11 @@ async function runAgent(root: string, agent: EvalAgent): Promise<Finding[]> {
   let out = "";
   const deps = tauriOrchestratorDeps(root, (chunk) => { out += chunk; });
   try {
+    // READ-ONLY: allow only git + read/search tools (no --dangerously-skip-permissions),
+    // so a background reviewer can inspect the repo but never mutate it.
     const ptyId = await deps.spawnAgent({
       command: "claude",
-      args: ["--dangerously-skip-permissions", "-p", promptFor(agent)],
+      args: ["--allowedTools", "Bash(git:*),Read,Grep,Glob", "-p", promptFor(agent)],
       cwd: root,
     });
     await waitForExit(ptyId);
