@@ -103,8 +103,8 @@ export function MaintainMainTabs({ projectRoot }: { projectRoot: string }) {
 
 function TabButton({ icon, label, on, onClick, onClose }: { icon: React.ReactNode; label: string; on: boolean; onClick: () => void; onClose?: () => void }) {
   return (
-    <div style={{ display: "inline-flex", alignItems: "center", borderRadius: "var(--c-radius-sm)", background: on ? "var(--c-surface-3)" : "transparent", flexShrink: 0 }}>
-      <button onClick={onClick} aria-pressed={on} className="cadre-hover" style={{ display: "inline-flex", alignItems: "center", gap: 5, height: 26, fontSize: "var(--c-fs-xs)", fontWeight: 550, padding: onClose ? "0 4px 0 10px" : "0 10px", borderRadius: onClose ? "var(--c-radius-sm) 0 0 var(--c-radius-sm)" : "var(--c-radius-sm)", background: "transparent", border: "none", color: on ? "var(--c-text)" : "var(--c-text-muted)", cursor: "pointer" }}>
+    <div style={{ display: "inline-flex", alignItems: "center", borderRadius: "var(--c-radius-sm) var(--c-radius-sm) 0 0", background: on ? "var(--c-surface-2)" : "transparent", flexShrink: 0 }}>
+      <button onClick={onClick} aria-pressed={on} className="cadre-hover cadre-tab" style={{ display: "inline-flex", alignItems: "center", gap: 5, height: 28, fontSize: "var(--c-fs-xs)", fontWeight: 600, padding: onClose ? "0 4px 0 10px" : "0 12px", borderRadius: onClose ? "var(--c-radius-sm) 0 0 var(--c-radius-sm)" : "var(--c-radius-sm)", background: "transparent", border: "none", color: on ? "var(--c-text)" : "var(--c-text-muted)", cursor: "pointer" }}>
         {icon}{label}
       </button>
       {onClose && (

@@ -72,8 +72,8 @@ export function SubagentCard({
             onClick={onToggleMax}
             title={maximized ? "Restore" : "Maximize"}
             aria-label={maximized ? "Restore subagent" : "Maximize subagent"}
-            className="cadre-hover"
-            style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: "var(--c-radius-sm)", background: "transparent", border: "1px solid var(--c-border)", color: "var(--c-text-secondary)", cursor: "pointer" }}
+            className="cadre-icon-btn"
+            style={{ width: 22, height: 22 }}
           >
             {maximized ? <Minimize2 size={12} strokeWidth={2} /> : <Maximize2 size={12} strokeWidth={2} />}
           </button>
@@ -81,8 +81,8 @@ export function SubagentCard({
             onClick={onClose}
             title={live ? "Stop & close this subagent" : "Close this subagent"}
             aria-label="Close subagent"
-            className="cadre-hover"
-            style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: "var(--c-radius-sm)", background: "transparent", border: "1px solid var(--c-border)", color: "var(--c-text-secondary)", cursor: "pointer" }}
+            className="cadre-icon-btn"
+            style={{ width: 22, height: 22 }}
           >
             <X size={12} strokeWidth={2} />
           </button>

@@ -207,6 +207,61 @@
   box-shadow: var(--c-shadow-md);
 }
 
+/* Text inputs / textareas — consistent surface + an accent focus ring so focus
+   is always legible. Apply to any bare input/textarea in the cockpit chrome. */
+.cadre-input {
+  background: var(--c-surface-2);
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--c-radius);
+  color: var(--c-text);
+  outline: none;
+  transition: border-color var(--c-dur-fast, 120ms) var(--c-ease-out, ease),
+    box-shadow var(--c-dur-fast, 120ms) var(--c-ease-out, ease);
+}
+.cadre-input::placeholder { color: var(--c-text-faint); }
+.cadre-input:focus,
+.cadre-input:focus-within {
+  border-color: var(--c-accent-ring);
+  box-shadow: 0 0 0 3px var(--c-accent-subtle);
+}
+
+/* Compact icon button — square, hairline, hover-filled. */
+.cadre-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--c-radius-sm);
+  background: transparent;
+  border: 1px solid var(--c-border);
+  color: var(--c-text-secondary);
+  cursor: pointer;
+  transition: background var(--c-dur-fast, 120ms) var(--c-ease-out, ease),
+    border-color var(--c-dur-fast, 120ms) var(--c-ease-out, ease),
+    color var(--c-dur-fast, 120ms) var(--c-ease-out, ease);
+}
+.cadre-icon-btn:not(:disabled):hover {
+  background: var(--c-surface-2);
+  border-color: var(--c-border-strong);
+  color: var(--c-text);
+}
+
+/* Tabs — the active one carries a 2px accent underline for a premium tabbed feel. */
+.cadre-tab {
+  position: relative;
+  transition: color var(--c-dur-fast, 120ms) var(--c-ease-out, ease),
+    background var(--c-dur-fast, 120ms) var(--c-ease-out, ease);
+}
+.cadre-tab[aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--c-accent);
+}
+
 .cadre-generating {
   position: relative;
   background-color: var(--c-accent-subtle) !important;

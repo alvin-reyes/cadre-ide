@@ -66,6 +66,7 @@ export function ThoughtsDock({ surfaceId, projectRoot }: { surfaceId: string; pr
       {!collapsed && (
         <div style={{ padding: "0 var(--c-space-4) var(--c-space-3)", display: "flex", flexDirection: "column", gap: "var(--c-space-2)" }}>
           <textarea
+            className="cadre-input"
             value={text}
             onChange={(e) => update(e.target.value)}
             onKeyDown={onKeyDown}
@@ -75,15 +76,10 @@ export function ThoughtsDock({ surfaceId, projectRoot }: { surfaceId: string; pr
               width: "100%",
               resize: "vertical",
               minHeight: 56,
-              border: "1px solid var(--c-border-strong)",
-              borderRadius: "var(--c-radius)",
-              background: "var(--c-surface-2)",
-              color: "var(--c-text)",
               fontFamily: "inherit",
               fontSize: "var(--c-fs-base)",
               lineHeight: 1.5,
               padding: "var(--c-space-2) var(--c-space-3)",
-              outline: "none",
             }}
           />
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--c-space-2)" }}>

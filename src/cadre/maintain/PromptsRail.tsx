@@ -53,9 +53,9 @@ export function PromptsRail({ onPick }: { onPick: (body: string) => void }) {
 
       {adding && (
         <div style={{ padding: "var(--c-space-2) var(--c-space-3)", borderBottom: "1px solid var(--c-border)", display: "flex", flexDirection: "column", gap: "var(--c-space-2)" }}>
-          <input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Title" style={{ border: "1px solid var(--c-border)", borderRadius: "var(--c-radius-sm)", background: "var(--c-surface-2)", color: "var(--c-text)", padding: "4px 8px", fontSize: "var(--c-fs-sm)" }} />
-          <textarea value={draft.body} onChange={(e) => setDraft({ ...draft, body: e.target.value })} placeholder="Prompt body" rows={3} style={{ border: "1px solid var(--c-border)", borderRadius: "var(--c-radius-sm)", background: "var(--c-surface-2)", color: "var(--c-text)", padding: "4px 8px", fontSize: "var(--c-fs-sm)", resize: "none" }} />
-          <select value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value as PromptCategory })} style={{ background: "var(--c-surface-2)", color: "var(--c-text)", border: "1px solid var(--c-border)", borderRadius: "var(--c-radius-sm)", padding: "4px 8px", fontSize: "var(--c-fs-sm)" }}>
+          <input className="cadre-input" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Title" style={{ padding: "5px 9px", fontSize: "var(--c-fs-sm)" }} />
+          <textarea className="cadre-input" value={draft.body} onChange={(e) => setDraft({ ...draft, body: e.target.value })} placeholder="Prompt body" rows={3} style={{ padding: "5px 9px", fontSize: "var(--c-fs-sm)", resize: "none", lineHeight: 1.5 }} />
+          <select className="cadre-input" value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value as PromptCategory })} style={{ padding: "5px 9px", fontSize: "var(--c-fs-sm)" }}>
             {PROMPT_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
           <button
