@@ -7,6 +7,7 @@ import { useCadre } from "../useCadre";
 import type { ProjectMode } from "../../lib/engine/projectMode";
 import { BrandLogo } from "../BrandLogo";
 import { WorkspacesMenu } from "./WorkspacesMenu";
+import { EvaluationIndicator } from "./EvaluationIndicator";
 
 /** Quick light/dark toggle — flips the settings THEME PRESET (which owns data-theme)
  *  between GitHub Light and the last dark preset. */
@@ -173,6 +174,8 @@ export function TopBar({
         </button>
       )}
 
+
+      <EvaluationIndicator />
 
       <ThemeToggle />
 
