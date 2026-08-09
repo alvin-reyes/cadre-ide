@@ -27,6 +27,32 @@ describe("mockBackend command handlers", () => {
     invoke = createMockInvoke(fs);
   });
 
+  describe("create_pty review agent writes an accept marker (demo fidelity)", () => {
+    it("writes {verdict:accept} to the .cadre/reviews marker named in the agent's prompt", async () => {
+      const marker = `${ROOT}/.cadre/reviews/1.4.correctness.json`;
+      await invoke("create_pty", {
+        rows: 24, cols: 80,
+        cwd: `${ROOT}/.cadre/worktrees/story-1.4`,
+        command: "claude",
+        args: ["--dangerously-skip-permissions", "-p", `Review the code. When finished, write your findings as JSON to \`${marker}\` with the shape ...`],
+        onEvent: { onmessage: () => {} },
+      });
+      const raw = fs.read(marker);
+      expect(raw).not.toBeNull();
+      expect(JSON.parse(raw!)).toEqual({ verdict: "accept", findings: [] });
+    });
+    it("does NOT write a review marker for a non-review (dev) agent", async () => {
+      await invoke("create_pty", {
+        rows: 24, cols: 80,
+        cwd: `${ROOT}/.cadre/worktrees/story-1.5`,
+        command: "claude",
+        args: ["--dangerously-skip-permissions", "-p", "Implement story 1.5 following the plan."],
+        onEvent: { onmessage: () => {} },
+      });
+      expect(fs.read(`${ROOT}/.cadre/reviews/1.5.correctness.json`)).toBeNull();
+    });
+  });
+
   describe("run_verification result shape", () => {
     it("returns exit_code, stdout, stderr, timed_out", async () => {
       const result = (await invoke("run_verification", { cwd: ROOT, cmd: "npm test", timeoutSecs: 60 })) as {

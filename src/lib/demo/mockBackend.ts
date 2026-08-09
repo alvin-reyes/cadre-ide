@@ -324,6 +324,18 @@ export function createMockInvoke(fs: MockFs) {
         const cwd = (args.cwd as string | undefined) ?? "";
         ptyCwds.set(id, cwd);
 
+        // Demo fidelity: a review-fleet agent is told to WRITE its verdict to a
+        // `.cadre/reviews/<epic>.<story>.<lens>.json` marker (the path is in its
+        // prompt). The mock can't run claude, so write an "accept" marker here —
+        // otherwise reviewStory reads no marker, fail-safes to "block", and every
+        // dispatched story ends Blocked at the review gate.
+        const reviewMarker = ((args.args as string[] | undefined) ?? [])
+          .join("\n")
+          .match(/[^\s`'"]*\.cadre\/reviews\/[^\s`'"]+\.json/);
+        if (reviewMarker) {
+          fs.write(reviewMarker[0], JSON.stringify({ verdict: "accept", findings: [] }));
+        }
+
         // Grab the live Channel instance the caller passed in args.onEvent.
         // makeSpawnAgent wires channel.onmessage before calling create_pty, so
         // we call ch.onmessage(event) directly — no need to re-route through
