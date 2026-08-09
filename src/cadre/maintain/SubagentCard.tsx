@@ -44,11 +44,11 @@ export function SubagentCard({
   const hasTerminal = run.status === "running" || run.status === "exited";
   return (
     <div
-      className={live ? "cadre-generating" : undefined}
+      className={live ? "cadre-elevate cadre-generating" : "cadre-elevate"}
       style={{
         display: "flex", flexDirection: "column", minHeight: 0, height: "100%",
         background: "var(--c-surface-1)",
-        border: `1.5px solid ${live ? "color-mix(in srgb, var(--c-accent) 55%, var(--c-border))" : "var(--c-border-strong)"}`,
+        border: `1px solid ${live ? "color-mix(in srgb, var(--c-accent) 45%, var(--c-border))" : "var(--c-border)"}`,
         borderRadius: "var(--c-radius)", overflow: "hidden",
       }}
     >

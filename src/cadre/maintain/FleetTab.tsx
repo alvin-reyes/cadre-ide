@@ -118,7 +118,7 @@ export function FleetTab({
   return (
     <div style={{ height: "100%", minHeight: 0, display: "flex", flexDirection: "column" }}>
       {/* Toolbar: font size + hint */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px var(--c-space-4)", borderBottom: "1px solid var(--c-border)", flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px var(--c-space-4)", borderBottom: "1px solid var(--c-border)", background: "var(--c-surface-1)", flexShrink: 0 }}>
         <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-faint)" }}>Font</span>
         <div style={{ display: "inline-flex", alignItems: "center", border: "1px solid var(--c-border)", borderRadius: "var(--c-radius-sm)" }}>
           <button onClick={() => setFontClamped(font - 1)} title="Smaller" aria-label="Smaller font" className="cadre-hover" style={fontBtn}><Minus size={12} strokeWidth={2.5} /></button>
@@ -130,8 +130,8 @@ export function FleetTab({
         </span>
       </div>
 
-      {/* Grid area */}
-      <div ref={areaRef} style={{ flex: 1, minHeight: 0, overflow: "auto", padding: GAP, position: "relative" }}>
+      {/* Grid area — recessed ground so the elevated tiles read as floating. */}
+      <div ref={areaRef} style={{ flex: 1, minHeight: 0, overflow: "auto", padding: GAP, position: "relative", background: "var(--c-bg)" }}>
         <div style={{ position: "relative", width: "100%", height: maxId ? "100%" : contentRows * unitY - GAP }}>
           {width > 0 && batch.subagents.map((run) => {
             const t = layout[run.taskId];
