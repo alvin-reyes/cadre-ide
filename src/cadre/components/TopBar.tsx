@@ -1,10 +1,33 @@
-import { ArrowUp, ArrowDown, PanelRight, Users, Settings as SettingsIcon, ScrollText, Blocks, Wrench } from "lucide-react";
+import { ArrowUp, ArrowDown, PanelRight, Users, Settings as SettingsIcon, ScrollText, Blocks, Wrench, Sun, Moon } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { useUsageStore } from "../../stores/usageStore";
 import { useBmadStore } from "../../stores/bmadStore";
+import { useSettingsStore, themePresets, isLightHex } from "../../stores/settingsStore";
 import { useCadre } from "../useCadre";
 import type { ProjectMode } from "../../lib/engine/projectMode";
 import { BrandLogo } from "../BrandLogo";
 import { WorkspacesMenu } from "./WorkspacesMenu";
+
+/** Quick light/dark toggle — flips the settings THEME PRESET (which owns data-theme)
+ *  between GitHub Light and the last dark preset. */
+function ThemeToggle() {
+  const themeId = useSettingsStore((s) => s.themeId);
+  const setTheme = useSettingsStore((s) => s.setTheme);
+  const preset = themePresets.find((t) => t.id === themeId) ?? themePresets[0];
+  const isLight = isLightHex(preset.colors.bgPrimary);
+  const lastDark = useRef("github-dark");
+  useEffect(() => { if (!isLight) lastDark.current = themeId; }, [themeId, isLight]);
+  return (
+    <button
+      onClick={() => setTheme(isLight ? lastDark.current : "github-light")}
+      title={isLight ? "Switch to dark theme" : "Switch to light theme"}
+      aria-label="Toggle light/dark theme"
+      style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 24, borderRadius: "var(--c-radius-sm)", background: "transparent", border: "1px solid var(--c-border)", color: "var(--c-text-secondary)", cursor: "pointer" }}
+    >
+      {isLight ? <Moon size={15} strokeWidth={2} /> : <Sun size={15} strokeWidth={2} />}
+    </button>
+  );
+}
 
 /** Build ⇄ Maintain switch — lets the user change how they work on the open project
  *  at any time (the on-open ModeChoiceDialog is the first prompt; this is the escape). */
@@ -150,6 +173,8 @@ export function TopBar({
         </button>
       )}
 
+
+      <ThemeToggle />
 
       {onOpenSettings && (
         <button
