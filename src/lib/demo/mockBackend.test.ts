@@ -53,6 +53,22 @@ describe("mockBackend command handlers", () => {
     });
   });
 
+  describe("watch_directory fires events for runtime writes (board reconcile)", () => {
+    it("notifies a matching watcher when a file is written under its dir + extension", async () => {
+      const events: { type: string; path: string }[] = [];
+      await invoke("watch_directory", { dir: `${ROOT}/docs/stories`, extensions: ["md"], onEvent: { onmessage: (e: { type: string; path: string }) => events.push(e) } });
+      await invoke("write_text_file", { path: `${ROOT}/docs/stories/1.1.scaffold.md`, content: "# 1.1" });
+      expect(events).toEqual([{ type: "created", path: `${ROOT}/docs/stories/1.1.scaffold.md` }]);
+    });
+    it("does not notify for a wrong extension or a different dir", async () => {
+      const events: { type: string; path: string }[] = [];
+      await invoke("watch_directory", { dir: `${ROOT}/docs/stories`, extensions: ["md"], onEvent: { onmessage: (e: { type: string; path: string }) => events.push(e) } });
+      await invoke("write_text_file", { path: `${ROOT}/docs/stories/notes.txt`, content: "x" });
+      await invoke("write_text_file", { path: `${ROOT}/other/foo.md`, content: "x" });
+      expect(events).toEqual([]);
+    });
+  });
+
   describe("run_verification result shape", () => {
     it("returns exit_code, stdout, stderr, timed_out", async () => {
       const result = (await invoke("run_verification", { cwd: ROOT, cmd: "npm test", timeoutSecs: 60 })) as {

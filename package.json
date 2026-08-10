@@ -8,7 +8,8 @@
     "tauri": "tauri",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:smoke": "node scripts/smoke.mjs"
+    "test:smoke": "node scripts/smoke.mjs",
+    "test:e2e": "node scripts/e2e-lifecycle.mjs"
   },
   "keywords": [],
   "author": "",

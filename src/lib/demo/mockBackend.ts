@@ -76,6 +76,18 @@ function stateFilePath(root: string, epic: number, story: number): string {
  * keeping a single implementation).
  */
 export function createMockInvoke(fs: MockFs) {
+  // Registered directory watchers (bmadStore uses these to reconcile the board when
+  // story/state files appear). The real backend fires OS fs events; the mock fires
+  // them from write_text_file so runtime writes (e.g. sharded stories) reach the board.
+  const watchers: { dir: string; extensions: string[]; ch: { onmessage: (e: { type: string; path: string }) => void } }[] = [];
+  const fireWatchers = (path: string) => {
+    for (const w of watchers) {
+      const inDir = path.startsWith(w.dir);
+      const extOk = w.extensions.length === 0 || w.extensions.some((e) => path.endsWith(`.${e}`));
+      if (inDir && extOk) { try { w.ch.onmessage({ type: "created", path }); } catch { /* channel gone */ } }
+    }
+  };
+
   return async function invoke(cmd: string, args: Record<string, unknown> = {}): Promise<unknown> {
     switch (cmd) {
       // ── File system ───────────────────────────────────────────────────────
@@ -103,6 +115,7 @@ export function createMockInvoke(fs: MockFs) {
         const path = args.path as string;
         const content = (args.content ?? args.contents ?? "") as string;
         writeWithParents(fs, path, content);
+        fireWatchers(path); // let the board reconcile runtime writes (e.g. sharded stories)
         return null;
       }
 
@@ -302,11 +315,17 @@ export function createMockInvoke(fs: MockFs) {
       // ── Watchers ─────────────────────────────────────────────────────────
 
       case "watch_directory": {
-        // No-op: demo drives state directly; no real fs events needed.
+        watchers.push({
+          dir: args.dir as string,
+          extensions: (args.extensions as string[] | undefined) ?? [],
+          ch: args.onEvent as { onmessage: (e: { type: string; path: string }) => void },
+        });
         return null;
       }
 
       case "unwatch_directory": {
+        const dir = args.dir as string;
+        for (let i = watchers.length - 1; i >= 0; i--) if (watchers[i].dir === dir) watchers.splice(i, 1);
         return null;
       }
 

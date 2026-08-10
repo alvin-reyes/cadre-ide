@@ -14,14 +14,17 @@ async function bootstrap() {
   // backend is installed and the project is seeded before the first render.
   const isRealTauri =
     typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-  const hasDemo =
-    typeof window !== "undefined" &&
-    new URLSearchParams(window.location.search).has("demo");
+  const demoParam =
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("demo")
+      : null;
+  const hasDemo = demoParam !== null;
 
   if (hasDemo && !isRealTauri) {
     try {
       const { enterDemoMode } = await import("./lib/demo/demoMode");
-      await enterDemoMode();
+      // ?demo=plan → bare project on the PLAN phase (full lifecycle); ?demo / ?demo=1 → pre-planned on Execute.
+      await enterDemoMode(demoParam === "plan");
     } catch (e) {
       console.error("[demo] enterDemoMode failed:", e);
       // Surface as toast + AI Log entry (project error convention) so demo failures

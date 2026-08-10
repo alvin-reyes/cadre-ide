@@ -71,7 +71,7 @@ const DEMO_STORY_STATUSES: Status[] = [
  *
  * Paths are absolute (rooted at DEMO_ROOT = /demo/acme).
  */
-function buildSeedFiles(): Record<string, string> {
+function buildSeedFiles(unplanned = false): Record<string, string> {
   const files: Record<string, string> = {};
 
   // ── cadre.json ────────────────────────────────────────────────────────────
@@ -99,6 +99,11 @@ React 19 + TypeScript, Zustand, Vitest, Vite.
 - Do NOT edit \`.cadre/\` state — the engine decides Done.
 - Verification command: \`npm test\`
 `;
+
+  // Unplanned variant (?demo=plan): a bare, greenfield project — no PRD, no
+  // architecture, no stories, no approval — so the app lands on PLAN and the full
+  // new → plan → execute → done journey can be driven from the start.
+  if (unplanned) return files;
 
   // ── Planning docs ─────────────────────────────────────────────────────────
   files[`${DEMO_ROOT}/docs/prd.md`] = DEMO_PRD;
@@ -212,7 +217,7 @@ React 19 + TypeScript, Zustand, Vitest, Vite.
  * Callers should await this before rendering the app (or before navigating away
  * from SignIn) so the stores are populated before the first render.
  */
-export async function enterDemoMode(): Promise<void> {
+export async function enterDemoMode(unplanned = false): Promise<void> {
   // Idempotent: if we've ALREADY installed + seeded, don't rebuild the seed and
   // wipe state the user may have advanced (e.g. ?demo=1 + SignIn button, or a
   // double-click). NB: guard on `_entered`, NOT isDemoMode() — the latter is
@@ -223,7 +228,7 @@ export async function enterDemoMode(): Promise<void> {
   setDemoMode(true);
 
   // Build the seed and install the mock backend (no-op under real Tauri).
-  const seedFiles = buildSeedFiles();
+  const seedFiles = buildSeedFiles(unplanned);
   const mockFs = new MockFs(seedFiles);
   installMockBackend(mockFs);
 
@@ -253,9 +258,21 @@ export async function enterDemoMode(): Promise<void> {
   // Load the demo project's model config (no models key → global default; parity with real open).
   await useModelsStore.getState().load(DEMO_ROOT);
 
-  // Ensure phase is EXECUTE (hydrate should set it; this is a safety net).
-  const phase = useCadre.getState().phase;
-  if (phase !== "EXECUTE") {
-    useCadre.getState().setPhase("EXECUTE");
+  if (unplanned) {
+    // Planning is gated on an API key (separate from dispatch login). The demo mocks
+    // the Anthropic client, so a placeholder key just opens the composer.
+    const { getProvider } = await import("../engine/providers");
+    const { secretSet } = await import("../secrets");
+    await secretSet(getProvider("claude").secretKey, "sk-ant-demo");
+    // A bare repo would auto-resolve to Maintain (no PRD/stories). Force BUILD mode
+    // on the PLAN phase so the greenfield new → plan → execute → done journey runs.
+    useCadre.getState().chooseMode("build");
+    useCadre.getState().setPhase("PLAN");
+  } else {
+    // Planned demo: land on EXECUTE (hydrate should set it; this is a safety net).
+    const phase = useCadre.getState().phase;
+    if (phase !== "EXECUTE") {
+      useCadre.getState().setPhase("EXECUTE");
+    }
   }
 }
