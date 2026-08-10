@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { CadreApp } from "./cadre/CadreApp";
 import { Splash } from "./cadre/Splash";
+import { useSettingsStore, applyThemeToDOM } from "./stores/settingsStore";
 import "./fonts";
 import "./lib/monacoSetup";
 import "./index.css";
@@ -29,6 +30,12 @@ async function bootstrap() {
       reportError("demo bootstrap", e);
     }
   }
+
+  // Apply the active theme preset to <html data-theme> BEFORE first paint, so the
+  // default (GitHub Light) and any saved preset render correctly. CadreApp — the
+  // component we actually render — never did this, so the theme defaulted to the
+  // CSS :root (dark) regardless of the setting.
+  applyThemeToDOM(useSettingsStore.getState().getActiveTheme());
 
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
