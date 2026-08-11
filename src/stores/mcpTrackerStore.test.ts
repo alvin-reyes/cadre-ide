@@ -210,4 +210,41 @@ describe("mcpTrackerStore.syncStory — serialization across concurrent calls", 
     expect(Object.keys(parsed.tasks)).toEqual(["1.2"]);
     expect(parsed.tasks["1.2"].taskId).toBe("T-RACE");
   });
+
+  it("two DIFFERENT stories syncing concurrently both persist (no cross-story clobber of the shared file)", async () => {
+    const files = makeFsStub();
+    const storyA: TrackerStory = { epic: 1, story: 2, title: "Story A" };
+    const storyB: TrackerStory = { epic: 1, story: 3, title: "Story B" };
+
+    // Gate story A's inner work so B's syncStory is dispatched while A is
+    // mid-flight. Under a per-STORY key A and B would run their read-modify-
+    // write concurrently against the same file and clobber each other; under a
+    // per-ROOT key B's chain link must wait for A's write to land first.
+    let releaseA!: () => void;
+    const aGate = new Promise<void>((resolve) => {
+      releaseA = resolve;
+    });
+
+    const fake: RunSyncAgent = vi.fn(async (args) => {
+      if (args.prompt.includes("Story A")) {
+        await aGate;
+        return JSON.stringify({ taskId: "T-A" });
+      }
+      return JSON.stringify({ taskId: "T-B" });
+    });
+    useMcpTrackerStore.getState().__setRunSyncAgent(fake);
+
+    const pA = useMcpTrackerStore.getState().syncStory("/project", storyA, "Done");
+    const pB = useMcpTrackerStore.getState().syncStory("/project", storyB, "Done");
+
+    releaseA();
+    await Promise.all([pA, pB]);
+
+    const written = files.get("/project/.cadre/mcp-tracker.json");
+    const parsed = JSON.parse(written!);
+    // BOTH stories must survive in the final shared file.
+    expect(parsed.tasks["1.2"].taskId).toBe("T-A");
+    expect(parsed.tasks["1.3"].taskId).toBe("T-B");
+    expect(Object.keys(parsed.tasks).sort()).toEqual(["1.2", "1.3"]);
+  });
 });

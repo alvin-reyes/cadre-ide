@@ -63,9 +63,14 @@ const defaultRunSyncAgent: RunSyncAgent = async ({ prompt, mcpConfigPath, env, s
 let runSyncAgent: RunSyncAgent = defaultRunSyncAgent;
 
 // ---------------------------------------------------------------------------
-// Per-story in-flight promise map — serializes concurrent syncStory calls for
-// the same story key so a second transition sees the taskId the first wrote,
-// instead of racing to create a duplicate task.
+// Per-PROJECT in-flight promise map — serializes ALL concurrent syncStory
+// calls for a project (across different stories), not just same-story ones.
+// The read-modify-write targets a single shared `.cadre/mcp-tracker.json`, so
+// two different stories syncing concurrently would otherwise interleave: story
+// B's write could land between story A's read and A's write, dropping A's
+// just-persisted taskId and causing a spurious duplicate task on A's next
+// sync. Keying per-root makes every update to the shared file atomic. Sync is
+// best-effort / non-latency-critical, so strict serialization is fine.
 // ---------------------------------------------------------------------------
 const inflight = new Map<string, Promise<void>>();
 
@@ -108,10 +113,13 @@ export const useMcpTrackerStore = create<McpTrackerState>(() => ({
   syncStory: (root: string, story: TrackerStory, status: TrackerStatus, verifyCmd?: string): Promise<void> => {
     if (!shouldSync(status)) return Promise.resolve();
 
-    const key = `${root}::${taskKey(story)}`;
+    // One serialization chain per PROJECT (not per story): every sync for this
+    // root updates the same shared `.cadre/mcp-tracker.json`, so they must run
+    // strictly sequentially to keep each read-modify-write atomic.
+    const key = root;
 
-    // Chain onto any in-flight promise for this exact story key so the
-    // second call reads the taskId the first one wrote.
+    // Chain onto any in-flight promise for this project so the next call reads
+    // the file state (taskIds) the previous call just wrote.
     const prev = inflight.get(key) ?? Promise.resolve();
     const next: Promise<void> = prev
       .then(async () => {
