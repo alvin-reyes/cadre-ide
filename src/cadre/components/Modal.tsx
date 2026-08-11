@@ -6,6 +6,36 @@ import { X } from "lucide-react";
  * in on open and returned on close, a Tab focus-trap, and a theme-aware scrim.
  * Shared by Settings, Team, and any future dialog so a11y lives in one place.
  */
+
+// Module-level stack of open modals (most-recently-opened last). Every <Modal>
+// registers itself on mount and unregisters on unmount. Escape is only honored
+// by the TOP modal, so a modal-in-modal (e.g. Settings → ConnectionModal) closes
+// just the inner dialog per keypress instead of collapsing every open layer —
+// capture-phase keydown listeners on the shared `document` target all fire, and
+// e.stopPropagation() does NOT stop sibling same-target listeners (only
+// stopImmediatePropagation does), so without this every layer would react.
+//
+// Exported for unit tests (the repo has no DOM/RTL harness, so the Escape
+// arbitration is verified through these primitives rather than a rendered mount).
+const modalStack: symbol[] = [];
+
+/** Register a newly-opened modal as the topmost; returns its stack token. */
+export function pushModal(): symbol {
+  const token = Symbol("modal");
+  modalStack.push(token);
+  return token;
+}
+
+/** Remove a modal from the stack on close/unmount (safe if already gone). */
+export function popModal(token: symbol): void {
+  const idx = modalStack.lastIndexOf(token);
+  if (idx !== -1) modalStack.splice(idx, 1);
+}
+
+/** True only if `token` is the topmost open modal — i.e. the one Escape targets. */
+export function isTopModal(token: symbol): boolean {
+  return modalStack.length > 0 && modalStack[modalStack.length - 1] === token;
+}
 export function Modal({
   label,
   title,
@@ -30,10 +60,18 @@ export function Modal({
     restoreFocus.current = document.activeElement as HTMLElement | null;
     panelRef.current?.focus();
 
+    // Register this instance as the topmost open modal.
+    const token = pushModal();
+
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        // Only the topmost modal reacts. stopImmediatePropagation() (not just
+        // stopPropagation) also blocks sibling capture-phase listeners on this
+        // same `document` target — i.e. any lower modal's handler — so one
+        // Escape closes exactly one layer.
+        if (!isTopModal(token)) return;
         e.preventDefault();
-        e.stopPropagation();
+        e.stopImmediatePropagation();
         onClose();
         return;
       }
@@ -62,6 +100,7 @@ export function Modal({
     document.addEventListener("keydown", onKey, true);
     return () => {
       document.removeEventListener("keydown", onKey, true);
+      popModal(token);
       // Return focus to the trigger — but only if it's still in the document
       // (it may have unmounted while the dialog was open), else don't strand focus.
       const el = restoreFocus.current;
