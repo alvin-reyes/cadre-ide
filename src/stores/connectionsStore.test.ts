@@ -27,8 +27,18 @@ vi.mock("../lib/secrets", () => ({
   isTauri: () => true,
 }));
 
+const { reportErrorStub } = vi.hoisted(() => ({
+  reportErrorStub: vi.fn().mockReturnValue("reported error"),
+}));
+
+vi.mock("../lib/reportError", () => ({
+  reportError: reportErrorStub,
+  errorMessage: (e: unknown) => String(e),
+}));
+
 // Import the store AFTER the mocks are set up.
 import { useConnectionsStore } from "./connectionsStore";
+import { CATALOG } from "../lib/mcp/catalog";
 
 const ROOT = "/project";
 
@@ -59,6 +69,7 @@ beforeEach(() => {
   secretSetStub.mockReset().mockResolvedValue(undefined);
   secretGetStub.mockReset().mockResolvedValue(null);
   secretDeleteStub.mockReset().mockResolvedValue(undefined);
+  reportErrorStub.mockReset().mockReturnValue("reported error");
 
   // Default: reads 404 (no file yet), writes succeed.
   invokeStub.mockImplementation((cmd: string) => {
@@ -132,6 +143,38 @@ describe("connectionsStore.upsert", () => {
 });
 
 // ---------------------------------------------------------------------------
+// addFromPreset()
+// ---------------------------------------------------------------------------
+
+describe("connectionsStore.addFromPreset", () => {
+  it("seeds a connection from a preset, adds it to state, and returns it", () => {
+    const preset = CATALOG.find((p) => p.id === "clickup")!;
+    const conn = useConnectionsStore.getState().addFromPreset(preset);
+
+    expect(conn.presetId).toBe("clickup");
+    expect(conn.secretRefs.map((r) => r.field)).toContain("CLICKUP_API_TOKEN");
+    expect(conn.enabled).toBe(false);
+    expect(useConnectionsStore.getState().connections).toContainEqual(conn);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// setEnabled()
+// ---------------------------------------------------------------------------
+
+describe("connectionsStore.setEnabled", () => {
+  it("flips enabled, persists mcp.json, and re-materializes the fleet", async () => {
+    useConnectionsStore.setState({ connections: [stdioConnection({ enabled: false })] });
+
+    await useConnectionsStore.getState().setEnabled(ROOT, "clickup", true);
+
+    expect(useConnectionsStore.getState().connections[0].enabled).toBe(true);
+    expect(writtenContent(".cadre/mcp.json")).toBeDefined();
+    expect(writtenContent(".cadre/fleet.mcp.json")).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // remove()
 // ---------------------------------------------------------------------------
 
@@ -193,6 +236,27 @@ describe("connectionsStore.materializeFleet", () => {
       (c: unknown[]) => c[0] === "write_text_file" && (c[1] as { path: string }).path.endsWith(".gitignore")
     );
     expect(gitignoreWrite).toBeUndefined();
+  });
+
+  it("appends ONLY the missing line when .gitignore already has fleet but not mcp.json", async () => {
+    useConnectionsStore.setState({ connections: [stdioConnection()] });
+    invokeStub.mockImplementation((cmd: string, args?: { path?: string }) => {
+      if (cmd === "read_file" && args?.path?.endsWith(".gitignore")) {
+        return Promise.resolve("node_modules\n.cadre/fleet.mcp.json\n");
+      }
+      if (cmd === "read_file") return Promise.reject(new Error("not found"));
+      return Promise.resolve(undefined);
+    });
+
+    await useConnectionsStore.getState().materializeFleet(ROOT);
+
+    const content = writtenContent(".gitignore");
+    expect(content).toBeDefined();
+    // The absent line was appended...
+    expect(content).toContain(".cadre/mcp.json");
+    // ...and the already-present fleet line was NOT duplicated.
+    const fleetOccurrences = content!.split("\n").filter((l) => l.trim() === ".cadre/fleet.mcp.json").length;
+    expect(fleetOccurrences).toBe(1);
   });
 });
 
@@ -275,5 +339,69 @@ describe("connectionsStore.probe", () => {
     const conn = stdioConnection();
     await useConnectionsStore.getState().probe(conn, { CLICKUP_API_TOKEN: "pk_temp" });
     expect(secretSetStub).toHaveBeenCalledWith("mcp.clickup.CLICKUP_API_TOKEN", "pk_temp");
+  });
+
+  it("reportErrors and sets status=error when mcp_probe itself rejects", async () => {
+    const conn = stdioConnection();
+    useConnectionsStore.setState({ connections: [conn] });
+    invokeStub.mockImplementation((cmd: string) => {
+      if (cmd === "mcp_probe") return Promise.reject(new Error("probe crashed"));
+      return Promise.resolve(undefined);
+    });
+
+    const result = await useConnectionsStore.getState().probe(conn);
+
+    expect(reportErrorStub).toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    expect(useConnectionsStore.getState().connections[0].status).toBe("error");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Error paths — an actual invoke() rejection must reportError and must NOT
+// leave callers pointing at a phantom, never-written fleet config.
+// ---------------------------------------------------------------------------
+
+describe("connectionsStore — invoke rejection handling", () => {
+  it("materializeFleet reportErrors AND rethrows when write_text_file rejects", async () => {
+    useConnectionsStore.setState({ connections: [stdioConnection()] });
+    invokeStub.mockImplementation((cmd: string) => {
+      if (cmd === "write_text_file") return Promise.reject(new Error("disk full"));
+      if (cmd === "read_file") return Promise.reject(new Error("not found"));
+      return Promise.resolve(undefined);
+    });
+
+    await expect(useConnectionsStore.getState().materializeFleet(ROOT)).rejects.toThrow("disk full");
+    expect(reportErrorStub).toHaveBeenCalled();
+  });
+
+  it("resolveFleetEnv returns null (not a phantom config path) when the fleet write rejects", async () => {
+    useConnectionsStore.setState({ connections: [stdioConnection()] });
+    invokeStub.mockImplementation((cmd: string) => {
+      if (cmd === "write_text_file") return Promise.reject(new Error("disk full"));
+      if (cmd === "read_file") return Promise.reject(new Error("not found"));
+      return Promise.resolve(undefined);
+    });
+
+    const result = await useConnectionsStore.getState().resolveFleetEnv(ROOT);
+
+    expect(result).toBeNull();
+    expect(reportErrorStub).toHaveBeenCalled();
+  });
+
+  it("upsert reportErrors (via materializeFleet) but still resolves when the write rejects", async () => {
+    const conn = stdioConnection();
+    invokeStub.mockImplementation((cmd: string) => {
+      if (cmd === "write_text_file") return Promise.reject(new Error("disk full"));
+      if (cmd === "read_file") return Promise.reject(new Error("not found"));
+      return Promise.resolve(undefined);
+    });
+
+    await expect(
+      useConnectionsStore.getState().upsert(ROOT, conn, { CLICKUP_API_TOKEN: "pk_x" })
+    ).resolves.toBeUndefined();
+    // Secret still staged to the keychain; the failure was surfaced.
+    expect(secretSetStub).toHaveBeenCalledWith("mcp.clickup.CLICKUP_API_TOKEN", "pk_x");
+    expect(reportErrorStub).toHaveBeenCalled();
   });
 });

@@ -141,11 +141,14 @@ export const useConnectionsStore = create<ConnectionsState>((set, get) => ({
         }
       }
       set({ connections: addConnection(get().connections, conn) });
-      await get().save(root);
-      await get().materializeFleet(root);
     } catch (e) {
       reportError("mcp connections: upsert", e);
+      return;
     }
+    await get().save(root);
+    // materializeFleet reports + rethrows on its own failure; swallow the rethrow
+    // here so the mutator still resolves (the error was already surfaced).
+    await get().materializeFleet(root).catch(() => {});
   },
 
   remove: async (root: string, id: string) => {
@@ -157,21 +160,18 @@ export const useConnectionsStore = create<ConnectionsState>((set, get) => ({
         }
       }
       set({ connections: removeConnection(get().connections, id) });
-      await get().save(root);
-      await get().materializeFleet(root);
     } catch (e) {
       reportError("mcp connections: remove", e);
+      return;
     }
+    await get().save(root);
+    await get().materializeFleet(root).catch(() => {});
   },
 
   setEnabled: async (root: string, id: string, on: boolean) => {
-    try {
-      set({ connections: updateConnection(get().connections, id, { enabled: on }) });
-      await get().save(root);
-      await get().materializeFleet(root);
-    } catch (e) {
-      reportError("mcp connections: setEnabled", e);
-    }
+    set({ connections: updateConnection(get().connections, id, { enabled: on }) });
+    await get().save(root);
+    await get().materializeFleet(root).catch(() => {});
   },
 
   probe: async (conn: Connection, secrets?: Record<string, string>) => {
@@ -207,13 +207,26 @@ export const useConnectionsStore = create<ConnectionsState>((set, get) => ({
       await invoke("write_text_file", { path, content: serializeConfig(m) });
       await appendIfMissing(gitignorePath(root), [".cadre/fleet.mcp.json", ".cadre/mcp.json"]);
     } catch (e) {
+      // Fail loud: NEVER return a success-shaped result when the config (or its
+      // gitignore guard) wasn't actually written — a phantom path would make the
+      // fleet spawn Claude with --mcp-config pointing at a file that doesn't exist.
       reportError("mcp connections: materialize", e);
+      throw e;
     }
     return { path, requiredSecrets: m.requiredSecrets };
   },
 
   resolveFleetEnv: async (root: string) => {
-    const { path, requiredSecrets } = await get().materializeFleet(root);
+    let path: string;
+    let requiredSecrets: RequiredSecret[];
+    try {
+      ({ path, requiredSecrets } = await get().materializeFleet(root));
+    } catch {
+      // materializeFleet already reported. Return null so the fleet launches
+      // WITHOUT MCP (the same graceful path as "no connections") rather than
+      // pointing the spawn at a config file that was never written.
+      return null;
+    }
     const env: Record<string, string> = {};
     for (const { envVar, keychainKey } of requiredSecrets) {
       const value = await secretGet(keychainKey);
