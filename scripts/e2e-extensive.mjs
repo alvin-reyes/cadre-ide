@@ -98,6 +98,33 @@ async function main() {
     await page.waitForTimeout(500);
     step("Thoughts templates menu opens", await has(/Explain this|Plan before coding|Write a failing test/i));
     await shot("ext-09-thoughts.png");
+    // Close the Templates popover — it renders a full-viewport `position:fixed`
+    // click-to-dismiss backdrop (ThoughtsDock.tsx) that otherwise intercepts every
+    // subsequent click (Settings included) even though it's invisible. The backdrop
+    // itself (not the toggle button, which the backdrop now covers) is what has the
+    // dismiss handler, so click a corner of the viewport to hit it.
+    await page.mouse.click(5, 5).catch(() => {});
+    await page.waitForTimeout(300);
+
+    // ── Connections — Settings → catalog tile → Test → Save → connected list ──
+    section("Connections — GitHub preset, Test, Save, appears connected");
+    // The Settings trigger is an icon-only button (accessible name comes from its
+    // `title` attribute, not visible text), so target it directly rather than via
+    // the click() helper's getByText fallback (which needs visible text).
+    await page.getByTitle(/Settings/).first().click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    step("Settings opens on the Connections section", await has(/Connections/i) && await has(/GitHub/i));
+    await click(/GitHub/); await page.waitForTimeout(400);
+    step("GitHub connect modal opens", await has(/Connect GitHub|Personal access token/i));
+    await click(/^Test$/);
+    const probed = await until(async () => /Connected · \d+ tools/.test(await body()), 8000, 500);
+    step("Test shows Connected · N tools", probed);
+    await shot("ext-10-connections.png");
+    const tokenField = page.getByPlaceholder(/ghp_/).first();
+    if (await tokenField.count()) await tokenField.fill("ghp_e2efaketoken000000000000000000");
+    await click(/^Save$/); await page.waitForTimeout(600);
+    step("saved connection appears in the connected list", await has(/GitHub/i) && await has(/Connected · \d+ tools/));
+    await click(/Close/).catch(() => {}); await page.keyboard.press("Escape").catch(() => {});
 
     await browser.close();
 

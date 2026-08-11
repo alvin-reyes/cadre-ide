@@ -291,6 +291,17 @@ describe("mockBackend command handlers", () => {
     });
   });
 
+  describe("mcp_probe", () => {
+    it("returns a JSON string with the canned ok payload (toolCount=12, 12 toolNames)", async () => {
+      const raw = await invoke("mcp_probe", { connectionJson: '{"id":"github"}' });
+      expect(typeof raw).toBe("string");
+      const parsed = JSON.parse(raw as string) as { ok: boolean; toolCount: number; toolNames: string[] };
+      expect(parsed.ok).toBe(true);
+      expect(parsed.toolCount).toBe(12);
+      expect(parsed.toolNames).toHaveLength(12);
+    });
+  });
+
   describe("unmapped command", () => {
     it("returns null without throwing", async () => {
       const result = await invoke("some_unknown_command" as string, { foo: "bar" });

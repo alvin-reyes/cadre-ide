@@ -307,6 +307,31 @@ export function createMockInvoke(fs: MockFs) {
         return true;
       }
 
+      case "mcp_probe": {
+        // Demo has no real MCP server to spawn — return a canned "ok" probe so
+        // Connections' Test button and status pill work end-to-end (?demo=1).
+        // Convention: mcp_probe resolves with a JSON STRING (see src-tauri/src/mcp.rs
+        // and connectionsStore.probe's `invoke<string>` + JSON.parse).
+        return JSON.stringify({
+          ok: true,
+          toolCount: 12,
+          toolNames: [
+            "create_task",
+            "get_task",
+            "list_tasks",
+            "update_task",
+            "delete_task",
+            "add_comment",
+            "get_comments",
+            "list_lists",
+            "get_list",
+            "create_list",
+            "search_tasks",
+            "get_workspace",
+          ],
+        });
+      }
+
       case "get_pty_cwd": {
         const id = args.id as number;
         return ptyCwds.get(id) ?? "";
