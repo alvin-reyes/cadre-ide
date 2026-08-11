@@ -8,15 +8,21 @@
  * new engine logic — it mirrors `useCadre.dispatchStory`'s control flow.
  *
  * Commands:
- *   cadre run [projectDir] [--auto]   dispatch every Approved story through the full flow
- *   cadre status [projectDir]         print the board (id · title · status)
+ *   cadre plan "<brief>" [projectDir]        PM + Architect turns → docs/prd.md,
+ *                                            docs/architecture.md, frozen plan approval
+ *   cadre shard [projectDir]                 SM turn → the full lifecycle backlog (Draft)
+ *   cadre approve [projectDir] [--all|<e.s>…] set stories Draft → Approved
+ *   cadre build "<brief>" [projectDir] [--auto]  one-shot: plan → shard → approve → run
+ *   cadre run [projectDir] [--auto]          dispatch every Approved story through the full flow
+ *   cadre status [projectDir]                print the board (id · title · status)
  *
- * Auth: agents inherit this process's environment, so the user's `claude` login
- * powers dispatch and review — no API key is injected.
+ * Auth: execute agents inherit this process's environment, so the user's `claude`
+ * login powers dispatch and review — no API key is injected. PLANNING (plan /
+ * shard) instead uses the Anthropic API key resolved by `./planning`.
  */
 
-import { readdir } from "node:fs/promises";
-import { resolve, join } from "node:path";
+import { readdir, writeFile as fsWriteFile, mkdir } from "node:fs/promises";
+import { resolve, join, dirname } from "node:path";
 
 import { boardStories, parseStoryFilename, storyId, type StoryCard } from "../lib/engine/board";
 import type { Status } from "../lib/engine/status";
@@ -25,13 +31,17 @@ import { runApprovedStory } from "../lib/engine/orchestrator";
 import { integrateStory } from "../lib/engine/integrate";
 import { reviewStory, aggregateReviews, type ReviewLens } from "../lib/engine/reviewFleet";
 import { parseRepos, resolveRepoPath, findRepo } from "../lib/engine/repos";
-import { parseStoryRepo } from "../lib/engine/shard";
+import { parseStoryRepo, shardStory, nextStoryNumber } from "../lib/engine/shard";
+import { PM_SYSTEM_PROMPT, ARCHITECT_SYSTEM_PROMPT } from "../lib/planning/personas";
+import { CREATE_BACKLOG_TOOL, backlogFromTool } from "../lib/planning/storyTool";
+import { getPlanningKey, planningModel, callTool, planApproval, canApprove } from "./planning";
 import {
   nodeOrchestratorDeps,
   nodeReviewFleetDeps,
   setStatus,
   getStatus,
   getPlanApproval,
+  setPlanApproval,
   runGit,
   readFile,
   type OutputSink,
@@ -65,8 +75,79 @@ const CODE_REVIEW_LENSES: ReviewLens[] = [
 
 const DISPATCH_TIMEOUT_SECS = 1800;
 
+// ── Planning personas + tools ─────────────────────────────────────────────────
+// PM/Architect system prompts are imported from lib/planning/personas.ts (pure).
+// The write_document / suggest_verification TOOL SCHEMAS live in
+// lib/planning/planningChat.ts, which pulls the desktop's browser-only module
+// graph (Anthropic SDK w/ dangerouslyAllowBrowser + zustand stores) — so, exactly
+// as with CODE_REVIEW_LENSES above, they're inlined here (kept byte-for-byte in
+// sync) to keep the Node CLI build clean.
+
+const WRITE_DOCUMENT_TOOL = {
+  name: "write_document" as const,
+  description:
+    "Write or update the current document. Call this whenever the document should change, passing the FULL current document as Markdown (not a diff).",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      markdown: { type: "string" as const, description: "The complete document in Markdown." },
+    },
+    required: ["markdown"],
+  },
+};
+
+const SUGGEST_VERIFICATION_TOOL = {
+  name: "suggest_verification" as const,
+  description:
+    "Propose the single shell command Cadre should run to verify each story is done (e.g. 'npm test', 'pnpm test', 'cargo test'). Call this once the testing strategy is clear so the user can just confirm it.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      command: {
+        type: "string" as const,
+        description: "One shell command that exits 0 on success (the verification gate).",
+      },
+    },
+    required: ["command"],
+  },
+};
+
+// The SM (Scrum Master) persona — kept in sync with useCadre.ts's SM_SYSTEM_PROMPT.
+const SM_SYSTEM_PROMPT = `You are the Scrum Master (SM). Turn the approved plan into the NEXT single implementation story via the create_story tool.
+
+Prefer a small, vertically-sliced, independently testable story. Populate every field completely — the Dev agent works only from this story and reads nothing else, so put the relevant architecture, file paths, and standards into devNotes. Acceptance criteria must be concrete and testable; tasks must be TDD-first (write the failing test, then the code).
+
+Declare the exact repo-relative \`files\` this story will create or modify, and keep stories FILE-DISJOINT from one another — Cadre runs file-disjoint stories as parallel agents, and any file two stories share forces them to run sequentially. Slice the work so parallel stories don't touch the same files.
+
+Think across every LAYER (frontend/UI, backend/API, database) and the WHOLE lifecycle (setup, DevOps/CI-CD/deployment, tests, QA/acceptance testing, integration, monitoring, documentation, support) — not just backend features. A backlog that is backend-only, or missing the frontend, database, QA, or deployment work, is incomplete.
+
+Every story MUST include an extensive Definition of Done — a thorough, checkable list (acceptance criteria met and test-covered, edge cases, no regressions, docs, and the frozen verification command green). A story without a real DoD is incomplete.`;
+
+/** Where the planning artifacts live under the project root (mirrors useCadre.ts). */
+const PRD_PATH = "docs/prd.md";
+const ARCH_PATH = "docs/architecture.md";
+
 function log(msg = ""): void {
   process.stdout.write(msg + "\n");
+}
+
+/** Write a project file (creating parent dirs), given a root-relative path. */
+async function writeProjectFile(root: string, relPath: string, content: string): Promise<void> {
+  const abs = join(root, relPath);
+  await mkdir(dirname(abs), { recursive: true });
+  await fsWriteFile(abs, content, "utf8");
+}
+
+/** The `{ markdown }` a write_document tool call returns, or null when empty. */
+function docFromTool(input: unknown): string | null {
+  const i = (input ?? {}) as { markdown?: unknown };
+  return typeof i.markdown === "string" && i.markdown.trim() ? i.markdown : null;
+}
+
+/** The `{ command }` a suggest_verification tool call returns, or null when empty. */
+function verifyCommandFromTool(input: unknown): string | null {
+  const i = (input ?? {}) as { command?: unknown };
+  return typeof i.command === "string" && i.command.trim() ? i.command.trim() : null;
 }
 
 /** Reconstruct the board from disk: story files reveal cards, state files their Status. */
@@ -263,6 +344,240 @@ async function cmdRun(projectDir: string, auto: boolean): Promise<number> {
   return outcomes.every((o) => o.status === "Done") ? 0 : 1;
 }
 
+/** The shared "no planning key" message + non-zero exit. */
+function planKeyMissing(): number {
+  log(
+    "[cadre] no Anthropic planning key found. Planning uses the Anthropic API (not the\n" +
+      "        `claude` login). Set ANTHROPIC_API_KEY, or store the key in the macOS\n" +
+      "        keychain (service `dev.cadre.ide`, account `anthropic_api_key`)."
+  );
+  return 1;
+}
+
+/**
+ * `cadre plan "<brief>" [projectDir]` — the headless PM + Architect turns.
+ * PM → docs/prd.md, Architect → docs/architecture.md + the verify command, then
+ * freeze the plan approval so `cadre run` can proceed.
+ */
+async function cmdPlan(brief: string, projectDir: string): Promise<number> {
+  const root = resolve(projectDir);
+  if (!brief.trim()) {
+    log('cadre plan: a brief is required — cadre plan "<brief>" [projectDir]');
+    return 1;
+  }
+  const apiKey = await getPlanningKey();
+  if (!apiKey) return planKeyMissing();
+  const model = planningModel();
+
+  log(`cadre plan — project: ${root}`);
+  log(`[cadre] planning model: ${model}`);
+
+  // PM turn → the PRD.
+  log("[cadre] PM: running discovery + drafting the PRD…");
+  const pmInput = await callTool({
+    apiKey,
+    model,
+    systemPrompt: PM_SYSTEM_PROMPT,
+    userPrompt: [
+      "You are running HEADLESS — a single automated turn, with no back-and-forth with a human.",
+      "Do your discovery internally, make reasonable and explicit assumptions where a human would",
+      "normally be asked, then call the write_document tool with the FULL PRD in Markdown (the Spec",
+      "kernel first, then the detail sections). Do NOT ask questions — produce the PRD now.",
+      "",
+      "## Brief",
+      brief,
+    ].join("\n"),
+    tool: WRITE_DOCUMENT_TOOL,
+  });
+  const prd = docFromTool(pmInput);
+  if (!prd) {
+    log("[cadre] PM did not return a PRD document.");
+    return 1;
+  }
+  await writeProjectFile(root, PRD_PATH, prd);
+  log(`[cadre] wrote ${PRD_PATH} (${prd.length} chars)`);
+
+  // Architect turn → the architecture document.
+  log("[cadre] Architect: designing the architecture…");
+  const archInput = await callTool({
+    apiKey,
+    model,
+    systemPrompt: ARCHITECT_SYSTEM_PROMPT,
+    userPrompt: [
+      "You are running HEADLESS — a single automated turn. Given the brief and the PRD below,",
+      "call the write_document tool with the FULL technical architecture in Markdown (## Tech Stack,",
+      "## Components, ## Data Model, ## Integrations, ## Testing Strategy). Do NOT ask questions.",
+      "",
+      "## Brief",
+      brief,
+      "",
+      "## PRD",
+      prd,
+    ].join("\n"),
+    tool: WRITE_DOCUMENT_TOOL,
+  });
+  const architecture = docFromTool(archInput);
+  if (!architecture) {
+    log("[cadre] Architect did not return an architecture document.");
+    return 1;
+  }
+  await writeProjectFile(root, ARCH_PATH, architecture);
+  log(`[cadre] wrote ${ARCH_PATH} (${architecture.length} chars)`);
+
+  // Architect turn → the frozen verification command.
+  log("[cadre] Architect: proposing the verification command…");
+  const verifyInput = await callTool({
+    apiKey,
+    model,
+    systemPrompt: ARCHITECT_SYSTEM_PROMPT,
+    userPrompt: [
+      "Given the architecture below, call the suggest_verification tool with the SINGLE shell",
+      "command Cadre should run to verify each story is done (e.g. 'npm test'). It must exit 0 on",
+      "success. Return only the tool call.",
+      "",
+      "## Architecture",
+      architecture,
+    ].join("\n"),
+    tool: SUGGEST_VERIFICATION_TOOL,
+  });
+  const command = verifyCommandFromTool(verifyInput);
+  if (!command) {
+    log("[cadre] Architect did not propose a verification command.");
+    return 1;
+  }
+
+  await setPlanApproval(root, planApproval([command]));
+  log("[cadre] froze plan approval → .cadre/approvals/plan.json");
+  log(`\n[cadre] plan ready. Verification command: ${command}`);
+  log("[cadre] next: cadre shard");
+  return 0;
+}
+
+/**
+ * `cadre shard [projectDir]` — the SM turn. Read the plan (prd + architecture)
+ * for context, call the SM with the backlog tool, and write each story to
+ * docs/stories/<epic>.<n>.<slug>.md (Draft).
+ */
+async function cmdShard(projectDir: string): Promise<number> {
+  const root = resolve(projectDir);
+  const apiKey = await getPlanningKey();
+  if (!apiKey) return planKeyMissing();
+  const model = planningModel();
+
+  const prd = await readFile(join(root, PRD_PATH)).catch(() => "");
+  const architecture = await readFile(join(root, ARCH_PATH)).catch(() => "");
+  if (!prd.trim() || !architecture.trim()) {
+    log(`[cadre] no plan found (${PRD_PATH} + ${ARCH_PATH}). Run \`cadre plan\` first.`);
+    return 1;
+  }
+  const planContext = `# PRD\n\n${prd}\n\n---\n\n# Architecture\n\n${architecture}`;
+
+  const epic = 1;
+  const board = await readBoard(root);
+  const start = nextStoryNumber(epic, board.map((c) => c.id));
+
+  log(`cadre shard — project: ${root}`);
+  log(`[cadre] planning model: ${model}`);
+  log("[cadre] SM: generating the full lifecycle backlog…");
+
+  const toolInput = await callTool({
+    apiKey,
+    model,
+    systemPrompt: SM_SYSTEM_PROMPT,
+    userPrompt:
+      "Produce the COMPLETE backlog to build AND operate the plan below. Cover every LAYER — " +
+      "frontend/UI, backend/API, database (schema + migrations) — and every PHASE — setup, DevOps " +
+      "(CI/CD, infra, deployment), tests, QA (test plans, e2e/acceptance), integration, monitoring, " +
+      "documentation, and support. Do NOT return a backend-only backlog. Fully specify every story.\n\n## Plan context\n" +
+      planContext,
+    tool: CREATE_BACKLOG_TOOL,
+  });
+
+  const stories = backlogFromTool(toolInput, epic, start);
+  if (stories.length === 0) {
+    log("[cadre] SM returned an empty backlog.");
+    return 1;
+  }
+  for (const content of stories) {
+    const { path } = await shardStory(
+      { writeFile: (relPath, c) => writeProjectFile(root, relPath, c) },
+      content
+    );
+    log(`[cadre] wrote ${path}`);
+  }
+  log(`\n[cadre] sharded ${stories.length} stories (Draft). Approve them: cadre approve --all`);
+  return 0;
+}
+
+/**
+ * `cadre approve [projectDir] [--all | <e.s> …]` — set stories Draft → Approved
+ * (writes `.cadre/state/<e>.<s>.json` via the engine state store; only legal
+ * transitions are written).
+ */
+async function cmdApprove(projectDir: string, all: boolean, ids: string[]): Promise<number> {
+  const root = resolve(projectDir);
+  const board = await readBoard(root);
+  if (board.length === 0) {
+    log(`No stories found under ${join(root, "docs", "stories")}.`);
+    return 1;
+  }
+
+  let targets: StoryCard[];
+  if (all) {
+    targets = board.filter((c) => c.status === "Draft");
+  } else {
+    if (ids.length === 0) {
+      log("cadre approve: pass --all, or one or more story ids (e.g. cadre approve 1.2 1.3)");
+      return 1;
+    }
+    const wanted = new Set(ids);
+    for (const id of ids) {
+      if (!board.some((c) => c.id === id)) log(`[cadre] no story ${id} on the board — skipping`);
+    }
+    targets = board.filter((c) => wanted.has(c.id));
+  }
+
+  if (targets.length === 0) {
+    log("[cadre] nothing to approve.");
+    return 0;
+  }
+
+  let approved = 0;
+  for (const c of targets) {
+    if (c.status === "Approved") {
+      log(`[cadre] ${c.id} already Approved`);
+      continue;
+    }
+    if (!canApprove(c.status)) {
+      log(`[cadre] cannot approve ${c.id} from ${c.status} — skipping`);
+      continue;
+    }
+    await setStatus(root, c.epic, c.story, "Approved");
+    approved++;
+    log(`[cadre] approved ${c.id}`);
+  }
+  log(`\n[cadre] ${approved} stor${approved === 1 ? "y" : "ies"} → Approved.`);
+  return 0;
+}
+
+/**
+ * `cadre build "<brief>" [projectDir] [--auto]` — the one-shot payoff:
+ * plan → shard → approve --all → run. Stops at the first stage that fails.
+ */
+async function cmdBuild(brief: string, projectDir: string, auto: boolean): Promise<number> {
+  log("══ cadre build ══ plan → shard → approve → run\n");
+  let code = await cmdPlan(brief, projectDir);
+  if (code !== 0) return code;
+  log("");
+  code = await cmdShard(projectDir);
+  if (code !== 0) return code;
+  log("");
+  code = await cmdApprove(projectDir, true, []);
+  if (code !== 0) return code;
+  log("");
+  return cmdRun(projectDir, auto);
+}
+
 async function cmdStatus(projectDir: string): Promise<number> {
   const root = resolve(projectDir);
   const board = await readBoard(root);
@@ -282,8 +597,12 @@ async function cmdStatus(projectDir: string): Promise<number> {
 
 function usage(): void {
   log("Usage:");
-  log("  cadre run [projectDir] [--auto]   run every Approved story through the full lifecycle");
-  log("  cadre status [projectDir]         print the board (id · title · status)");
+  log('  cadre plan "<brief>" [projectDir]            PM + Architect → PRD, architecture, plan approval');
+  log("  cadre shard [projectDir]                     SM → the full lifecycle backlog (Draft)");
+  log("  cadre approve [projectDir] [--all | <e.s>…]  set stories Draft → Approved");
+  log('  cadre build "<brief>" [projectDir] [--auto]  one-shot: plan → shard → approve → run');
+  log("  cadre run [projectDir] [--auto]              run every Approved story through the full lifecycle");
+  log("  cadre status [projectDir]                    print the board (id · title · status)");
 }
 
 async function main(): Promise<void> {
@@ -291,14 +610,26 @@ async function main(): Promise<void> {
   const cmd = argv[0];
   const rest = argv.slice(1);
   const auto = rest.includes("--auto");
+  const all = rest.includes("--all");
   const positional = rest.filter((a) => !a.startsWith("-"));
-  const projectDir = positional[0] ?? process.cwd();
+  const cwd = process.cwd();
 
   let code = 0;
   if (cmd === "run") {
-    code = await cmdRun(projectDir, auto);
+    code = await cmdRun(positional[0] ?? cwd, auto);
   } else if (cmd === "status") {
-    code = await cmdStatus(projectDir);
+    code = await cmdStatus(positional[0] ?? cwd);
+  } else if (cmd === "plan") {
+    code = await cmdPlan(positional[0] ?? "", positional[1] ?? cwd);
+  } else if (cmd === "shard") {
+    code = await cmdShard(positional[0] ?? cwd);
+  } else if (cmd === "approve") {
+    // Positionals split unambiguously: a story id is `<e>.<s>`; anything else is the projectDir.
+    const idArgs = positional.filter((a) => /^\d+\.\d+$/.test(a));
+    const dirArgs = positional.filter((a) => !/^\d+\.\d+$/.test(a));
+    code = await cmdApprove(dirArgs[0] ?? cwd, all, idArgs);
+  } else if (cmd === "build") {
+    code = await cmdBuild(positional[0] ?? "", positional[1] ?? cwd, auto);
   } else {
     usage();
     code = cmd === undefined || cmd === "help" || cmd === "--help" || cmd === "-h" ? 0 : 1;

@@ -217,6 +217,13 @@ export async function getStatus(root: string, epic: number, story: number): Prom
   }
 }
 
+/** Write the PLAN approval (`.cadre/approvals/plan.json`) — the headless `cadre
+ *  plan` sign-off that unfreezes `cadre run`. Byte-compatible with the reader
+ *  below and the Rust `PlanApproval`. */
+export async function setPlanApproval(root: string, approval: PlanApproval): Promise<void> {
+  await atomicWrite(planPath(root), JSON.stringify(approval, null, 2));
+}
+
 /** Read the PLAN approval (`.cadre/approvals/plan.json`), or `null` if unapproved. */
 export async function getPlanApproval(root: string): Promise<PlanApproval | null> {
   try {
