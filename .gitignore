@@ -1,6 +1,7 @@
 # cadre-ide (the IDE's own repo)
 node_modules/
 dist/
+dist-cli/
 src-tauri/target/
 src-tauri/gen/
 .DS_Store

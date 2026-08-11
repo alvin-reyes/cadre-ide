@@ -2,9 +2,14 @@
   "name": "cadre",
   "version": "1.0.0",
   "description": "Cadre - a disciplined agentic development IDE",
+  "bin": {
+    "cadre": "dist-cli/cli/cadre.js"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "cadre:build": "tsc -p tsconfig.cli.json",
+    "cadre": "tsc -p tsconfig.cli.json && node dist-cli/cli/cadre.js",
     "tauri": "tauri",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -48,6 +53,7 @@
     "@tailwindcss/vite": "^4.2.1",
     "@tauri-apps/cli": "~2.10.0",
     "@types/marked": "^5.0.2",
+    "@types/node": "^22.20.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.4",
