@@ -15,3 +15,6 @@ src-tauri/gen/
 .env.local
 Carde Brand Design System.zip
 .smoke/
+
+# e2e screenshot output (transient)
+.e2e/
