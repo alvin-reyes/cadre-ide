@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Plug, Github, ListChecks, SquareKanban, NotebookText, Pencil, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Plug, Github, ListChecks, NotebookText, Pencil, Trash2 } from "lucide-react";
 import { useConnectionsStore } from "../../stores/connectionsStore";
 import { useBmadStore } from "../../stores/bmadStore";
 import { CATALOG, presetToConnection, type Preset } from "../../lib/mcp/catalog";
@@ -16,7 +16,6 @@ import { ConnectionModal } from "./ConnectionModal";
 const PRESET_ICONS: Record<string, typeof Plug> = {
   github: Github,
   clickup: ListChecks,
-  jira: SquareKanban,
   notion: NotebookText,
   custom: Plug,
 };
@@ -45,9 +44,28 @@ export function ConnectionsView() {
 
   const [modal, setModal] = useState<{ preset: Preset; connection: Connection; isNew: boolean } | null>(null);
 
+  // Inline two-step "confirm before remove" — Remove deletes keychain secrets
+  // irreversibly, so a single accidental click must not do it. First click
+  // arms the row; a second click within a few seconds (or on the same row)
+  // actually removes. Any other interaction, or the timer lapsing, disarms it.
+  const [confirmingRemoveId, setConfirmingRemoveId] = useState<string | null>(null);
+  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     if (root) void load(root);
   }, [root, load]);
+
+  useEffect(() => {
+    return () => {
+      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+    };
+  }, []);
+
+  function cancelRemove() {
+    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+    confirmTimerRef.current = null;
+    setConfirmingRemoveId(null);
+  }
 
   if (!root) {
     return (
@@ -57,11 +75,26 @@ export function ConnectionsView() {
     );
   }
 
+  // const (not a hoisted `function`) so TS's narrowing of `root` from the
+  // `if (!root)` guard above carries through into this closure.
+  const handleRemoveClick = (id: string) => {
+    if (confirmingRemoveId === id) {
+      cancelRemove();
+      void remove(root, id);
+      return;
+    }
+    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+    setConfirmingRemoveId(id);
+    confirmTimerRef.current = setTimeout(() => setConfirmingRemoveId(null), 3000);
+  };
+
   function openPreset(preset: Preset) {
+    cancelRemove();
     setModal({ preset, connection: presetToConnection(preset, connections), isNew: true });
   }
 
   function openEdit(conn: Connection) {
+    cancelRemove();
     const preset = CATALOG.find((p) => p.id === conn.presetId) ?? CATALOG.find((p) => p.id === "custom")!;
     setModal({ preset, connection: conn, isNew: false });
   }
@@ -130,7 +163,10 @@ export function ConnectionsView() {
                 <input
                   type="checkbox"
                   checked={c.enabled}
-                  onChange={(e) => void setEnabled(root, c.id, e.target.checked)}
+                  onChange={(e) => {
+                    cancelRemove();
+                    void setEnabled(root, c.id, e.target.checked);
+                  }}
                   title={c.enabled ? "Disable" : "Enable"}
                   aria-label={`${c.enabled ? "Disable" : "Enable"} ${c.label}`}
                   style={{ accentColor: "var(--c-accent)", cursor: "pointer", flexShrink: 0 }}
@@ -165,8 +201,35 @@ export function ConnectionsView() {
                   <button onClick={() => openEdit(c)} title="Edit" aria-label={`Edit ${c.label}`} className="cadre-icon-btn" style={{ width: 24, height: 24 }}>
                     <Pencil size={12} strokeWidth={2} />
                   </button>
-                  <button onClick={() => void remove(root, c.id)} title="Remove" aria-label={`Remove ${c.label}`} className="cadre-icon-btn" style={{ width: 24, height: 24 }}>
+                  <button
+                    onClick={() => handleRemoveClick(c.id)}
+                    onBlur={() => {
+                      if (confirmingRemoveId === c.id) cancelRemove();
+                    }}
+                    title={confirmingRemoveId === c.id ? "Click again to permanently remove" : "Remove"}
+                    aria-label={confirmingRemoveId === c.id ? `Confirm remove ${c.label}` : `Remove ${c.label}`}
+                    className="cadre-icon-btn"
+                    style={
+                      confirmingRemoveId === c.id
+                        ? {
+                            width: "auto",
+                            height: 24,
+                            padding: "0 8px",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                            background: "var(--c-danger-subtle)",
+                            color: "var(--c-danger)",
+                            border: "1px solid var(--c-danger)",
+                            fontSize: "var(--c-fs-xs)",
+                            fontWeight: 600 as const,
+                            whiteSpace: "nowrap",
+                          }
+                        : { width: 24, height: 24 }
+                    }
+                  >
                     <Trash2 size={12} strokeWidth={2} />
+                    {confirmingRemoveId === c.id && "Confirm remove?"}
                   </button>
                 </div>
               </div>

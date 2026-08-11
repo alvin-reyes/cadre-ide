@@ -24,15 +24,6 @@ export const CATALOG: Preset[] = [
     secretFields: [{ field: "GITHUB_TOKEN", label: "Personal access token", target: "env", required: true, placeholder: "ghp_…" }],
   },
   {
-    id: "jira", label: "Jira / Atlassian", blurb: "Issues and boards.",
-    transport: stdio("npx", ["-y", "@modelcontextprotocol/server-atlassian"]),
-    secretFields: [
-      { field: "JIRA_URL", label: "Site URL", target: "env", required: true, placeholder: "https://you.atlassian.net" },
-      { field: "JIRA_EMAIL", label: "Email", target: "env", required: true },
-      { field: "JIRA_API_TOKEN", label: "API token", target: "env", required: true },
-    ],
-  },
-  {
     id: "notion", label: "Notion", blurb: "Pages and databases.",
     transport: stdio("npx", ["-y", "@notionhq/notion-mcp-server"]),
     secretFields: [{ field: "NOTION_TOKEN", label: "Integration token", target: "env", required: true, placeholder: "secret_/ntn_…" }],

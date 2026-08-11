@@ -278,23 +278,59 @@ describe("connectionsStore.resolveFleetEnv", () => {
     });
   });
 
-  it("skips a missing secret and reports a warning instead of including an unresolvable var", async () => {
+  it("drops the connection, reports a warning, and returns null when its only secret is missing", async () => {
     useConnectionsStore.setState({ connections: [stdioConnection()] });
     secretGetStub.mockResolvedValue(null);
 
     const result = await useConnectionsStore.getState().resolveFleetEnv(ROOT);
 
-    expect(result).not.toBeNull();
-    expect(result?.env).toEqual({});
-    // reportError → toast + AI Log; asserting via a spy would require importing the
-    // stores it touches, so we assert the observable contract instead: the var is absent.
-    expect(Object.keys(result?.env ?? {})).not.toContain("CLICKUP_API_TOKEN");
+    // The whole fleet must not be poisoned by one unresolvable ${VAR}: the
+    // server that can't resolve its secret is dropped entirely, and since it
+    // was the only enabled connection, the fleet launches without MCP.
+    expect(result).toBeNull();
+    expect(reportErrorStub).toHaveBeenCalled();
+
+    const content = writtenContent(".cadre/fleet.mcp.json");
+    expect(content).toBeDefined(); // enabled connections existed, so the (filtered, empty) file is still written to clear stale content
+    expect(content).not.toContain("${CLICKUP_API_TOKEN}");
+    expect(content).not.toContain('"clickup"');
   });
 
-  it("returns null when there are no enabled connections", async () => {
-    useConnectionsStore.setState({ connections: [stdioConnection({ enabled: false })] });
+  it("keeps the surviving connection and drops the one with a missing secret, when one of two enabled connections resolves", async () => {
+    const good = stdioConnection({ id: "clickup", label: "ClickUp" });
+    const bad = stdioConnection({
+      id: "github",
+      presetId: "github",
+      label: "GitHub",
+      transport: { kind: "stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-github"], env: {} },
+      secretRefs: [{ field: "GITHUB_TOKEN", keychainKey: "mcp.github.GITHUB_TOKEN", target: "env" }],
+    });
+    useConnectionsStore.setState({ connections: [good, bad] });
+    secretGetStub.mockImplementation((key: string) =>
+      Promise.resolve(key === "mcp.clickup.CLICKUP_API_TOKEN" ? "pk_good" : null)
+    );
+
     const result = await useConnectionsStore.getState().resolveFleetEnv(ROOT);
+
+    expect(result).not.toBeNull();
+    expect(result?.env).toEqual({ CLICKUP_API_TOKEN: "pk_good" });
+    expect(Object.keys(result?.env ?? {})).not.toContain("GITHUB_TOKEN");
+    expect(reportErrorStub).toHaveBeenCalled(); // warned about the dropped GitHub connection
+
+    const content = writtenContent(".cadre/fleet.mcp.json");
+    expect(content).toContain("${CLICKUP_API_TOKEN}");
+    expect(content).not.toContain("${GITHUB_TOKEN}");
+    expect(content).not.toContain('"github"');
+  });
+
+  it("returns null and writes NOTHING (no fleet file, no gitignore mutation) when there are no enabled connections", async () => {
+    useConnectionsStore.setState({ connections: [stdioConnection({ enabled: false })] });
+
+    const result = await useConnectionsStore.getState().resolveFleetEnv(ROOT);
+
     expect(result).toBeNull();
+    expect(writtenContent(".cadre/fleet.mcp.json")).toBeUndefined();
+    expect(writtenContent(".gitignore")).toBeUndefined();
   });
 });
 

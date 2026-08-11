@@ -217,30 +217,58 @@ export const useConnectionsStore = create<ConnectionsState>((set, get) => ({
   },
 
   resolveFleetEnv: async (root: string) => {
-    let path: string;
-    let requiredSecrets: RequiredSecret[];
-    try {
-      ({ path, requiredSecrets } = await get().materializeFleet(root));
-    } catch {
-      // materializeFleet already reported. Return null so the fleet launches
-      // WITHOUT MCP (the same graceful path as "no connections") rather than
-      // pointing the spawn at a config file that was never written.
+    const enabled = get().connections.filter((c) => c.enabled);
+    if (enabled.length === 0) {
+      // No connections enabled — the common case for every user who has
+      // never opened Connections. Don't write a stray fleet.mcp.json or
+      // touch .gitignore just because a Maintain batch started.
       return null;
     }
+
+    // Resolve secrets FIRST. A connection only "survives" if ALL of its
+    // secretRefs resolve from the keychain; a single missing secret must
+    // never leave an unresolvable ${VAR} in the written file — that would
+    // break `claude --mcp-config` for the WHOLE fleet, not just that server.
+    const survivors: Connection[] = [];
     const env: Record<string, string> = {};
-    for (const { envVar, keychainKey } of requiredSecrets) {
-      const value = await secretGet(keychainKey);
-      if (value === null) {
+    for (const conn of enabled) {
+      const resolved: Record<string, string> = {};
+      let ok = true;
+      for (const ref of conn.secretRefs) {
+        const value = await secretGet(ref.keychainKey);
+        if (value === null) {
+          ok = false;
+          break;
+        }
+        resolved[ref.field] = value;
+      }
+      if (!ok) {
         reportError(
           "mcp connections: resolveFleetEnv",
-          `Missing keychain secret for ${envVar} (key "${keychainKey}") — that connection will be skipped.`,
+          `Missing keychain secret for connection "${conn.label}" — skipping it so the fleet still launches without an unresolvable variable.`,
         );
         continue;
       }
-      env[envVar] = value;
+      survivors.push(conn);
+      Object.assign(env, resolved);
     }
-    const hasEnabledConnections = get().connections.some((c) => c.enabled);
-    if (!hasEnabledConnections) return null;
+
+    // Materialize + write from ONLY the survivors, even if that's empty, so
+    // any stale/unresolvable server from a previous run is cleared rather
+    // than left dangling in the file `claude --mcp-config` will read.
+    const m = materialize(survivors);
+    const path = fleetJsonPath(root);
+    try {
+      await invoke("write_text_file", { path, content: serializeConfig(m) });
+      await appendIfMissing(gitignorePath(root), [".cadre/fleet.mcp.json", ".cadre/mcp.json"]);
+    } catch (e) {
+      // Fail loud, same contract as materializeFleet: never return a
+      // success-shaped result when the config wasn't actually written.
+      reportError("mcp connections: resolveFleetEnv", e);
+      return null;
+    }
+
+    if (survivors.length === 0) return null;
     return { mcpConfigPath: path, env };
   },
 }));
