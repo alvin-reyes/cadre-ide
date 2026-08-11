@@ -8,6 +8,7 @@ export interface Connection {
   id: string; presetId: string; label: string;
   transport: Transport; secretRefs: SecretRef[];
   enabled: boolean; status: ConnStatus; toolCount?: number; lastError?: string;
+  role?: "tracker";
 }
 export interface McpRegistryFile { version: 1; connections: Connection[]; }
 
@@ -45,4 +46,16 @@ export function uniqueId(list: Connection[], base: string): string {
   const taken = new Set(list.map((c) => c.id));
   if (!taken.has(base)) return base;
   for (let n = 2; ; n++) { const id = `${base}-${n}`; if (!taken.has(id)) return id; }
+}
+export function trackerConnection(list: Connection[]): Connection | null {
+  const tracker = list.find((c) => c.role === "tracker" && c.enabled);
+  return tracker || null;
+}
+export function setRole(list: Connection[], id: string, role: "tracker" | undefined): Connection[] {
+  return list.map((c) => {
+    if (c.id === id) {
+      return role === undefined ? { ...c, role: undefined } : { ...c, role };
+    }
+    return { ...c, role: undefined };
+  });
 }

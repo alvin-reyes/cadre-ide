@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   addConnection, updateConnection, removeConnection, setStatus,
-  connectionsToFile, connectionsFromFile, uniqueId, type Connection,
+  connectionsToFile, connectionsFromFile, uniqueId, trackerConnection, setRole, type Connection,
 } from "./connections";
 
 const base: Connection = {
@@ -39,5 +39,31 @@ describe("connections model", () => {
     const l = addConnection([], base);
     expect(uniqueId(l, "clickup")).toBe("clickup-2");
     expect(uniqueId([], "clickup")).toBe("clickup");
+  });
+
+  it("setRole keeps at most one tracker; trackerConnection returns the enabled one", () => {
+    const mk = (id: string, patch: Partial<Connection> = {}): Connection => ({
+      id, presetId: "clickup", label: id,
+      transport: { kind: "stdio", command: "npx", args: [], env: {} },
+      secretRefs: [], enabled: true, status: "connected", ...patch,
+    });
+    let l = [mk("a"), mk("b")];
+    l = setRole(l, "a", "tracker");
+    expect(trackerConnection(l)?.id).toBe("a");
+    l = setRole(l, "b", "tracker");                 // moves the role
+    expect(l.find(c => c.id === "a")?.role).toBeUndefined();
+    expect(trackerConnection(l)?.id).toBe("b");
+    l = setRole(l, "b", undefined);                  // clears
+    expect(trackerConnection(l)).toBeNull();
+  });
+
+  it("trackerConnection ignores a disabled tracker", () => {
+    const mk = (id: string, patch: Partial<Connection> = {}): Connection => ({
+      id, presetId: "clickup", label: id,
+      transport: { kind: "stdio", command: "npx", args: [], env: {} },
+      secretRefs: [], enabled: true, status: "connected", ...patch,
+    });
+    const l = setRole([mk("a", { enabled: false })], "a", "tracker");
+    expect(trackerConnection(l)).toBeNull();
   });
 });
