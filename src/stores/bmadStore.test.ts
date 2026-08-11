@@ -21,9 +21,23 @@ vi.mock("@tauri-apps/api/core", () => ({
   },
 }));
 
+// Spy on the MCP tracker sync — a separate agent owns mcpTrackerStore.ts, so
+// we only import from it here (never edit it). syncStory is mocked so these
+// tests assert bmadStore's call shape without spawning any real sync.
+const { mcpSyncStoryStub } = vi.hoisted(() => ({
+  mcpSyncStoryStub: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("./mcpTrackerStore", () => ({
+  useMcpTrackerStore: {
+    getState: () => ({ syncStory: mcpSyncStoryStub }),
+  },
+}));
+
 import { useBmadStore } from "./bmadStore";
-import { emptyBmadSlice } from "../lib/engine/projectSlices";
-import { emptyBoard } from "../lib/engine/board";
+import { emptyBmadSlice, emptyCadreSlice } from "../lib/engine/projectSlices";
+import { emptyBoard, boardStories } from "../lib/engine/board";
+import { useCadre } from "../cadre/useCadre";
 
 // Helper: seed two project slices and set /b as the active root.
 function seedTwoProjects() {
@@ -43,6 +57,8 @@ function seedTwoProjects() {
 beforeEach(() => {
   invokeStub.mockClear();
   invokeStub.mockResolvedValue(undefined);
+  mcpSyncStoryStub.mockClear();
+  mcpSyncStoryStub.mockResolvedValue(undefined);
 });
 
 describe("bmadStore.setStatus — root routing", () => {
@@ -108,6 +124,68 @@ describe("bmadStore.setStatus — root routing", () => {
 
     // /b must remain completely unaffected.
     expect(state.projects["/b"]?.board.stories["1.1"]).toBeUndefined();
+  });
+});
+
+describe("bmadStore.setStatus — MCP tracker sync", () => {
+  // Seed a single project at /mcp with a known story (so `title` resolves from
+  // the board rather than the epic.story fallback) and a frozen verification
+  // command in useCadre (so `verifyCmd` is populated for the assertion).
+  function seedProjectWithStory() {
+    // `setStatus` reads the story's title via get().projects[root].stories, which
+    // pushRoot always re-derives from the board (boardStories) — so the title has
+    // to live on the board card itself, not just the slice's `stories` mirror.
+    const seededBoard = {
+      stories: { "4.5": { id: "4.5", epic: 4, story: 5, title: "Wire up sync", status: "Draft" as const } },
+    };
+    useBmadStore.setState({
+      projects: {
+        "/mcp": { ...emptyBmadSlice(), board: seededBoard, stories: boardStories(seededBoard) },
+      },
+      activeRoot: "/mcp",
+      projectRoot: "/mcp",
+      board: emptyBoard(),
+      stories: [],
+      watchError: null,
+    });
+    useCadre.setState({
+      projects: { "/mcp": { ...emptyCadreSlice(), verification: ["npm test", "npm run lint"] } },
+    });
+  }
+
+  it("calls mcpTrackerStore.syncStory with the story title and verify command on a successful transition to Done", async () => {
+    seedProjectWithStory();
+
+    await useBmadStore.getState().setStatus(4, 5, "Done", "/mcp");
+
+    expect(mcpSyncStoryStub).toHaveBeenCalledWith(
+      "/mcp",
+      { epic: 4, story: 5, title: "Wire up sync" },
+      "Done",
+      "npm test && npm run lint"
+    );
+  });
+
+  it("does NOT call mcpTrackerStore.syncStory for a transition to Draft (shouldSync is false)", async () => {
+    seedProjectWithStory();
+
+    await useBmadStore.getState().setStatus(4, 5, "Draft", "/mcp");
+
+    expect(mcpSyncStoryStub).not.toHaveBeenCalled();
+  });
+
+  it("does NOT call mcpTrackerStore.syncStory when story_set_status rejects, and rolls back the board", async () => {
+    seedProjectWithStory();
+    invokeStub.mockRejectedValueOnce(new Error("illegal transition"));
+
+    await expect(
+      useBmadStore.getState().setStatus(4, 5, "Done", "/mcp")
+    ).rejects.toThrow("illegal transition");
+
+    expect(mcpSyncStoryStub).not.toHaveBeenCalled();
+    // Rolled back: the optimistic "Done" write never lands — the card reverts
+    // to its pre-transition status since story_set_status never resolved.
+    expect(useBmadStore.getState().projects["/mcp"]?.board.stories["4.5"]?.status).toBe("Draft");
   });
 });
 

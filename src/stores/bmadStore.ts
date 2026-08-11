@@ -18,6 +18,8 @@ import {
   type BmadSlice,
 } from "../lib/engine/projectSlices";
 import { useTrackerStore } from "./trackerStore";
+import { useMcpTrackerStore } from "./mcpTrackerStore";
+import { shouldSync, type TrackerStatus } from "../lib/integrations/mcpTracker";
 import { useCadre } from "../cadre/useCadre";
 import { detectProjectMode } from "../lib/engine/projectMode";
 import { loadModeChoice } from "../lib/maintain/modePreference";
@@ -156,6 +158,14 @@ export const useBmadStore = create<BmadState>((set, get) => {
           const verification = useCadre.getState().projects[root]?.verification;
           const verifyCmd = (verification ?? []).filter(Boolean).join(" && ") || undefined;
           void tracker.syncStory(root, { epic, story, title }, status, verifyCmd).catch(() => {});
+        }
+        // Best-effort push to the MCP tracker (no-op unless a tracker connection is designated).
+        if (shouldSync(status as TrackerStatus)) {
+          const st = get().projects[root]?.stories?.find((s) => s.epic === epic && s.story === story);
+          const title = st?.title ?? `Story ${epic}.${story}`;
+          const verification = useCadre.getState().projects[root]?.verification;
+          const verifyCmd = (verification ?? []).filter(Boolean).join(" && ") || undefined;
+          void useMcpTrackerStore.getState().syncStory(root, { epic, story, title }, status as TrackerStatus, verifyCmd).catch(() => {});
         }
       } catch (e) {
         // Rejected (e.g. an illegal edge): roll back so the board doesn't drift
