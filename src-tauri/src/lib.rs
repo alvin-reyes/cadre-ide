@@ -1,5 +1,6 @@
 #[allow(dead_code)] // wired to Tauri commands with the reconciler (Plan 3)
 mod cadre_state;
+mod mcp;
 mod pty;
 mod secrets;
 mod verify;
@@ -525,6 +526,7 @@ pub fn run() {
             cadre_state::is_own_write,
             cadre_state::approve_plan,
             cadre_state::get_plan_approval,
+            mcp::mcp_probe,
             pty::create_pty,
             pty::write_pty,
             pty::resize_pty,
