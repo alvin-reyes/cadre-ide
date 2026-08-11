@@ -4,6 +4,7 @@ import type { Phase } from "./components/PhaseStepper";
 import { useBmadStore } from "../stores/bmadStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useModelsStore } from "../stores/modelsStore";
+import { useConnectionsStore } from "../stores/connectionsStore";
 import { toast } from "../stores/toastStore";
 import { aiLog } from "../stores/aiLogStore";
 import { callTool, planningTurn } from "../lib/planning/planningChat";
@@ -608,10 +609,20 @@ export const useCadre = create<CadreState>((set, get) => {
     const repos = parseRepos(await readManifest(root));
     const repoPath = resolveRepoPath(root, findRepo(repos, DEFAULT_REPO_ID).path);
 
+    // Resolve the fleet's MCP config + secrets ONCE here, at batch-launch time:
+    // resolveFleetEnv is async but each card's TerminalPanel spawns its PTY
+    // synchronously on mount, so there's no later point to await it. null (no
+    // enabled connections, or a materialize/write failure) → work agents launch
+    // exactly as before this wiring existed. Never throws.
+    const fleetEnv = await useConnectionsStore.getState().resolveFleetEnv(root);
+
     // Freeze staged -> batch and clear staging. Return the batchId immediately so
     // the caller focuses the new Fleet tab (cards render as their worktrees land).
     const batchId = `b_${Math.random().toString(36).slice(2, 8)}`;
-    const batch = makeBatch(batchId, staged, Date.now(), root);
+    const batch: FleetBatch = {
+      ...makeBatch(batchId, staged, Date.now(), root),
+      ...(fleetEnv ? { mcpConfigPath: fleetEnv.mcpConfigPath, env: fleetEnv.env } : {}),
+    };
     saveStaged(root, []);
     patchRoot(root, { stagedTasks: [], batches: [batch, ...(get().projects[root]?.batches ?? [])] });
 

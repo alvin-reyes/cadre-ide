@@ -44,4 +44,10 @@ describe("subagentCommand", () => {
     const cmd = subagentCommand("don't break", "/proj");
     expect(cmd).toContain(`don'\\''t break`);
   });
+  it("adds --mcp-config only when a config path is given", () => {
+    expect(subagentCommand("do x", "/p")).not.toContain("--mcp-config");
+    const withMcp = subagentCommand("do x", "/p", { mcpConfigPath: "/p/.cadre/fleet.mcp.json" });
+    expect(withMcp).toContain("--mcp-config '/p/.cadre/fleet.mcp.json'");
+    expect(withMcp).toContain("--dangerously-skip-permissions");
+  });
 });

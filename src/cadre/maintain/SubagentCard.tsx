@@ -24,6 +24,8 @@ export function SubagentCard({
   projectDir,
   maximized,
   termFontSize,
+  mcpConfigPath,
+  env,
   onDragHandlePointerDown,
   onToggleMax,
   onClose,
@@ -33,6 +35,10 @@ export function SubagentCard({
   projectDir: string;
   maximized: boolean;
   termFontSize?: number;
+  /** Fleet MCP config path + resolved secrets (from the batch's one-time
+   *  resolveFleetEnv), or undefined when no connections are enabled. */
+  mcpConfigPath?: string;
+  env?: Record<string, string>;
   /** Pointer-down on the drag grip — FleetTab drives the tile move from here. */
   onDragHandlePointerDown?: (e: React.PointerEvent) => void;
   onToggleMax: () => void;
@@ -98,7 +104,13 @@ export function SubagentCard({
       <div style={{ flex: 1, minHeight: 0, padding: "var(--c-space-2) var(--c-space-3) var(--c-space-3)" }}>
         {hasTerminal ? (
           <div style={{ height: "100%", minHeight: 0, borderRadius: "var(--c-radius)", overflow: "hidden", border: "1px solid var(--c-border)" }}>
-            <TerminalPanel cwd={run.worktree} startupCommand={subagentCommand(run.prompt, projectDir)} onExit={onExit} fontSize={termFontSize} />
+            <TerminalPanel
+              cwd={run.worktree}
+              startupCommand={subagentCommand(run.prompt, projectDir, { mcpConfigPath })}
+              env={env}
+              onExit={onExit}
+              fontSize={termFontSize}
+            />
           </div>
         ) : run.status === "failed" ? (
           <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", color: "var(--c-warning)", fontSize: "var(--c-fs-sm)", background: "var(--c-code-bg)", borderRadius: "var(--c-radius)", padding: "var(--c-space-4)" }}>

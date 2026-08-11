@@ -30,6 +30,17 @@ export interface FleetBatch {
   id: string;
   createdAt: number;
   subagents: SubagentRun[];
+  /**
+   * The fleet's MCP config, resolved ONCE at batch-launch time (resolveFleetEnv is
+   * async; each card's TerminalPanel spawns its PTY synchronously on mount, so
+   * there's no later point to await it). Undefined when there were no enabled
+   * connections or materializing the config failed — work agents then behave
+   * exactly as before this wiring existed (no --mcp-config, no injected env).
+   */
+  mcpConfigPath?: string;
+  /** Secrets for `mcpConfigPath`'s ${VAR} placeholders, injected into the work
+   *  agent's child process env — never written to the fleet file or command line. */
+  env?: Record<string, string>;
 }
 
 export function makeStagedTask(id: string, prompt: string, createdAt: number): StagedTask {

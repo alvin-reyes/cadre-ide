@@ -42,6 +42,7 @@ export function TerminalPanel({
   persistId,
   onExit,
   fontSize,
+  env,
 }: {
   cwd: string;
   startupCommand?: string;
@@ -51,6 +52,9 @@ export function TerminalPanel({
   onExit?: (code: number | null) => void;
   /** Override the terminal font size (e.g. the Fleet tab's size control). */
   fontSize?: number;
+  /** Extra env vars injected into the PTY's child process (e.g. resolved MCP
+   *  secrets for a Maintain work-agent). Never touches the command line. */
+  env?: Record<string, string>;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
@@ -141,7 +145,7 @@ export function TerminalPanel({
           cwd,
           command: null,
           args: [],
-          env: null,
+          env: env ?? null,
           onEvent: channel,
         });
         if (disposed) {
@@ -218,7 +222,7 @@ export function TerminalPanel({
       term.dispose();
       termRef.current = null;
     };
-  }, [cwd, startupCommand, persistId]);
+  }, [cwd, startupCommand, persistId, env]);
 
   return <div ref={ref} style={{ width: "100%", height: "100%", padding: "6px 8px", background: "var(--c-code-bg)" }} />;
 }

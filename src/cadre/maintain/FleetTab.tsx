@@ -155,6 +155,8 @@ export function FleetTab({
                   projectDir={projectDir}
                   maximized={isMax}
                   termFontSize={font}
+                  mcpConfigPath={batch.mcpConfigPath}
+                  env={batch.env}
                   onDragHandlePointerDown={isMax ? undefined : (e) => startDrag(run.taskId, e)}
                   onToggleMax={() => setMaxId((cur) => (cur === run.taskId ? null : run.taskId))}
                   onClose={() => { if (isMax) setMaxId(null); onCloseSubagent(run.taskId); }}

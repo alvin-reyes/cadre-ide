@@ -52,7 +52,11 @@ function shq(s: string): string {
  * (no `-p`), seeded with the maintenance persona + the task as its first message,
  * with permission prompts skipped so it can act. The user can type to steer it.
  */
-export function subagentCommand(prompt: string, projectDir: string): string {
+export function subagentCommand(
+  prompt: string,
+  projectDir: string,
+  opts?: { mcpConfigPath?: string },
+): string {
   // Tell the agent where the project lives and that its current directory is an
   // isolated worktree of it — otherwise `.cadre/worktrees/task-<id>` looks like a
   // stray cache dir rather than the project it's meant to maintain.
@@ -67,5 +71,6 @@ export function subagentCommand(prompt: string, projectDir: string): string {
   // PTY-exit event fires and it flips to "exited". Until then the terminal is live
   // and the user can type to steer the agent. The login shell resolves `claude` on
   // PATH and inherits the app's auth (claude.ai login → org connectors).
-  return `claude --dangerously-skip-permissions ${shq(seeded)}; exit`;
+  const mcpFlag = opts?.mcpConfigPath ? `--mcp-config ${shq(opts.mcpConfigPath)} ` : "";
+  return `claude --dangerously-skip-permissions ${mcpFlag}${shq(seeded)}; exit`;
 }
