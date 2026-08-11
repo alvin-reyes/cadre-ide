@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Plug, Github, ListChecks, NotebookText, Pencil, Trash2 } from "lucide-react";
+import { Plug, Github, ListChecks, NotebookText, Pencil, Trash2, Target } from "lucide-react";
 import { useConnectionsStore } from "../../stores/connectionsStore";
 import { useBmadStore } from "../../stores/bmadStore";
 import { CATALOG, presetToConnection, type Preset } from "../../lib/mcp/catalog";
@@ -41,6 +41,7 @@ export function ConnectionsView() {
   const load = useConnectionsStore((s) => s.load);
   const remove = useConnectionsStore((s) => s.remove);
   const setEnabled = useConnectionsStore((s) => s.setEnabled);
+  const setRole = useConnectionsStore((s) => s.setRole);
 
   const [modal, setModal] = useState<{ preset: Preset; connection: Connection; isNew: boolean } | null>(null);
 
@@ -189,6 +190,27 @@ export function ConnectionsView() {
                 >
                   {meta.label}
                 </span>
+                {c.role === "tracker" && (
+                  <span
+                    className="cadre-label-mono"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 3,
+                      fontSize: "9px",
+                      fontWeight: 600 as const,
+                      padding: "2px 7px",
+                      borderRadius: "var(--c-radius-sm)",
+                      background: "var(--c-accent-subtle)",
+                      color: "var(--c-accent)",
+                      whiteSpace: "nowrap",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Target size={9} strokeWidth={2.5} />
+                    Tracker
+                  </span>
+                )}
                 {c.status === "error" && c.lastError && (
                   <span
                     style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, flex: 1 }}
@@ -198,6 +220,27 @@ export function ConnectionsView() {
                   </span>
                 )}
                 <div style={{ marginLeft: "auto", display: "inline-flex", gap: 4, flexShrink: 0 }}>
+                  <button
+                    onClick={() => {
+                      cancelRemove();
+                      void setRole(root, c.id, c.role === "tracker" ? undefined : "tracker");
+                    }}
+                    aria-pressed={c.role === "tracker"}
+                    title={
+                      c.role === "tracker"
+                        ? "Clear tracker designation"
+                        : "Push Cadre's verified status to this tracker"
+                    }
+                    aria-label={c.role === "tracker" ? `Clear tracker designation for ${c.label}` : `Use ${c.label} as tracker`}
+                    className="cadre-icon-btn"
+                    style={
+                      c.role === "tracker"
+                        ? { width: 24, height: 24, background: "var(--c-accent-subtle)", borderColor: "var(--c-accent)", color: "var(--c-accent)" }
+                        : { width: 24, height: 24 }
+                    }
+                  >
+                    <Target size={12} strokeWidth={2} />
+                  </button>
                   <button onClick={() => openEdit(c)} title="Edit" aria-label={`Edit ${c.label}`} className="cadre-icon-btn" style={{ width: 24, height: 24 }}>
                     <Pencil size={12} strokeWidth={2} />
                   </button>
