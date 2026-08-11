@@ -12,6 +12,6 @@
     "allowImportingTsExtensions": false,
     "isolatedModules": false
   },
-  "include": ["src/cli/cadre.ts", "src/cli/planning.ts"],
+  "include": ["src/cli/cadre.ts", "src/cli/planning.ts", "src/cli/mcp/**/*.ts"],
   "exclude": ["src/**/*.test.ts"]
 }
