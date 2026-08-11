@@ -6,6 +6,8 @@ import {
   updateConnection,
   removeConnection,
   setStatus,
+  setRole as applyRole,
+  trackerConnection,
   connectionsToFile,
   connectionsFromFile,
 } from "../lib/mcp/connections";
@@ -33,6 +35,7 @@ export interface McpProbe {
 
 const mcpJsonPath = (root: string) => `${root}/.cadre/mcp.json`;
 const fleetJsonPath = (root: string) => `${root}/.cadre/fleet.mcp.json`;
+const trackerJsonPath = (root: string) => `${root}/.cadre/tracker.mcp.json`;
 const gitignorePath = (root: string) => `${root}/.gitignore`;
 
 /** Read a text file via the "read_file" Tauri command, tolerating a missing file. */
@@ -54,6 +57,62 @@ async function appendIfMissing(path: string, lines: string[]): Promise<void> {
   const sep = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
   const next = existing + sep + missing.join("\n") + "\n";
   await invoke("write_text_file", { path, content: next });
+}
+
+/** Shared body for resolveFleetEnv/resolveTrackerEnv: resolve each connection's
+ *  secrets survivors-only from the keychain (ALL of a connection's secretRefs
+ *  must resolve or the whole connection is dropped + reportError'd — a single
+ *  missing secret must never leave an unresolvable ${VAR} in the written
+ *  file), materialize+write the filtered config, and gitignore-guard it.
+ *  Fail-loud on write error: reportError + null, same contract for both
+ *  callers. Returns null (already reported, if applicable) when the write
+ *  failed OR when no connection survived — callers must never get back a
+ *  success-shaped result pointing at an unresolvable/empty config. */
+async function resolveEnvAndWrite(
+  connections: Connection[],
+  configPath: string,
+  gitignoreFilePath: string,
+  gitignoreLines: string[],
+  errorContext: string,
+): Promise<{ env: Record<string, string> } | null> {
+  const survivors: Connection[] = [];
+  const env: Record<string, string> = {};
+  for (const conn of connections) {
+    const resolved: Record<string, string> = {};
+    let ok = true;
+    for (const ref of conn.secretRefs) {
+      const value = await secretGet(ref.keychainKey);
+      if (value === null) {
+        ok = false;
+        break;
+      }
+      resolved[ref.field] = value;
+    }
+    if (!ok) {
+      reportError(
+        errorContext,
+        `Missing keychain secret for connection "${conn.label}" — skipping it so the rest still launches without an unresolvable variable.`,
+      );
+      continue;
+    }
+    survivors.push(conn);
+    Object.assign(env, resolved);
+  }
+
+  // Materialize + write from ONLY the survivors, even if that's empty, so any
+  // stale/unresolvable server from a previous run is cleared rather than left
+  // dangling in the file `claude --mcp-config` will read.
+  const m = materialize(survivors);
+  try {
+    await invoke("write_text_file", { path: configPath, content: serializeConfig(m) });
+    await appendIfMissing(gitignoreFilePath, gitignoreLines);
+  } catch (e) {
+    reportError(errorContext, e);
+    return null;
+  }
+
+  if (survivors.length === 0) return null;
+  return { env };
 }
 
 // ---------------------------------------------------------------------------
@@ -81,6 +140,9 @@ interface ConnectionsState {
   /** Flip enabled, persist, and re-materialize. */
   setEnabled(root: string, id: string, on: boolean): Promise<void>;
 
+  /** Set (or clear) the single connection designated as the tracker, then persist. */
+  setRole(root: string, id: string, role: "tracker" | undefined): Promise<void>;
+
   /** Probe a connection (optionally staging secrets first) and update its status. */
   probe(conn: Connection, secrets?: Record<string, string>): Promise<McpProbe>;
 
@@ -89,6 +151,12 @@ interface ConnectionsState {
 
   /** Resolve the fleet's required secrets from the keychain for spawning claude. */
   resolveFleetEnv(root: string): Promise<{ mcpConfigPath: string; env: Record<string, string> } | null>;
+
+  /** Resolve the designated tracker connection's required secrets from the
+   *  keychain and write a ONE-connection `.cadre/tracker.mcp.json`. */
+  resolveTrackerEnv(
+    root: string,
+  ): Promise<{ mcpConfigPath: string; env: Record<string, string>; serverKey: string } | null>;
 }
 
 export const useConnectionsStore = create<ConnectionsState>((set, get) => ({
@@ -174,6 +242,11 @@ export const useConnectionsStore = create<ConnectionsState>((set, get) => ({
     await get().materializeFleet(root).catch(() => {});
   },
 
+  setRole: async (root: string, id: string, role: "tracker" | undefined) => {
+    set({ connections: applyRole(get().connections, id, role) });
+    await get().save(root);
+  },
+
   probe: async (conn: Connection, secrets?: Record<string, string>) => {
     try {
       if (secrets) {
@@ -225,50 +298,35 @@ export const useConnectionsStore = create<ConnectionsState>((set, get) => ({
       return null;
     }
 
-    // Resolve secrets FIRST. A connection only "survives" if ALL of its
-    // secretRefs resolve from the keychain; a single missing secret must
-    // never leave an unresolvable ${VAR} in the written file — that would
-    // break `claude --mcp-config` for the WHOLE fleet, not just that server.
-    const survivors: Connection[] = [];
-    const env: Record<string, string> = {};
-    for (const conn of enabled) {
-      const resolved: Record<string, string> = {};
-      let ok = true;
-      for (const ref of conn.secretRefs) {
-        const value = await secretGet(ref.keychainKey);
-        if (value === null) {
-          ok = false;
-          break;
-        }
-        resolved[ref.field] = value;
-      }
-      if (!ok) {
-        reportError(
-          "mcp connections: resolveFleetEnv",
-          `Missing keychain secret for connection "${conn.label}" — skipping it so the fleet still launches without an unresolvable variable.`,
-        );
-        continue;
-      }
-      survivors.push(conn);
-      Object.assign(env, resolved);
-    }
-
-    // Materialize + write from ONLY the survivors, even if that's empty, so
-    // any stale/unresolvable server from a previous run is cleared rather
-    // than left dangling in the file `claude --mcp-config` will read.
-    const m = materialize(survivors);
     const path = fleetJsonPath(root);
-    try {
-      await invoke("write_text_file", { path, content: serializeConfig(m) });
-      await appendIfMissing(gitignorePath(root), [".cadre/fleet.mcp.json", ".cadre/mcp.json"]);
-    } catch (e) {
-      // Fail loud, same contract as materializeFleet: never return a
-      // success-shaped result when the config wasn't actually written.
-      reportError("mcp connections: resolveFleetEnv", e);
+    const result = await resolveEnvAndWrite(
+      enabled,
+      path,
+      gitignorePath(root),
+      [".cadre/fleet.mcp.json", ".cadre/mcp.json"],
+      "mcp connections: resolveFleetEnv",
+    );
+    if (!result) return null;
+    return { mcpConfigPath: path, env: result.env };
+  },
+
+  resolveTrackerEnv: async (root: string) => {
+    const conn = trackerConnection(get().connections);
+    if (!conn) {
+      // No connection designated as the tracker — don't write a stray
+      // tracker.mcp.json or touch .gitignore for a feature that isn't in use.
       return null;
     }
 
-    if (survivors.length === 0) return null;
-    return { mcpConfigPath: path, env };
+    const path = trackerJsonPath(root);
+    const result = await resolveEnvAndWrite(
+      [conn],
+      path,
+      gitignorePath(root),
+      [".cadre/tracker.mcp.json"],
+      "mcp connections: resolveTrackerEnv",
+    );
+    if (!result) return null;
+    return { mcpConfigPath: path, env: result.env, serverKey: conn.id };
   },
 }));

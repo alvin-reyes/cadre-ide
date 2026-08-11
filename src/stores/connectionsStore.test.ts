@@ -335,6 +335,113 @@ describe("connectionsStore.resolveFleetEnv", () => {
 });
 
 // ---------------------------------------------------------------------------
+// setRole()
+// ---------------------------------------------------------------------------
+
+describe("connectionsStore.setRole", () => {
+  it("applies the role to the connection and persists mcp.json with it", async () => {
+    const conn = stdioConnection();
+    useConnectionsStore.setState({ connections: [conn] });
+
+    await useConnectionsStore.getState().setRole(ROOT, "clickup", "tracker");
+
+    expect(useConnectionsStore.getState().connections[0].role).toBe("tracker");
+    const content = writtenContent(".cadre/mcp.json");
+    expect(content).toBeDefined();
+    expect(content).toContain('"role": "tracker"');
+  });
+
+  it("clears the role and persists mcp.json without it", async () => {
+    const conn = stdioConnection({ role: "tracker" });
+    useConnectionsStore.setState({ connections: [conn] });
+
+    await useConnectionsStore.getState().setRole(ROOT, "clickup", undefined);
+
+    expect(useConnectionsStore.getState().connections[0].role).toBeUndefined();
+    const content = writtenContent(".cadre/mcp.json");
+    expect(content).toBeDefined();
+    expect(content).not.toContain('"role"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveTrackerEnv()
+// ---------------------------------------------------------------------------
+
+describe("connectionsStore.resolveTrackerEnv", () => {
+  it("writes tracker.mcp.json with ${VAR} placeholders and returns {mcpConfigPath, env, serverKey} for a designated+resolvable tracker", async () => {
+    useConnectionsStore.setState({ connections: [stdioConnection({ role: "tracker" })] });
+    secretGetStub.mockResolvedValue("pk_resolved_value");
+
+    const result = await useConnectionsStore.getState().resolveTrackerEnv(ROOT);
+
+    expect(secretGetStub).toHaveBeenCalledWith("mcp.clickup.CLICKUP_API_TOKEN");
+    expect(result).toEqual({
+      mcpConfigPath: `${ROOT}/.cadre/tracker.mcp.json`,
+      env: { CLICKUP_API_TOKEN: "pk_resolved_value" },
+      serverKey: "clickup",
+    });
+
+    const content = writtenContent(".cadre/tracker.mcp.json");
+    expect(content).toBeDefined();
+    expect(content).toContain("${CLICKUP_API_TOKEN}");
+    expect(content).not.toContain("pk_resolved_value");
+  });
+
+  it("appends .cadre/tracker.mcp.json to .gitignore", async () => {
+    useConnectionsStore.setState({ connections: [stdioConnection({ role: "tracker" })] });
+    secretGetStub.mockResolvedValue("pk_resolved_value");
+
+    await useConnectionsStore.getState().resolveTrackerEnv(ROOT);
+
+    const content = writtenContent(".gitignore");
+    expect(content).toBeDefined();
+    expect(content).toContain(".cadre/tracker.mcp.json");
+  });
+
+  it("returns null, reportErrors, and leaves no server in the written file when the tracker's secret is missing", async () => {
+    useConnectionsStore.setState({ connections: [stdioConnection({ role: "tracker" })] });
+    secretGetStub.mockResolvedValue(null);
+
+    const result = await useConnectionsStore.getState().resolveTrackerEnv(ROOT);
+
+    expect(result).toBeNull();
+    expect(reportErrorStub).toHaveBeenCalled();
+
+    const content = writtenContent(".cadre/tracker.mcp.json");
+    if (content !== undefined) {
+      expect(content).not.toContain("${CLICKUP_API_TOKEN}");
+      expect(content).not.toContain('"clickup"');
+    }
+  });
+
+  it("returns null and writes NOTHING when there is no tracker connection", async () => {
+    useConnectionsStore.setState({ connections: [stdioConnection({ role: undefined })] });
+
+    const result = await useConnectionsStore.getState().resolveTrackerEnv(ROOT);
+
+    expect(result).toBeNull();
+    expect(writtenContent(".cadre/tracker.mcp.json")).toBeUndefined();
+    expect(writtenContent(".gitignore")).toBeUndefined();
+  });
+
+  it("returns null (not a phantom config path) when the tracker config write rejects", async () => {
+    useConnectionsStore.setState({ connections: [stdioConnection({ role: "tracker" })] });
+    secretGetStub.mockResolvedValue("pk_resolved_value");
+    invokeStub.mockImplementation((cmd: string) => {
+      if (cmd === "write_text_file") return Promise.reject(new Error("disk full"));
+      if (cmd === "read_file") return Promise.reject(new Error("not found"));
+      return Promise.resolve(undefined);
+    });
+
+    const result = await useConnectionsStore.getState().resolveTrackerEnv(ROOT);
+
+    expect(result).toBeNull();
+    expect(reportErrorStub).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // probe()
 // ---------------------------------------------------------------------------
 
