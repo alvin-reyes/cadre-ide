@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { KeyRound, Cpu, Eye, EyeOff, Check, GitBranch, Users } from "lucide-react";
+import { KeyRound, Cpu, Eye, EyeOff, Check, GitBranch, Users, Plug } from "lucide-react";
 import { Modal } from "./components/Modal";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre } from "./useCadre";
@@ -9,6 +9,7 @@ import { RepoSection } from "./RepoRegistry";
 import { useTrackerStore } from "../stores/trackerStore";
 import { useBmadStore } from "../stores/bmadStore";
 import { useModelsStore } from "../stores/modelsStore";
+import { ConnectionsView } from "./connections/ConnectionsView";
 
 /**
  * Settings — the CTO's control panel for API keys and models. Keys are written to
@@ -242,6 +243,11 @@ export function Settings({ onClose }: { onClose: () => void }) {
 
         {/* Repos */}
         <RepoSection />
+
+        {/* Connections */}
+        <Section icon={Plug} title="Connections" subtitle="MCP tools your dev fleet can use — pick a service, paste a token, test it.">
+          <ConnectionsView />
+        </Section>
 
         {/* GitHub tracker */}
         <GitTrackerSection />
