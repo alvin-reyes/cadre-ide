@@ -43,7 +43,13 @@ export interface McpSession {
 export type SecretResolver = (keychainKey: string) => Promise<string | null>;
 
 const DEFAULT_TIMEOUT_MS = 15000;
-const CLOSE_TIMEOUT_MS = 3000;
+// The SDK's StdioClientTransport.close() worst case is ~4s: stdin.end() → wait
+// ~2000ms → SIGTERM → wait ~2000ms → SIGKILL. This guard MUST comfortably exceed
+// that so close() fully completes the child-kill sequence before probeConnection
+// returns (and before probe.ts's process.exit(0)) — otherwise a server that
+// ignores stdin.end()+SIGTERM is orphaned when Node exits before the scheduled
+// SIGKILL fires.
+const CLOSE_TIMEOUT_MS = 5000;
 const CLIENT_INFO = { name: "cadre", version: "1.0.0" };
 
 /** Resolve every `secretRefs` entry through `resolveSecret`, split by target. */
