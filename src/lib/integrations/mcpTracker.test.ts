@@ -1,0 +1,49 @@
+import { describe, it, expect } from "vitest";
+import {
+  taskKey, shouldSync, buildSyncPrompt, parseSyncResult,
+  trackerToFile, trackerFromFile, emptyTrackerFile,
+} from "./mcpTracker";
+
+describe("mcpTracker core", () => {
+  it("taskKey + shouldSync policy", () => {
+    expect(taskKey({ epic: 1, story: 2 })).toBe("1.2");
+    expect(shouldSync("Draft")).toBe(false);
+    expect(shouldSync("Approved")).toBe(false);
+    for (const s of ["InProgress","InReview","Done","Failed","Blocked"] as const)
+      expect(shouldSync(s)).toBe(true);
+  });
+
+  it("buildSyncPrompt embeds story, status, verify, existing id, and demands strict JSON", () => {
+    const p = buildSyncPrompt({
+      story: { epic: 1, story: 2, title: "Add login", acceptanceCriteria: "user can log in" },
+      status: "Done", verifyCmd: "npm test", existing: { taskId: "abc123" },
+    });
+    expect(p).toMatch(/1\.2|\[1\.2\]/);
+    expect(p).toContain("Add login");
+    expect(p).toContain("Done");
+    expect(p).toContain("npm test");
+    expect(p).toContain("abc123");            // update, not create
+    expect(p).toMatch(/only.*json/i);          // strict-JSON demand
+  });
+
+  it("buildSyncPrompt without existing id instructs create", () => {
+    const p = buildSyncPrompt({ story: { epic: 2, story: 1, title: "X" }, status: "InProgress" });
+    expect(p).toMatch(/creat/i);
+  });
+
+  it("parseSyncResult extracts JSON from prose, throws on no id", () => {
+    expect(parseSyncResult('done: {"taskId":"T-9","url":"https://x/T-9"}')).toEqual({ taskId: "T-9", url: "https://x/T-9" });
+    expect(parseSyncResult('{"taskId":"T-1"}')).toEqual({ taskId: "T-1" });
+    expect(() => parseSyncResult("no json here")).toThrow();
+    expect(() => parseSyncResult('{"url":"x"}')).toThrow();   // missing taskId
+  });
+
+  it("tracker file round-trips; malformed → null; empty helper", () => {
+    const f = emptyTrackerFile("clickup");
+    expect(f).toEqual({ version: 1, connectionId: "clickup", tasks: {} });
+    const withTask: typeof f = { ...f, tasks: { "1.2": { taskId: "T-9" } } };
+    expect(trackerFromFile(trackerToFile(withTask))).toEqual(withTask);
+    expect(trackerFromFile("{bad")).toBeNull();
+    expect(trackerFromFile(JSON.stringify({ version: 9 }))).toBeNull();
+  });
+});
