@@ -408,11 +408,13 @@ describe("connectionsStore.resolveTrackerEnv", () => {
     expect(result).toBeNull();
     expect(reportErrorStub).toHaveBeenCalled();
 
+    // A tracker connection existed, so the (filtered, empty) config is still
+    // written to clear any stale content — matching resolveFleetEnv. The
+    // unresolvable server must NOT appear in it.
     const content = writtenContent(".cadre/tracker.mcp.json");
-    if (content !== undefined) {
-      expect(content).not.toContain("${CLICKUP_API_TOKEN}");
-      expect(content).not.toContain('"clickup"');
-    }
+    expect(content).toBeDefined();
+    expect(content).not.toContain("${CLICKUP_API_TOKEN}");
+    expect(content).not.toContain('"clickup"');
   });
 
   it("returns null and writes NOTHING when there is no tracker connection", async () => {

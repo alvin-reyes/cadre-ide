@@ -91,7 +91,7 @@ async function resolveEnvAndWrite(
     if (!ok) {
       reportError(
         errorContext,
-        `Missing keychain secret for connection "${conn.label}" — skipping it so the rest still launches without an unresolvable variable.`,
+        `Missing keychain secret for connection "${conn.label}" — skipping it so no unresolvable variable is left in the written config.`,
       );
       continue;
     }
