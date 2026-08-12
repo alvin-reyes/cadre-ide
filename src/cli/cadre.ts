@@ -58,7 +58,9 @@ import {
   upsertConnection,
   removeConnection,
   setRoleNode,
+  resolveTrackerEnvNode,
 } from "./mcp/connectionsNode";
+import { syncStoryNode, realRunSyncAgentNode } from "./mcp/trackerSyncNode";
 import {
   parseFieldFlags,
   collectSecrets,
@@ -245,12 +247,28 @@ interface RunOutcome {
   note?: string;
 }
 
+/** Sync a story's status to the configured MCP tracker via a headless agent
+ *  (`src/cli/mcp/trackerSyncNode.ts`, the Node twin of the desktop app's
+ *  `mcpTrackerStore.syncStory`). No-op when no connection is designated as
+ *  the tracker; never throws — sync is downstream of truth and must never
+ *  fail the run, so it's safe to await inline in the dispatch flow. */
+function syncTracker(root: string, card: StoryCard, status: Status, verifyCmd: string | undefined): Promise<void> {
+  return syncStoryNode(
+    realNodeIo(),
+    root,
+    { epic: card.epic, story: card.story, title: card.title ?? card.id },
+    status,
+    verifyCmd,
+    { resolveTrackerEnv: resolveTrackerEnvNode, runSyncAgent: realRunSyncAgentNode() }
+  );
+}
+
 /**
  * Run one Approved story through the full lifecycle — the headless mirror of
  * useCadre.dispatchStory: dispatch a real agent on a `story/<e>.<s>` worktree →
  * engine verifies → adversarial review gate → integrate → Done | Blocked.
  */
-async function runOneStory(root: string, card: StoryCard): Promise<RunOutcome> {
+async function runOneStory(root: string, card: StoryCard, verifyCmd: string | undefined): Promise<RunOutcome> {
   const { epic, story } = card;
   const onOutput: OutputSink = (chunk) => process.stdout.write(chunk);
 
@@ -271,6 +289,11 @@ async function runOneStory(root: string, card: StoryCard): Promise<RunOutcome> {
 
   log(`\n── Story ${card.id}${card.title ? ` "${card.title}"` : ""} ─────────────────────────────`);
   log(`[cadre] dispatching Dev agent on the story worktree (claude, CLI login)`);
+  // The engine transitions the story to InProgress as the first step of
+  // runApprovedStory below; sync here (rather than after, since the whole
+  // lifecycle runs to completion inside that one call) so the tracker sees
+  // the InProgress transition instead of jumping straight to the terminal one.
+  await syncTracker(root, card, "InProgress", verifyCmd);
 
   const deps = nodeOrchestratorDeps(root, onOutput);
   const res = await runApprovedStory(deps, {
@@ -302,6 +325,7 @@ async function runOneStory(root: string, card: StoryCard): Promise<RunOutcome> {
   log(`\n[cadre] review fleet ${agg.verdict === "block" ? "BLOCKED" : "accepted"} (${agg.findingCount} findings)`);
   if (agg.verdict === "block") {
     await setStatus(root, epic, story, "Blocked");
+    await syncTracker(root, card, "Blocked", verifyCmd);
     return { id: card.id, title: card.title, status: "Blocked", note: "code review blocked — not integrated" };
   }
 
@@ -309,10 +333,12 @@ async function runOneStory(root: string, card: StoryCard): Promise<RunOutcome> {
   const integ = await integrateStory({ runGit }, { root, repoPath, epic, story });
   if (integ.conflict) {
     await setStatus(root, epic, story, "Blocked");
+    await syncTracker(root, card, "Blocked", verifyCmd);
     log(`[cadre] merge conflict integrating ${card.id} — Blocked for manual integration`);
     return { id: card.id, title: card.title, status: "Blocked", note: "merge conflict — Blocked" };
   }
   log(`[cadre] integrated story ${card.id} into main`);
+  await syncTracker(root, card, "Done", verifyCmd);
   return { id: card.id, title: card.title, status: "Done" };
 }
 
@@ -337,10 +363,14 @@ async function cmdRun(projectDir: string, auto: boolean): Promise<number> {
   }
   log(`[cadre] ${approved.length} Approved stor${approved.length === 1 ? "y" : "ies"} to run${auto ? " (--auto: continue past failures)" : ""}`);
 
+  // The frozen verification command(s) for this run, joined for the tracker
+  // comment (mirrors bmadStore.ts's `verifyCmd` derivation for the GUI).
+  const verifyCmd = approval.verification.filter(Boolean).join(" && ") || undefined;
+
   const outcomes: RunOutcome[] = [];
   for (const card of approved) {
     try {
-      const outcome = await runOneStory(root, card);
+      const outcome = await runOneStory(root, card, verifyCmd);
       outcomes.push(outcome);
       // Without --auto, stop the queue at the first story that doesn't reach Done
       // (fail-fast). With --auto, continue through every Approved story.

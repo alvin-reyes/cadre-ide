@@ -1,0 +1,180 @@
+import { describe, it, expect, vi } from "vitest";
+
+import type { TrackerStory } from "../../lib/integrations/mcpTracker";
+import type { NodeIo } from "./connectionsNode";
+import { syncStoryNode, type RunSyncAgentNode, type SyncStoryNodeDeps } from "./trackerSyncNode";
+
+const root = "/project";
+const trackerFilePath = `${root}/.cadre/mcp-tracker.json`;
+
+const FAKE_ENV = {
+  mcpConfigPath: "/project/.cadre/tracker.mcp.json",
+  env: { API_TOKEN: "secret" },
+  serverKey: "jira",
+};
+
+/** In-memory NodeIo fake — Map-backed filesystem (secrets unused here). Mirrors
+ *  connectionsNode.test.ts's fakeIo(). readFile matches realNodeIo's ENOENT-only
+ *  contract: absent path → null; any injected failure → throws. */
+function fakeIo(initialFiles: Record<string, string> = {}): NodeIo & { files: Map<string, string> } {
+  const files = new Map<string, string>(Object.entries(initialFiles));
+  return {
+    files,
+    async getSecret() {
+      return null;
+    },
+    async setSecret() {
+      /* unused */
+    },
+    async deleteSecret() {
+      /* unused */
+    },
+    async readFile(path: string) {
+      return files.has(path) ? (files.get(path) as string) : null;
+    },
+    async writeFile(path: string, content: string) {
+      files.set(path, content);
+    },
+  };
+}
+
+const story: TrackerStory = { epic: 1, story: 2, title: "Feature A" };
+
+function makeDeps(overrides: Partial<SyncStoryNodeDeps> = {}): SyncStoryNodeDeps {
+  return {
+    resolveTrackerEnv: vi.fn().mockResolvedValue(FAKE_ENV),
+    runSyncAgent: vi.fn(async () => JSON.stringify({ taskId: "T-DEFAULT" })) as RunSyncAgentNode,
+    ...overrides,
+  };
+}
+
+describe("syncStoryNode — status guard", () => {
+  it("does NOT call runSyncAgent for Draft status", async () => {
+    const io = fakeIo();
+    const runSyncAgent = vi.fn() as unknown as RunSyncAgentNode;
+    const deps = makeDeps({ runSyncAgent });
+
+    await syncStoryNode(io, root, story, "Draft", undefined, deps);
+
+    expect(runSyncAgent).not.toHaveBeenCalled();
+    expect(io.files.has(trackerFilePath)).toBe(false);
+  });
+});
+
+describe("syncStoryNode — no tracker resolvable", () => {
+  it("does NOT call runSyncAgent when resolveTrackerEnv returns null, and writes nothing", async () => {
+    const io = fakeIo();
+    const runSyncAgent = vi.fn() as unknown as RunSyncAgentNode;
+    const deps = makeDeps({
+      resolveTrackerEnv: vi.fn().mockResolvedValue(null),
+      runSyncAgent,
+    });
+
+    await syncStoryNode(io, root, story, "InProgress", undefined, deps);
+
+    expect(runSyncAgent).not.toHaveBeenCalled();
+    expect(io.files.has(trackerFilePath)).toBe(false);
+  });
+});
+
+describe("syncStoryNode — create then update", () => {
+  it("Done with no existing id: calls runSyncAgent and writes the id-map under <epic>.<story>", async () => {
+    const io = fakeIo();
+    let capturedPrompt = "";
+    const runSyncAgent: RunSyncAgentNode = vi.fn(async (args) => {
+      capturedPrompt = args.prompt;
+      return JSON.stringify({ taskId: "T-1", url: "https://tracker/T-1" });
+    });
+    const deps = makeDeps({ runSyncAgent });
+
+    await syncStoryNode(io, root, story, "Done", "npm test", deps);
+
+    expect(runSyncAgent).toHaveBeenCalledTimes(1);
+    expect(capturedPrompt.toLowerCase()).toContain("create");
+    expect(capturedPrompt).not.toContain("T-1");
+
+    const written = io.files.get(trackerFilePath);
+    expect(written).toBeDefined();
+    const parsed = JSON.parse(written!);
+    expect(parsed.tasks["1.2"]).toEqual({ taskId: "T-1", url: "https://tracker/T-1" });
+  });
+
+  it("second Done sync for the same story: prompt carries the existing id, one entry (no dup key)", async () => {
+    const io = fakeIo({
+      [trackerFilePath]: JSON.stringify({ version: 1, connectionId: "jira", tasks: { "1.2": { taskId: "T-1" } } }),
+    });
+    let capturedPrompt = "";
+    const runSyncAgent: RunSyncAgentNode = vi.fn(async (args) => {
+      capturedPrompt = args.prompt;
+      return JSON.stringify({ taskId: "T-1" });
+    });
+    const deps = makeDeps({ runSyncAgent });
+
+    await syncStoryNode(io, root, story, "Done", "npm test", deps);
+
+    expect(capturedPrompt).toContain("T-1");
+    expect(capturedPrompt.toLowerCase()).toContain("update");
+
+    const written = JSON.parse(io.files.get(trackerFilePath)!);
+    expect(Object.keys(written.tasks)).toEqual(["1.2"]);
+    expect(written.tasks["1.2"].taskId).toBe("T-1");
+  });
+});
+
+describe("syncStoryNode — transient read error never wipes the id-map (I1)", () => {
+  it("readFile THROWS (non-ENOENT) while the file has prior ids: no write, warning logged, no throw, prior file preserved", async () => {
+    const existingContent = JSON.stringify({
+      version: 1,
+      connectionId: "jira",
+      tasks: { "9.9": { taskId: "T-OTHER" } },
+    });
+    const io = fakeIo({ [trackerFilePath]: existingContent });
+    // Simulate a transient/permission read failure — NOT the "absent file" case.
+    io.readFile = vi.fn().mockRejectedValue(new Error("EACCES: permission denied"));
+
+    const runSyncAgent = vi.fn() as unknown as RunSyncAgentNode;
+    const deps = makeDeps({ runSyncAgent });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(syncStoryNode(io, root, story, "Done", undefined, deps)).resolves.toBeUndefined();
+
+    expect(runSyncAgent).not.toHaveBeenCalled();
+    expect(io.files.has(trackerFilePath)).toBe(true);
+    expect(io.files.get(trackerFilePath)).toBe(existingContent);
+    expect(errSpy).toHaveBeenCalled();
+
+    errSpy.mockRestore();
+  });
+
+  it("a present-but-malformed tracker file also aborts (no write) rather than being silently overwritten", async () => {
+    const io = fakeIo({ [trackerFilePath]: "{not valid json" });
+    const runSyncAgent = vi.fn() as unknown as RunSyncAgentNode;
+    const deps = makeDeps({ runSyncAgent });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(syncStoryNode(io, root, story, "Done", undefined, deps)).resolves.toBeUndefined();
+
+    expect(runSyncAgent).not.toHaveBeenCalled();
+    expect(io.files.get(trackerFilePath)).toBe("{not valid json");
+    expect(errSpy).toHaveBeenCalled();
+
+    errSpy.mockRestore();
+  });
+});
+
+describe("syncStoryNode — agent failure never throws or corrupts state", () => {
+  it("a rejecting runSyncAgent: no throw, no write, warning logged", async () => {
+    const io = fakeIo();
+    const runSyncAgent: RunSyncAgentNode = vi.fn().mockRejectedValue(new Error("agent crashed"));
+    const deps = makeDeps({ runSyncAgent });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(syncStoryNode(io, root, story, "Done", undefined, deps)).resolves.toBeUndefined();
+
+    expect(runSyncAgent).toHaveBeenCalledTimes(1);
+    expect(io.files.has(trackerFilePath)).toBe(false);
+    expect(errSpy).toHaveBeenCalled();
+
+    errSpy.mockRestore();
+  });
+});
