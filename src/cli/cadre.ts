@@ -15,6 +15,10 @@
  *   cadre build "<brief>" [projectDir] [--auto]  one-shot: plan → shard → approve → run
  *   cadre run [projectDir] [--auto]          dispatch every Approved story through the full flow
  *   cadre status [projectDir]                print the board (id · title · status)
+ *   cadre connect <preset> [projectDir] [--token <t>] [--field K=V…] [--as-tracker]
+ *                                            connect + probe an MCP server, save on success
+ *   cadre connections [projectDir]           list configured MCP connections
+ *   cadre disconnect <id> [projectDir]       remove an MCP connection
  *
  * Auth: execute agents inherit this process's environment, so the user's `claude`
  * login powers dispatch and review — no API key is injected. PLANNING (plan /
@@ -46,6 +50,23 @@ import {
   readFile,
   type OutputSink,
 } from "./nodeDeps";
+import { CATALOG, presetToConnection } from "../lib/mcp/catalog";
+import { probeConnection } from "./mcp/client";
+import {
+  realNodeIo,
+  readConnections,
+  upsertConnection,
+  removeConnection,
+  setRoleNode,
+} from "./mcp/connectionsNode";
+import {
+  parseFieldFlags,
+  collectSecrets,
+  secretsByKeychainKey,
+  buildCustomTransport,
+  formatConnectionLine,
+  parseConnectArgv,
+} from "./mcp/connectCli";
 
 // The Dev-agent persona — kept in sync with useCadre.ts's DEV_SYSTEM_PROMPT.
 const DEV_SYSTEM_PROMPT = `You are the Dev agent. Implement the assigned story test-first: write the failing test, then the minimal code to make it pass. Follow the project's standards. Do NOT mark the story done — Cadre runs the verification command and decides.
@@ -595,6 +616,101 @@ async function cmdStatus(projectDir: string): Promise<number> {
   return 0;
 }
 
+interface CmdConnectOpts {
+  token?: string;
+  fields: string[];
+  asTracker: boolean;
+  command?: string;
+  args?: string;
+  url?: string;
+}
+
+/**
+ * `cadre connect <presetId> [projectDir] [--token <t>] [--field K=V …]
+ * [--as-tracker] [--command <c>] [--args <a,b,c>] [--url <u>]` — seed a
+ * connection from a CATALOG preset, probe it live, and on success persist it
+ * (keychain + `.cadre/mcp.json` + materialize). Never saves on probe failure,
+ * and never prints a secret value.
+ */
+async function cmdConnect(presetId: string, projectDir: string, opts: CmdConnectOpts): Promise<number> {
+  const root = resolve(projectDir);
+  const preset = CATALOG.find((p) => p.id === presetId);
+  if (!preset) {
+    log(`cadre connect: unknown preset "${presetId}". Valid presets: ${CATALOG.map((p) => p.id).join(", ")}`);
+    return 1;
+  }
+
+  const io = realNodeIo();
+  const existing = await readConnections(io, root);
+  let conn = presetToConnection(preset, existing);
+
+  if (preset.custom) {
+    const built = buildCustomTransport({ command: opts.command, args: opts.args, url: opts.url });
+    if ("error" in built) {
+      log(`cadre connect: ${built.error}`);
+      return 1;
+    }
+    conn = { ...conn, transport: built.transport };
+  }
+
+  const { secrets, missing } = collectSecrets(preset, {
+    token: opts.token,
+    fields: parseFieldFlags(opts.fields),
+    envToken: process.env.CADRE_MCP_TOKEN,
+  });
+  if (missing.length > 0) {
+    log(
+      `cadre connect: missing required field(s): ${missing.join(", ")} ` +
+        `(pass --token <value>, or --field ${missing[0]}=<value>)`
+    );
+    return 1;
+  }
+
+  const byKeychainKey = secretsByKeychainKey(conn, secrets);
+  const probe = await probeConnection(conn, async (key) => byKeychainKey[key] ?? null);
+  if (!probe.ok) {
+    log(`cadre connect: probe failed — ${probe.error ?? "unknown error"}`);
+    return 1;
+  }
+  log(`[cadre] Connected · ${probe.toolCount} tools`);
+
+  conn = { ...conn, status: "connected", toolCount: probe.toolCount, enabled: true };
+  await upsertConnection(io, root, conn, secrets);
+  if (opts.asTracker) {
+    await setRoleNode(io, root, conn.id, "tracker");
+  }
+
+  log(`[cadre] saved ${conn.id}${opts.asTracker ? " (tracker)" : ""}`);
+  return 0;
+}
+
+/** `cadre connections [projectDir]` — list every connection in `.cadre/mcp.json`. */
+async function cmdConnections(projectDir: string): Promise<number> {
+  const root = resolve(projectDir);
+  const io = realNodeIo();
+  const list = await readConnections(io, root);
+  if (list.length === 0) {
+    log("No connections. Add one with: cadre connect <preset> [--token <t>]");
+    return 0;
+  }
+  for (const conn of list) log(formatConnectionLine(conn));
+  return 0;
+}
+
+/** `cadre disconnect <id> [projectDir]` — remove a connection (keychain + registry + re-materialize). */
+async function cmdDisconnect(id: string, projectDir: string): Promise<number> {
+  const root = resolve(projectDir);
+  const io = realNodeIo();
+  const list = await readConnections(io, root);
+  if (!list.some((c) => c.id === id)) {
+    log(`cadre disconnect: no connection "${id}"`);
+    return 1;
+  }
+  await removeConnection(io, root, id);
+  log(`[cadre] disconnected ${id}`);
+  return 0;
+}
+
 function usage(): void {
   log("Usage:");
   log('  cadre plan "<brief>" [projectDir]            PM + Architect → PRD, architecture, plan approval');
@@ -603,6 +719,11 @@ function usage(): void {
   log('  cadre build "<brief>" [projectDir] [--auto]  one-shot: plan → shard → approve → run');
   log("  cadre run [projectDir] [--auto]              run every Approved story through the full lifecycle");
   log("  cadre status [projectDir]                    print the board (id · title · status)");
+  log("  cadre connect <preset> [projectDir] [--token <t>] [--field K=V…] [--as-tracker]");
+  log("                                                [--command <c>] [--args <a,b>] [--url <u>]");
+  log("                                                connect + probe an MCP server, save on success");
+  log("  cadre connections [projectDir]               list configured MCP connections");
+  log("  cadre disconnect <id> [projectDir]           remove an MCP connection");
 }
 
 async function main(): Promise<void> {
@@ -630,6 +751,35 @@ async function main(): Promise<void> {
     code = await cmdApprove(dirArgs[0] ?? cwd, all, idArgs);
   } else if (cmd === "build") {
     code = await cmdBuild(positional[0] ?? "", positional[1] ?? cwd, auto);
+  } else if (cmd === "connect") {
+    // --token/--field/--command/--args/--url all take a value, so they can't
+    // use the generic `positional` filter above (their VALUES would leak in
+    // as a bogus projectDir) — parseConnectArgv consumes them properly.
+    const parsed = parseConnectArgv(rest);
+    const presetId = parsed.positional[0];
+    if (!presetId) {
+      log("cadre connect: a preset id is required — cadre connect <presetId> [projectDir] [--token <t>]");
+      code = 1;
+    } else {
+      code = await cmdConnect(presetId, parsed.positional[1] ?? cwd, {
+        token: parsed.token,
+        fields: parsed.fields,
+        asTracker: parsed.asTracker,
+        command: parsed.command,
+        args: parsed.args,
+        url: parsed.url,
+      });
+    }
+  } else if (cmd === "connections") {
+    code = await cmdConnections(positional[0] ?? cwd);
+  } else if (cmd === "disconnect") {
+    const id = positional[0];
+    if (!id) {
+      log("cadre disconnect: a connection id is required — cadre disconnect <id> [projectDir]");
+      code = 1;
+    } else {
+      code = await cmdDisconnect(id, positional[1] ?? cwd);
+    }
   } else {
     usage();
     code = cmd === undefined || cmd === "help" || cmd === "--help" || cmd === "-h" ? 0 : 1;
