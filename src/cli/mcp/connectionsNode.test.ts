@@ -97,6 +97,24 @@ describe("connectionsNode: upsertConnection", () => {
   });
 });
 
+describe("connectionsNode: readConnections error channel (absent vs read-failed)", () => {
+  it("missing file (readFile -> null) yields [] — the common first-run case", async () => {
+    const io = fakeIo(); // nothing written; fake readFile returns null
+    const list = await readConnections(io, root);
+    expect(list).toEqual([]);
+  });
+
+  it("PROPAGATES a non-ENOENT read error instead of silently returning [] (Task 4 clobber guard)", async () => {
+    const io = fakeIo();
+    const boom = new Error("EACCES: permission denied");
+    io.readFile = async (path: string) => {
+      if (path === mcpJsonPath) throw boom;
+      return null;
+    };
+    await expect(readConnections(io, root)).rejects.toBe(boom);
+  });
+});
+
 describe("connectionsNode: drift guard (byte-identical to connectionsStore)", () => {
   const fixedList: Connection[] = [clickup, github];
 

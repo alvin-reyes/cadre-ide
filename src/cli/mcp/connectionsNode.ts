@@ -47,7 +47,9 @@ export interface NodeIo {
   getSecret(key: string): Promise<string | null>;
   setSecret(key: string, value: string): Promise<void>;
   deleteSecret(key: string): Promise<void>;
-  /** null on ENOENT (or any other read failure — the caller only needs "absent"). */
+  /** Resolves the file contents, or `null` if the file does not exist (ENOENT).
+   *  Throws on any other read error so callers can distinguish "absent" from
+   *  "read failed" (needed to avoid overwriting a file we couldn't read). */
   readFile(path: string): Promise<string | null>;
   /** mkdir -p the parent dir first. */
   writeFile(path: string, content: string): Promise<void>;
@@ -99,8 +101,12 @@ export function realNodeIo(): NodeIo {
     async readFile(path: string): Promise<string | null> {
       try {
         return await fsReadFile(path, "utf8");
-      } catch {
-        return null;
+      } catch (e) {
+        // ENOENT (genuinely missing) → null; ANY other read error (permissions,
+        // transient I/O) MUST propagate so callers can distinguish "absent"
+        // from "read failed" and never overwrite a file they couldn't read.
+        if ((e as NodeJS.ErrnoException)?.code === "ENOENT") return null;
+        throw e;
       }
     },
     async writeFile(path: string, content: string): Promise<void> {
