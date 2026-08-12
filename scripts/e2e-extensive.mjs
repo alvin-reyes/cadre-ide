@@ -122,8 +122,49 @@ async function main() {
     await shot("ext-10-connections.png");
     const tokenField = page.getByPlaceholder(/ghp_/).first();
     if (await tokenField.count()) await tokenField.fill("ghp_e2efaketoken000000000000000000");
-    await click(/^Save$/); await page.waitForTimeout(600);
-    step("saved connection appears in the connected list", await has(/GitHub/i) && await has(/Connected · \d+ tools/));
+    // Scope to the innermost dialog: the API-keys section (rendered earlier in
+    // the Settings DOM, itself also role="dialog") has its own disabled "Save"
+    // buttons, and both the outer Settings dialog and the nested "Connect
+    // GitHub" dialog match a hasText filter (the outer one contains the inner
+    // one's text too) — so an unscoped/`.first()` lookup grabs the outer
+    // dialog's subtree, resolves to a disabled API-key Save button, and the
+    // click() helper's 4s wait for it to become enabled times out. `.last()`
+    // picks the innermost (nested) dialog, whose own Save button is enabled.
+    const connectGithubDialog = page.getByRole("dialog").filter({ hasText: /Connect GitHub/ }).last();
+    await connectGithubDialog.getByRole("button", { name: /^Save$/ }).first().click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    // Save doesn't persist the modal's transient "Connected · N tools" test
+    // result onto the row (a fresh connection isn't in the store yet when Test
+    // probes it, so there's nothing for the probe to update) — the saved row
+    // shows "Not connected" until probed again. So assert on what Save actually
+    // guarantees: the modal closes, the empty-state placeholder is replaced by
+    // a real row, and that row is enabled (Test succeeding flips enabled=true
+    // by default on save) — via its "Disable GitHub" checkbox aria-label.
+    const enabledCheckbox = await page.getByLabel(/Disable GitHub/i).count();
+    step(
+      "saved connection appears in the connected list",
+      !(await has(/Connect GitHub/)) && !(await has(/No connections yet/i)) && enabledCheckbox > 0
+    );
+
+    // ── Tracker designation — mark the just-saved GitHub connection as tracker ──
+    // (mcpTrackerStore/ConnectionsView: the icon-only "Use as tracker" button has
+    // no visible label, only an aria-label, so target it by accessible name. The
+    // badge's `cadre-label-mono` class force-uppercases it via CSS, so innerText
+    // renders it as "TRACKER" — matching that exact (case-sensitive) all-caps
+    // form is what distinguishes it from the nearby, normal-case "GitHub
+    // tracker" / "Enable GitHub tracker" text from the legacy gh-CLI section,
+    // which is otherwise visible on the same Settings page and would false-match
+    // a case-insensitive /tracker/i probe.)
+    section("Connections — designate GitHub as the MCP tracker");
+    const trackerBadgeBefore = await has(/\bTRACKER\b/);
+    const clickedTrackerBtn = await click(/Use .* as tracker/i);
+    const trackerBadgeAfter = await until(async () => /\bTRACKER\b/.test(await body()), 4000, 300);
+    step(
+      "Tracker badge appears after designating the connection",
+      clickedTrackerBtn && !trackerBadgeBefore && trackerBadgeAfter
+    );
+    await shot("ext-11-tracker.png");
+
     await click(/Close/).catch(() => {}); await page.keyboard.press("Escape").catch(() => {});
 
     await browser.close();

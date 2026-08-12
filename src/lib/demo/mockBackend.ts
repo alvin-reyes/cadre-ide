@@ -63,6 +63,22 @@ function writeWithParents(fs: MockFs, path: string, content: string): void {
   fs.write(path, content);
 }
 
+/**
+ * Detect the MCP tracker sync agent's `create_pty` invocation so the mock can
+ * reply with a parseable result instead of the generic build-agent transcript
+ * (see mcpTrackerStore.defaultRunSyncAgent, which spawns `claude
+ * --allowedTools mcp__<serverKey>__* --mcp-config <...>/tracker.mcp.json -p
+ * <prompt>`, and mcpTracker.parseSyncResult, which requires the last JSON
+ * block in the output to contain a taskId).
+ */
+function isSyncAgentInvocation(command: unknown, cliArgs: string[]): boolean {
+  if (command !== "claude") return false;
+  const joined = cliArgs.join("\n");
+  const hasTrackerMcpConfig = /--mcp-config/.test(joined) && /tracker\.mcp\.json/.test(joined);
+  const hasAllowedToolsMcp = cliArgs.some((a) => a.startsWith("mcp__")) && cliArgs.includes("-p");
+  return hasTrackerMcpConfig || hasAllowedToolsMcp;
+}
+
 function stateFilePath(root: string, epic: number, story: number): string {
   return `${root}/.cadre/state/${epic}.${story}.json`;
 }
@@ -388,7 +404,19 @@ export function createMockInvoke(fs: MockFs) {
 
         // Derive a story label from the cwd path if parseable (last segment).
         const cwdLabel = cwd ? basename(cwd) : undefined;
-        const lines = buildTranscript(cwdLabel);
+        const cliArgs = (args.args as string[] | undefined) ?? [];
+        // Demo fidelity: the tracker sync agent (mcpTrackerStore) needs a
+        // parseable `{"taskId":...}` reply in its output, not the generic
+        // build-agent transcript, or parseSyncResult throws and the sync is
+        // swallowed as a (silent, in the demo) failure.
+        const lines = isSyncAgentInvocation(args.command, cliArgs)
+          ? [
+              "Connecting to tracker MCP…",
+              "Resolving existing task…",
+              "Updating task status…",
+              '{"taskId":"MOCK-123","url":"https://demo/MOCK-123"}',
+            ]
+          : buildTranscript(cwdLabel);
 
         // Return the id immediately (Promise already resolved), THEN start the
         // stream. This mirrors the real flow where create_pty resolves with the

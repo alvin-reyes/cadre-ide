@@ -5,10 +5,12 @@
  * not an inline copy. This ensures fixes in mockBackend.ts are actually covered.
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { MockFs } from "./mockFs";
 import { createMockInvoke } from "./mockBackend";
 import type { PlanApproval } from "../engine/planApproval";
+import type { PtyEvent } from "./demoContent";
+import { parseSyncResult } from "../integrations/mcpTracker";
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
@@ -50,6 +52,62 @@ describe("mockBackend command handlers", () => {
         onEvent: { onmessage: () => {} },
       });
       expect(fs.read(`${ROOT}/.cadre/reviews/1.5.correctness.json`)).toBeNull();
+    });
+  });
+
+  describe("create_pty tracker sync agent (mcpTrackerStore demo mock)", () => {
+    it("streams a {taskId,url} reply that parseSyncResult can parse, then exits 0", async () => {
+      // Mirrors defaultRunSyncAgent's spawn: claude --allowedTools mcp__<key>__*
+      // --mcp-config <root>/.cadre/tracker.mcp.json -p <sync prompt>.
+      vi.useFakeTimers();
+      try {
+        const events: PtyEvent[] = [];
+        await invoke("create_pty", {
+          rows: 24, cols: 80,
+          cwd: ROOT,
+          command: "claude",
+          args: [
+            "--allowedTools", "mcp__github__*",
+            "--mcp-config", `${ROOT}/.cadre/tracker.mcp.json`,
+            "-p", "You have access to tracker MCP tools. Ensure a task exists for: [1.4] Add task feature",
+          ],
+          onEvent: { onmessage: (e: PtyEvent) => events.push(e) },
+        });
+        await vi.runAllTimersAsync();
+
+        const output = events
+          .filter((e): e is Extract<PtyEvent, { type: "output" }> => e.type === "output")
+          .map((e) => new TextDecoder().decode(new Uint8Array(e.data)))
+          .join("");
+        expect(parseSyncResult(output)).toEqual({ taskId: "MOCK-123", url: "https://demo/MOCK-123" });
+        expect(events.at(-1)).toEqual({ type: "exit", code: 0 });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not treat an ordinary build agent as the sync agent", async () => {
+      vi.useFakeTimers();
+      try {
+        const events: PtyEvent[] = [];
+        await invoke("create_pty", {
+          rows: 24, cols: 80,
+          cwd: `${ROOT}/.cadre/worktrees/story-1.5`,
+          command: "claude",
+          args: ["--dangerously-skip-permissions", "-p", "Implement story 1.5 following the plan."],
+          onEvent: { onmessage: (e: PtyEvent) => events.push(e) },
+        });
+        await vi.runAllTimersAsync();
+
+        const output = events
+          .filter((e): e is Extract<PtyEvent, { type: "output" }> => e.type === "output")
+          .map((e) => new TextDecoder().decode(new Uint8Array(e.data)))
+          .join("");
+        expect(output).not.toContain("MOCK-123");
+        expect(() => parseSyncResult(output)).toThrow();
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
