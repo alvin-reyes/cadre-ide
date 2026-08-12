@@ -15,6 +15,7 @@ import { type Preset, presetToConnection } from "../lib/mcp/catalog";
 import { materialize, serializeConfig, type RequiredSecret } from "../lib/mcp/materialize";
 import { secretSet, secretGet, secretDelete } from "../lib/secrets";
 import { reportError } from "../lib/reportError";
+import { mergeGitignore } from "../lib/mcp/gitignore";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -51,12 +52,9 @@ async function tryReadFile(path: string): Promise<string | null> {
  *  file at `path`, creating it if absent. No-op if all lines already present. */
 async function appendIfMissing(path: string, lines: string[]): Promise<void> {
   const existing = (await tryReadFile(path)) ?? "";
-  const existingLines = new Set(existing.split("\n").map((l) => l.trim()));
-  const missing = lines.filter((l) => !existingLines.has(l));
-  if (missing.length === 0) return;
-  const sep = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
-  const next = existing + sep + missing.join("\n") + "\n";
-  await invoke("write_text_file", { path, content: next });
+  const { content, changed } = mergeGitignore(existing, lines);
+  if (!changed) return;
+  await invoke("write_text_file", { path, content });
 }
 
 /** Shared body for resolveFleetEnv/resolveTrackerEnv: resolve each connection's
