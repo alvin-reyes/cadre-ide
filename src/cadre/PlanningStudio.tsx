@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, type CSSProperties, type ClipboardEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { marked } from "marked";
-import { ArrowUp, ArrowRight, Lock, RefreshCw, AlertTriangle, FileText, FileDown, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, ShieldAlert, Gavel, Paperclip, X, Check, Copy, Eye, Code2, Wrench, Loader2, Workflow } from "lucide-react";
+import { ArrowUp, ArrowRight, Lock, RefreshCw, AlertTriangle, FileText, FileDown, PencilRuler, Ruler, Palette, ClipboardCheck, KeyRound, ShieldCheck, ShieldAlert, Gavel, Paperclip, X, Check, Copy, Eye, Code2, Wrench, Loader2, Workflow, Download } from "lucide-react";
 import { exportHtmlToPdf } from "./exportPdf";
 import { DiagramEditor } from "./DiagramEditor";
 import { BrownfieldOnboard } from "./BrownfieldOnboard";
@@ -8,6 +8,10 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre, MODEL } from "./useCadre";
 import { useRepos } from "../stores/reposStore";
 import { useBmadStore } from "../stores/bmadStore";
+import { useConnectionsStore } from "../stores/connectionsStore";
+import { useMcpIntakeStore } from "../stores/mcpIntakeStore";
+import { trackerConnection } from "../lib/mcp/connections";
+import { ticketToBrief } from "../lib/integrations/mcpIntake";
 import { Markdown } from "./components/Markdown";
 import { planningTurn, type ChatMessage, type Attachment } from "../lib/planning/planningChat";
 import { PM_SYSTEM_PROMPT, ARCHITECT_SYSTEM_PROMPT, DESIGN_SYSTEM_PROMPT, ADVERSARIAL_REVIEW_PROMPTS, PLAN_VALIDATION_PROMPT } from "../lib/planning/personas";
@@ -139,6 +143,29 @@ export function PlanningStudio() {
       return next;
     });
   }, [repos, multiRepo]);
+
+  // "Import from tracker" — reuses the same active-project root as the
+  // multi-repo verify drafts above. Only rendered when a tracker connection
+  // is designated (Connections view), so load the registry once we know the
+  // root (mirrors ConnectionsView's own load-on-root-change effect).
+  const connections = useConnectionsStore((s) => s.connections);
+  const loadConnections = useConnectionsStore((s) => s.load);
+  useEffect(() => {
+    if (projectRootForRepos) void loadConnections(projectRootForRepos);
+  }, [projectRootForRepos, loadConnections]);
+  const tracker = trackerConnection(connections);
+  const [ticketRef, setTicketRef] = useState("");
+  const importingTicket = useMcpIntakeStore((s) => s.importing);
+  async function importFromTracker() {
+    const root = projectRootForRepos;
+    const ref = ticketRef.trim();
+    if (!root || !ref) return;
+    const ticket = await useMcpIntakeStore.getState().fetchTicket(root, ref);
+    if (ticket) {
+      setDraft(ticketToBrief(ticket));
+      setTicketRef("");
+    }
+  }
 
   const [persona, setPersona] = useState<PersonaId>("pm");
   const [threads, setThreads] = useState<Record<PersonaId, ChatMessage[]>>({ pm: [], architect: [], design: [] });
@@ -756,6 +783,59 @@ export function PlanningStudio() {
                     onRemove={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
                   />
                 ))}
+              </div>
+            )}
+            {tracker && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: "var(--c-space-2)" }}>
+                <input
+                  value={ticketRef}
+                  onChange={(e) => setTicketRef(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void importFromTracker();
+                    }
+                  }}
+                  placeholder="Ticket id (e.g. TCK-42)"
+                  disabled={importingTicket}
+                  aria-label="Ticket id to import"
+                  style={{
+                    flex: "0 1 180px",
+                    background: "var(--c-surface-2)",
+                    border: "1px solid var(--c-border)",
+                    borderRadius: "var(--c-radius-sm)",
+                    padding: "4px 8px",
+                    fontSize: "var(--c-fs-xs)",
+                    color: "var(--c-text)",
+                    outline: "none",
+                  }}
+                />
+                <button
+                  onClick={() => void importFromTracker()}
+                  disabled={importingTicket || !ticketRef.trim()}
+                  title={`Import ticket from ${tracker.label}`}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                    padding: "4px 10px",
+                    borderRadius: "var(--c-radius-sm)",
+                    background: "var(--c-surface-2)",
+                    border: "1px solid var(--c-border)",
+                    color: "var(--c-text-secondary)",
+                    fontSize: "var(--c-fs-xs)",
+                    cursor: importingTicket || !ticketRef.trim() ? "default" : "pointer",
+                    opacity: importingTicket || !ticketRef.trim() ? 0.6 : 1,
+                    flexShrink: 0,
+                  }}
+                >
+                  {importingTicket ? (
+                    <Loader2 size={12} strokeWidth={2.5} className="cadre-spin" />
+                  ) : (
+                    <Download size={12} strokeWidth={2.5} />
+                  )}
+                  Import from tracker
+                </button>
               </div>
             )}
             <div
