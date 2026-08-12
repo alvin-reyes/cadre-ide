@@ -32,6 +32,7 @@ export interface McpTrackerFile {
   version: 1;
   connectionId: string;
   tasks: Record<string, { taskId: string; url?: string }>;
+  epics?: Record<string, { ticketId: string; url?: string }>;
 }
 
 /**
@@ -117,6 +118,7 @@ export function trackerToFile(f: McpTrackerFile): string {
 /**
  * Parse a tracker file from JSON string.
  * Returns null if malformed or version is not 1.
+ * Normalizes missing `epics` key to `{}` for back-compat with v1 files that predate epics support.
  */
 export function trackerFromFile(raw: string): McpTrackerFile | null {
   try {
@@ -130,6 +132,10 @@ export function trackerFromFile(raw: string): McpTrackerFile | null {
       parsed.tasks === null
     ) {
       return null;
+    }
+    // Normalize missing epics to empty object (back-compat)
+    if (!parsed.epics) {
+      parsed.epics = {};
     }
     return parsed as McpTrackerFile;
   } catch {
@@ -145,5 +151,37 @@ export function emptyTrackerFile(connectionId: string): McpTrackerFile {
     version: 1,
     connectionId,
     tasks: {},
+    epics: {},
   };
+}
+
+/**
+ * Record an epic↔ticket link in the tracker file.
+ * Returns a new file with the epic link stored, preserving existing tasks and epics.
+ * Immutable — does not mutate the input.
+ */
+export function recordEpicLink(
+  file: McpTrackerFile,
+  epic: number,
+  link: { ticketId: string; url?: string },
+): McpTrackerFile {
+  const epics = file.epics ?? {};
+  return {
+    ...file,
+    epics: {
+      ...epics,
+      [String(epic)]: link,
+    },
+  };
+}
+
+/**
+ * Retrieve an epic↔ticket link from the tracker file.
+ * Returns undefined if the epic is not found.
+ */
+export function epicTicket(
+  file: McpTrackerFile,
+  epic: number,
+): { ticketId: string; url?: string } | undefined {
+  return file.epics?.[String(epic)];
 }
