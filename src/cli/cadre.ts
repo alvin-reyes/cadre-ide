@@ -60,7 +60,7 @@ import {
   setRoleNode,
   resolveTrackerEnvNode,
 } from "./mcp/connectionsNode";
-import { syncStoryNode, realRunSyncAgentNode } from "./mcp/trackerSyncNode";
+import { syncStoryNode, realRunSyncAgentNode, syncingSetStatus } from "./mcp/trackerSyncNode";
 import {
   parseFieldFlags,
   collectSecrets,
@@ -289,13 +289,18 @@ async function runOneStory(root: string, card: StoryCard, verifyCmd: string | un
 
   log(`\n── Story ${card.id}${card.title ? ` "${card.title}"` : ""} ─────────────────────────────`);
   log(`[cadre] dispatching Dev agent on the story worktree (claude, CLI login)`);
-  // The engine transitions the story to InProgress as the first step of
-  // runApprovedStory below; sync here (rather than after, since the whole
-  // lifecycle runs to completion inside that one call) so the tracker sees
-  // the InProgress transition instead of jumping straight to the terminal one.
-  await syncTracker(root, card, "InProgress", verifyCmd);
 
+  // Sync the tracker at the engine's REAL transition points (InProgress →
+  // InReview → Done|Failed) by wrapping the engine's setStatus dep — the CLI
+  // twin of the desktop hooking bmadStore.setStatus. This guarantees we only
+  // ever report a transition the story actually reached: if runApprovedStory
+  // throws before the engine sets InProgress (e.g. the per-repo verify gate),
+  // the wrapper is never invoked and nothing is synced (no stuck InProgress).
   const deps = nodeOrchestratorDeps(root, onOutput);
+  deps.setStatus = syncingSetStatus(deps.setStatus, (_e, _s, status) =>
+    syncTracker(root, card, status, verifyCmd)
+  );
+
   const res = await runApprovedStory(deps, {
     root,
     repoPath,
@@ -324,6 +329,8 @@ async function runOneStory(root: string, card: StoryCard, verifyCmd: string | un
   const agg = aggregateReviews(reviews);
   log(`\n[cadre] review fleet ${agg.verdict === "block" ? "BLOCKED" : "accepted"} (${agg.findingCount} findings)`);
   if (agg.verdict === "block") {
+    // This Blocked write is cmdRun's OWN transition (imported nodeDeps
+    // setStatus, NOT the wrapped engine dep), so sync it manually — exactly once.
     await setStatus(root, epic, story, "Blocked");
     await syncTracker(root, card, "Blocked", verifyCmd);
     return { id: card.id, title: card.title, status: "Blocked", note: "code review blocked — not integrated" };
@@ -332,13 +339,16 @@ async function runOneStory(root: string, card: StoryCard, verifyCmd: string | un
   // Merge the verified worktree back into main. On conflict → Blocked for the human.
   const integ = await integrateStory({ runGit }, { root, repoPath, epic, story });
   if (integ.conflict) {
+    // Also cmdRun's own Blocked transition (imported setStatus) — sync manually.
     await setStatus(root, epic, story, "Blocked");
     await syncTracker(root, card, "Blocked", verifyCmd);
     log(`[cadre] merge conflict integrating ${card.id} — Blocked for manual integration`);
     return { id: card.id, title: card.title, status: "Blocked", note: "merge conflict — Blocked" };
   }
   log(`[cadre] integrated story ${card.id} into main`);
-  await syncTracker(root, card, "Done", verifyCmd);
+  // Done was already synced by the wrapped setStatus when the engine's
+  // verifyStory wrote it (before this review+integrate gate) — no manual sync
+  // here, or the transition would double-sync.
   return { id: card.id, title: card.title, status: "Done" };
 }
 

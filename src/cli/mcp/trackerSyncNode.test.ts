@@ -1,8 +1,14 @@
 import { describe, it, expect, vi } from "vitest";
 
 import type { TrackerStory } from "../../lib/integrations/mcpTracker";
+import type { Status } from "../../lib/engine/status";
 import type { NodeIo } from "./connectionsNode";
-import { syncStoryNode, type RunSyncAgentNode, type SyncStoryNodeDeps } from "./trackerSyncNode";
+import {
+  syncStoryNode,
+  syncingSetStatus,
+  type RunSyncAgentNode,
+  type SyncStoryNodeDeps,
+} from "./trackerSyncNode";
 
 const root = "/project";
 const trackerFilePath = `${root}/.cadre/mcp-tracker.json`;
@@ -159,6 +165,54 @@ describe("syncStoryNode — transient read error never wipes the id-map (I1)", (
     expect(errSpy).toHaveBeenCalled();
 
     errSpy.mockRestore();
+  });
+});
+
+describe("syncingSetStatus — syncs only real engine transitions", () => {
+  it("runs the engine write FIRST, then syncs the SAME transition", async () => {
+    const order: string[] = [];
+    const base = vi.fn(async () => {
+      order.push("base");
+    });
+    const sync = vi.fn(async () => {
+      order.push("sync");
+    });
+    const wrapped = syncingSetStatus(base, sync);
+
+    await wrapped(1, 2, "InProgress");
+
+    expect(base).toHaveBeenCalledWith(1, 2, "InProgress");
+    expect(sync).toHaveBeenCalledWith(1, 2, "InProgress");
+    expect(order).toEqual(["base", "sync"]);
+  });
+
+  it("does NOT sync a transition that never fires (engine throws BEFORE setStatus) — no stuck InProgress", async () => {
+    const base = vi.fn(async () => {});
+    const sync = vi.fn(async () => {});
+    const wrapped = syncingSetStatus(base, sync);
+
+    // Model runApprovedStory's per-repo verify gate: it rejects BEFORE the
+    // engine ever calls setStatus, so the wrapper is simply never invoked.
+    const engineThatThrowsBeforeTransition = async (
+      _setStatus: (e: number, s: number, status: Status) => Promise<void>
+    ): Promise<void> => {
+      throw new Error("PLAN gate: no frozen verify command for repo");
+    };
+
+    await expect(engineThatThrowsBeforeTransition(wrapped)).rejects.toThrow();
+
+    expect(base).not.toHaveBeenCalled();
+    expect(sync).not.toHaveBeenCalled();
+  });
+
+  it("if the authoritative engine write throws, the sync does NOT run (never reports an unwritten status)", async () => {
+    const base = vi.fn().mockRejectedValue(new Error("disk full"));
+    const sync = vi.fn(async () => {});
+    const wrapped = syncingSetStatus(base, sync);
+
+    await expect(wrapped(1, 2, "Done")).rejects.toThrow("disk full");
+
+    expect(sync).not.toHaveBeenCalled();
   });
 });
 

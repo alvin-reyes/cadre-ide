@@ -23,6 +23,7 @@ import {
   type TrackerStory,
   type TrackerStatus,
 } from "../../lib/integrations/mcpTracker";
+import type { Status } from "../../lib/engine/status";
 import type { NodeIo } from "./connectionsNode";
 
 const mcpTrackerPath = (root: string) => `${root}/.cadre/mcp-tracker.json`;
@@ -136,4 +137,33 @@ export async function syncStoryNode(
     // Sync is downstream of truth — never let a tracker failure propagate.
     console.error(`cadre: tracker sync failed: ${String(e)}`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// setStatus wrapper — sync at the engine's REAL transition points
+// ---------------------------------------------------------------------------
+
+/**
+ * Wrap an engine `setStatus` so each REAL story transition also syncs the
+ * tracker — the CLI equivalent of the desktop hooking `bmadStore.setStatus`.
+ *
+ * The authoritative engine write runs FIRST; the sync runs only AFTER it
+ * resolves. Two invariants fall out of that ordering:
+ *   - A transition the story never reaches is never reported. If the engine
+ *     throws BEFORE it calls setStatus (e.g. runApprovedStory's per-repo verify
+ *     gate rejecting before dispatch), this wrapper is simply never invoked, so
+ *     nothing syncs — no stuck "InProgress".
+ *   - If the authoritative write itself throws, the sync does not run, so the
+ *     tracker is never set to a status the engine failed to persist.
+ * `syncTransition` (backed by syncStoryNode) never throws, so wrapping the
+ * engine dep can never break the run.
+ */
+export function syncingSetStatus(
+  baseSetStatus: (epic: number, story: number, status: Status) => Promise<void>,
+  syncTransition: (epic: number, story: number, status: Status) => Promise<void>
+): (epic: number, story: number, status: Status) => Promise<void> {
+  return async (epic, story, status) => {
+    await baseSetStatus(epic, story, status);
+    await syncTransition(epic, story, status);
+  };
 }
