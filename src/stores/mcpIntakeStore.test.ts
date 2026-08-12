@@ -133,6 +133,29 @@ describe("mcpIntakeStore.fetchTicket — failure is swallowed, never throws", ()
   });
 });
 
+describe("mcpIntakeStore.fetchTicket — a hung agent is bounded by a timeout", () => {
+  it("fails-closed when the agent never returns: resolves null, reportErrors, and resets importing", async () => {
+    vi.useFakeTimers();
+    try {
+      // An agent that never resolves — models a wedged `claude`/MCP server.
+      useMcpIntakeStore.getState().__setRunFetchAgent(() => new Promise<string>(() => {}));
+
+      const p = useMcpIntakeStore.getState().fetchTicket("/project", "TCK-1");
+      // Button is spinning while the fetch is in flight.
+      expect(useMcpIntakeStore.getState().importing).toBe(true);
+
+      // Advance past the timeout — the race should reject and unwedge the flow.
+      await vi.advanceTimersByTimeAsync(120_000);
+
+      await expect(p).resolves.toBeNull();
+      expect(reportErrorStub).toHaveBeenCalledWith("intake: fetch failed", expect.any(Error));
+      expect(useMcpIntakeStore.getState().importing).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("mcpIntakeStore.fetchTicket — secrets never leak into the prompt/args", () => {
   it("the spawned prompt never contains the secret value — secrets travel only via env", async () => {
     let capturedPrompt = "";

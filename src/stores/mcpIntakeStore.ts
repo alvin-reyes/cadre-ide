@@ -27,9 +27,27 @@ export type RunFetchAgent = (args: {
   cwd: string;
 }) => Promise<string>;
 
+// Upper bound on how long a single ticket fetch may run before we give up —
+// matches the CLI fetch path's execFile timeout. fetchTicket is AWAITED behind
+// an interactive control (importing:true disables the input+button), so an
+// unbounded hang would leave the Import button stuck spinning with no recovery.
+const FETCH_AGENT_TIMEOUT_MS = 120_000;
+
+/** Reject with `label` if `p` doesn't settle within `ms`, always clearing the
+ *  timer so no dangling handle survives when `p` wins the race. */
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(label)), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
+}
+
 /** Real implementation: spawn a headless `claude -p` agent with ONLY the
  *  tracker's MCP tools allowed. Mirrors mcpTrackerStore's defaultRunSyncAgent
- *  spawn+capture+waitForExit pattern. */
+ *  spawn+capture+waitForExit pattern, but bounds the wait so a hung agent or
+ *  MCP server can't wedge the caller — on timeout we kill the pty (so the
+ *  spawned process doesn't leak) and throw. */
 const defaultRunFetchAgent: RunFetchAgent = async ({ prompt, mcpConfigPath, env, serverKey, cwd }) => {
   let out = "";
   const deps = tauriOrchestratorDeps(cwd, (chunk) => {
@@ -41,7 +59,13 @@ const defaultRunFetchAgent: RunFetchAgent = async ({ prompt, mcpConfigPath, env,
     cwd,
     env,
   });
-  await waitForExit(ptyId);
+  try {
+    await withTimeout(waitForExit(ptyId), FETCH_AGENT_TIMEOUT_MS, "intake: fetch agent timed out");
+  } catch (e) {
+    // Kill the pty so a timed-out `claude`/MCP process doesn't linger.
+    await deps.killAgent?.(ptyId).catch(() => {});
+    throw e;
+  }
   return out;
 };
 
@@ -80,13 +104,22 @@ export const useMcpIntakeStore = create<McpIntakeState>((set) => ({
         return null;
       }
 
-      const raw = await runFetchAgent({
-        prompt: buildFetchPrompt(ticketRef),
-        mcpConfigPath: env.mcpConfigPath,
-        env: env.env,
-        serverKey: env.serverKey,
-        cwd: root,
-      });
+      // Bound the wait around the runFetchAgent call itself (not only inside
+      // defaultRunFetchAgent) so a hung agent of ANY implementation still
+      // fails-closed here — the rejection lands in the catch below (reportError
+      // + null) and the finally resets importing, so the Import button can't
+      // stay stuck spinning.
+      const raw = await withTimeout(
+        runFetchAgent({
+          prompt: buildFetchPrompt(ticketRef),
+          mcpConfigPath: env.mcpConfigPath,
+          env: env.env,
+          serverKey: env.serverKey,
+          cwd: root,
+        }),
+        FETCH_AGENT_TIMEOUT_MS,
+        "intake: fetch agent timed out",
+      );
 
       return parseTicket(raw);
     } catch (e) {
