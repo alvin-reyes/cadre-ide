@@ -13,6 +13,7 @@
  *   cadre shard [projectDir]                 SM turn → the full lifecycle backlog (Draft)
  *   cadre approve [projectDir] [--all|<e.s>…] set stories Draft → Approved
  *   cadre build "<brief>" [projectDir] [--auto]  one-shot: plan → shard → approve → run
+ *   cadre intake <ticketId> [projectDir] [--build]  fetch a tracker ticket → brief → plan
  *   cadre run [projectDir] [--auto]          dispatch every Approved story through the full flow
  *   cadre status [projectDir]                print the board (id · title · status)
  *   cadre connect <preset> [projectDir] [--token <t>] [--field K=V…] [--as-tracker]
@@ -61,6 +62,9 @@ import {
   resolveTrackerEnvNode,
 } from "./mcp/connectionsNode";
 import { syncStoryNode, realRunSyncAgentNode, syncingSetStatus } from "./mcp/trackerSyncNode";
+import { fetchTicketNode } from "./mcp/intakeNode";
+import { ticketToBrief } from "../lib/integrations/mcpIntake";
+import { trackerFromFile, trackerToFile, emptyTrackerFile, recordEpicLink } from "../lib/integrations/mcpTracker";
 import {
   parseFieldFlags,
   collectSecrets,
@@ -639,6 +643,81 @@ async function cmdBuild(brief: string, projectDir: string, auto: boolean): Promi
   return cmdRun(projectDir, auto);
 }
 
+/** Path to the epic↔ticket / task-id link file (mirrors trackerSyncNode.ts's
+ *  own local `mcpTrackerPath`; kept as a small local duplicate here rather
+ *  than exporting cross-module coupling for one path constant). */
+const mcpTrackerLinkPath = (root: string) => `${root}/.cadre/mcp-tracker.json`;
+
+/**
+ * `cadre intake <ticketId> [projectDir] [--build]` — fetch a tracker ticket
+ * via the designated tracker MCP connection, turn it into a brief, and hand
+ * it to `cmdPlan`. Unlike tracker SYNC (downstream of truth — swallows every
+ * failure so a hiccup can never fail `cadre run`), intake is LOUD: no
+ * tracker connection, or a fetch/parse failure, exits 1 immediately — there
+ * is no plan yet to protect. Recording the epic↔ticket link, by contrast,
+ * runs AFTER the plan succeeds and is best-effort: a tracker hiccup there
+ * must never undo a plan that already landed.
+ */
+async function cmdIntake(ticketRef: string, projectDir: string, opts: { build: boolean }): Promise<number> {
+  const root = resolve(projectDir);
+  const io = realNodeIo();
+
+  let ticket;
+  try {
+    ticket = await fetchTicketNode(io, root, ticketRef);
+  } catch (e) {
+    log(`cadre intake: ${(e as Error)?.message ?? String(e)}`);
+    return 1;
+  }
+
+  log(`[cadre] imported ${ticket.id}: ${ticket.title}`);
+
+  const planCode = await cmdPlan(ticketToBrief(ticket), projectDir);
+  if (planCode !== 0) return planCode;
+
+  // Best-effort epic↔ticket link — the plan already succeeded, so a tracker
+  // hiccup here must never fail the intake.
+  try {
+    const env = await resolveTrackerEnvNode(io, root);
+    if (env) {
+      const path = mcpTrackerLinkPath(root);
+      let file: ReturnType<typeof emptyTrackerFile> | null = null;
+      try {
+        const raw = await io.readFile(path);
+        if (raw === null) {
+          file = emptyTrackerFile(env.serverKey);
+        } else {
+          const parsed = trackerFromFile(raw);
+          if (parsed === null) {
+            log("[cadre] warning: .cadre/mcp-tracker.json is present but malformed — skipping epic link");
+          } else {
+            file = parsed;
+          }
+        }
+      } catch (e) {
+        log(`[cadre] warning: could not read .cadre/mcp-tracker.json — skipping epic link: ${String(e)}`);
+      }
+      if (file) {
+        const linked = recordEpicLink(file, 1, { ticketId: ticket.id, url: ticket.url });
+        await io.writeFile(path, trackerToFile(linked));
+      }
+    }
+  } catch (e) {
+    log(`[cadre] warning: could not record epic link: ${String(e)}`);
+  }
+
+  if (!opts.build) return 0;
+
+  log("");
+  let code = await cmdShard(projectDir);
+  if (code !== 0) return code;
+  log("");
+  code = await cmdApprove(projectDir, true, []);
+  if (code !== 0) return code;
+  log("");
+  return cmdRun(projectDir, true);
+}
+
 async function cmdStatus(projectDir: string): Promise<number> {
   const root = resolve(projectDir);
   const board = await readBoard(root);
@@ -757,6 +836,8 @@ function usage(): void {
   log("  cadre shard [projectDir]                     SM → the full lifecycle backlog (Draft)");
   log("  cadre approve [projectDir] [--all | <e.s>…]  set stories Draft → Approved");
   log('  cadre build "<brief>" [projectDir] [--auto]  one-shot: plan → shard → approve → run');
+  log("  cadre intake <ticketId> [projectDir] [--build]");
+  log("                                                fetch a tracker ticket → brief → plan (+ shard/approve/run)");
   log("  cadre run [projectDir] [--auto]              run every Approved story through the full lifecycle");
   log("  cadre status [projectDir]                    print the board (id · title · status)");
   log("  cadre connect <preset> [projectDir] [--token <t>] [--field K=V…] [--as-tracker]");
@@ -791,6 +872,15 @@ async function main(): Promise<void> {
     code = await cmdApprove(dirArgs[0] ?? cwd, all, idArgs);
   } else if (cmd === "build") {
     code = await cmdBuild(positional[0] ?? "", positional[1] ?? cwd, auto);
+  } else if (cmd === "intake") {
+    const build = rest.includes("--build");
+    const ticketRef = positional[0];
+    if (!ticketRef) {
+      log("cadre intake: a ticket id is required — cadre intake <ticketId> [projectDir] [--build]");
+      code = 1;
+    } else {
+      code = await cmdIntake(ticketRef, positional[1] ?? cwd, { build });
+    }
   } else if (cmd === "connect") {
     // --token/--field/--command/--args/--url all take a value, so they can't
     // use the generic `positional` filter above (their VALUES would leak in
