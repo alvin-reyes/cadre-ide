@@ -70,13 +70,17 @@ function writeWithParents(fs: MockFs, path: string, content: string): void {
  * --allowedTools mcp__<serverKey>__* --mcp-config <...>/tracker.mcp.json -p
  * <prompt>`, and mcpTracker.parseSyncResult, which requires the last JSON
  * block in the output to contain a taskId).
+ *
+ * Keyed ONLY on the `--mcp-config` path containing `tracker.mcp.json` — the
+ * real sync agent always passes that flag. A prior looser variant also
+ * matched any invocation with an `mcp__*` allowed-tool plus `-p`, which is
+ * redundant here and a misroute trap for future non-tracker agents that also
+ * use MCP tools (e.g. Slice 3).
  */
 function isSyncAgentInvocation(command: unknown, cliArgs: string[]): boolean {
   if (command !== "claude") return false;
   const joined = cliArgs.join("\n");
-  const hasTrackerMcpConfig = /--mcp-config/.test(joined) && /tracker\.mcp\.json/.test(joined);
-  const hasAllowedToolsMcp = cliArgs.some((a) => a.startsWith("mcp__")) && cliArgs.includes("-p");
-  return hasTrackerMcpConfig || hasAllowedToolsMcp;
+  return /--mcp-config/.test(joined) && /tracker\.mcp\.json/.test(joined);
 }
 
 function stateFilePath(root: string, epic: number, story: number): string {

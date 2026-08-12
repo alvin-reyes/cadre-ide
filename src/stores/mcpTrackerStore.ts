@@ -76,17 +76,43 @@ const inflight = new Map<string, Promise<void>>();
 
 const mcpTrackerPath = (root: string) => `${root}/.cadre/mcp-tracker.json`;
 
-/** Read `.cadre/mcp-tracker.json`, tolerating a missing or malformed file by
- *  falling back to an empty tracker file owned by `serverKey`. */
+/** True when a `read_file` rejection string indicates the file genuinely
+ *  doesn't exist (Tauri's `read_file` command rejects with a string error;
+ *  see src-tauri/src/lib.rs `read_file`, which formats
+ *  `std::fs::read_to_string` errors as `Failed to read {path}: {os error}`).
+ *  Anything else (permission denied, transient I/O, etc.) is NOT a
+ *  not-found error and must not be treated as "file absent". */
+function isFileNotFoundError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  const lower = msg.toLowerCase();
+  return lower.includes("no such file or directory") || lower.includes("os error 2");
+}
+
+/** Sentinel thrown by readTrackerFile when the read failed for a reason
+ *  OTHER than the file being genuinely absent (transient I/O, permissions,
+ *  malformed-but-present file). Callers must abort the sync without writing
+ *  — falling back to `emptyTrackerFile` here would silently drop every other
+ *  story's id when the write lands, per FIX I1. */
+class TrackerReadAbort extends Error {}
+
+/** Read `.cadre/mcp-tracker.json`, tolerating ONLY a genuinely-missing file
+ *  by falling back to an empty tracker file owned by `serverKey`. Any other
+ *  read failure (transient I/O, permissions) or a malformed-but-present file
+ *  throws TrackerReadAbort — the caller must abort the sync rather than
+ *  overwrite a file that may hold other stories' task ids. */
 async function readTrackerFile(root: string, serverKey: string): Promise<McpTrackerFile> {
-  let raw: string | null = null;
+  let raw: string;
   try {
     raw = await invoke<string>("read_file", { path: mcpTrackerPath(root) });
-  } catch {
-    raw = null;
+  } catch (e) {
+    if (isFileNotFoundError(e)) return emptyTrackerFile(serverKey);
+    throw new TrackerReadAbort(`mcp tracker: read failed (not a missing-file error): ${String(e)}`);
   }
-  if (raw === null) return emptyTrackerFile(serverKey);
-  return trackerFromFile(raw) ?? emptyTrackerFile(serverKey);
+  const parsed = trackerFromFile(raw);
+  if (parsed === null) {
+    throw new TrackerReadAbort("mcp tracker: existing file is present but malformed");
+  }
+  return parsed;
 }
 
 async function writeTrackerFile(root: string, file: McpTrackerFile): Promise<void> {

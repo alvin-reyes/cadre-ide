@@ -38,6 +38,15 @@ describe("mcpTracker core", () => {
     expect(() => parseSyncResult('{"url":"x"}')).toThrow();   // missing taskId
   });
 
+  it("parseSyncResult handles arbitrarily nested JSON objects (multi-level brace nesting)", () => {
+    expect(parseSyncResult('{"taskId":"T-9","meta":{"a":{"b":1}}}')).toEqual({ taskId: "T-9" });
+    // Nested object appearing before the real reply must not stop the scan
+    // from finding the trailing (actual) result.
+    expect(
+      parseSyncResult('context: {"unrelated":{"nested":true}}\nresult: {"taskId":"T-10","url":"https://x/T-10"}'),
+    ).toEqual({ taskId: "T-10", url: "https://x/T-10" });
+  });
+
   it("tracker file round-trips; malformed → null; empty helper", () => {
     const f = emptyTrackerFile("clickup");
     expect(f).toEqual({ version: 1, connectionId: "clickup", tasks: {} });

@@ -31,13 +31,20 @@ const FAKE_ENV = {
   serverKey: "jira",
 };
 
-/** In-memory fake filesystem keyed by path, backing the invoke mock. */
+/** In-memory fake filesystem keyed by path, backing the invoke mock. A
+ *  missing path rejects with a message shaped like the REAL Tauri `read_file`
+ *  command's not-found error (see src-tauri/src/lib.rs: `format!("Failed to
+ *  read {}: {}", resolved, e)` wrapping `std::fs::read_to_string`'s io::Error,
+ *  whose Display for ENOENT is "No such file or directory (os error 2)") so
+ *  readTrackerFile's not-found detection (FIX I1) is exercised realistically. */
 function makeFsStub(initial: Record<string, string> = {}) {
   const files = new Map<string, string>(Object.entries(initial));
   invokeStub.mockImplementation((cmd: string, args: { path?: string; content?: string }) => {
     if (cmd === "read_file") {
       const content = files.get(args.path!);
-      if (content === undefined) return Promise.reject(new Error("not found"));
+      if (content === undefined) {
+        return Promise.reject(new Error(`Failed to read ${args.path}: No such file or directory (os error 2)`));
+      }
       return Promise.resolve(content);
     }
     if (cmd === "write_text_file") {
@@ -246,5 +253,67 @@ describe("mcpTrackerStore.syncStory — serialization across concurrent calls", 
     expect(parsed.tasks["1.2"].taskId).toBe("T-A");
     expect(parsed.tasks["1.3"].taskId).toBe("T-B");
     expect(Object.keys(parsed.tasks).sort()).toEqual(["1.2", "1.3"]);
+  });
+});
+
+describe("mcpTrackerStore.syncStory — transient read failure never wipes the id-map (FIX I1)", () => {
+  it("a genuinely-missing file (`No such file or directory`) is still treated as empty — sync proceeds and creates", async () => {
+    const files = makeFsStub();
+    const fake: RunSyncAgent = vi.fn(async () => JSON.stringify({ taskId: "T-NEW" }));
+    useMcpTrackerStore.getState().__setRunSyncAgent(fake);
+
+    await useMcpTrackerStore.getState().syncStory("/project", story, "Done");
+
+    expect(fake).toHaveBeenCalledTimes(1);
+    expect(reportErrorStub).not.toHaveBeenCalled();
+    const written = files.get("/project/.cadre/mcp-tracker.json");
+    expect(written).toBeDefined();
+    expect(JSON.parse(written!).tasks["1.2"].taskId).toBe("T-NEW");
+  });
+
+  it("a NON-not-found read rejection aborts the sync: no agent call, no write, prior content untouched, error reported", async () => {
+    const existingContent = JSON.stringify({
+      version: 1,
+      connectionId: "jira",
+      tasks: { "9.9": { taskId: "T-OTHER" } },
+    });
+    const files = makeFsStub({ "/project/.cadre/mcp-tracker.json": existingContent });
+    // Override just this test's read_file behavior to simulate a transient
+    // failure (e.g. permission denied) rather than a missing file.
+    invokeStub.mockImplementation((cmd: string, args: { path?: string; content?: string }) => {
+      if (cmd === "read_file") {
+        return Promise.reject(new Error(`Failed to read ${args.path}: permission denied`));
+      }
+      if (cmd === "write_text_file") {
+        files.set(args.path!, args.content!);
+        return Promise.resolve(undefined);
+      }
+      return Promise.reject(new Error(`unexpected invoke: ${cmd}`));
+    });
+
+    const fake: RunSyncAgent = vi.fn();
+    useMcpTrackerStore.getState().__setRunSyncAgent(fake);
+
+    await expect(useMcpTrackerStore.getState().syncStory("/project", story, "Done")).resolves.toBeUndefined();
+
+    expect(fake).not.toHaveBeenCalled();
+    expect(reportErrorStub).toHaveBeenCalledWith("mcp tracker: sync", expect.any(Error));
+    const writes = invokeStub.mock.calls.filter((c: unknown[]) => c[0] === "write_text_file");
+    expect(writes).toHaveLength(0);
+    expect(files.get("/project/.cadre/mcp-tracker.json")).toBe(existingContent);
+  });
+
+  it("a present-but-malformed tracker file also aborts (no write) rather than being silently overwritten", async () => {
+    const files = makeFsStub({ "/project/.cadre/mcp-tracker.json": "{not valid json" });
+    const fake: RunSyncAgent = vi.fn();
+    useMcpTrackerStore.getState().__setRunSyncAgent(fake);
+
+    await expect(useMcpTrackerStore.getState().syncStory("/project", story, "Done")).resolves.toBeUndefined();
+
+    expect(fake).not.toHaveBeenCalled();
+    expect(reportErrorStub).toHaveBeenCalledWith("mcp tracker: sync", expect.any(Error));
+    const writes = invokeStub.mock.calls.filter((c: unknown[]) => c[0] === "write_text_file");
+    expect(writes).toHaveLength(0);
+    expect(files.get("/project/.cadre/mcp-tracker.json")).toBe("{not valid json");
   });
 });

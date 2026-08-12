@@ -65,7 +65,7 @@ export function buildSyncPrompt(intent: SyncIntent): string {
   prompt += `\n\nSet the task status to: ${intent.status}`;
 
   if (intent.verifyCmd) {
-    prompt += `\n\nAdd a comment to the Done field: ✅ Verified by Cadre — \`${intent.verifyCmd}\` passed`;
+    prompt += `\n\nAdd a comment: ✅ Verified by Cadre — \`${intent.verifyCmd}\` passed`;
   }
 
   if (intent.existing?.taskId) {
@@ -80,38 +80,97 @@ export function buildSyncPrompt(intent: SyncIntent): string {
 }
 
 /**
+ * Find every top-level (outermost) balanced-brace `{...}` span in `raw`,
+ * in order of appearance. Unlike a regex with fixed nesting depth, this
+ * handles arbitrarily nested objects (e.g. `{"taskId":"T","meta":{"a":{"b":1}}}`)
+ * by tracking brace depth. Braces inside JSON string literals (which may
+ * contain `{`/`}` characters, e.g. in prose values) are ignored via a minimal
+ * string-aware scan so they don't desync the depth count.
+ */
+function findBalancedJsonObjects(raw: string): string[] {
+  const results: string[] = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (ch === "{") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === "}") {
+      if (depth > 0) {
+        depth--;
+        if (depth === 0 && start >= 0) {
+          results.push(raw.slice(start, i + 1));
+          start = -1;
+        }
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
  * Parse a sync result from MCP response.
- * Extracts the last JSON block from prose and requires a non-empty taskId.
- * Throws if no taskId is found.
+ * Scans for the LAST complete, top-level balanced-brace JSON object in the
+ * string (handling arbitrary nesting depth), then requires it to parse as a
+ * JSON object with a non-empty string `taskId`. Throws if no such object is
+ * found.
  */
 export function parseSyncResult(raw: string): { taskId: string; url?: string } {
-  // Find the last JSON block in the string
-  const jsonMatches = raw.match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g);
-  if (!jsonMatches || jsonMatches.length === 0) {
+  const candidates = findBalancedJsonObjects(raw);
+  if (candidates.length === 0) {
     throw new Error("No JSON object found in sync result");
   }
 
-  const jsonStr = jsonMatches[jsonMatches.length - 1];
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(jsonStr);
-  } catch (e) {
-    throw new Error(`Failed to parse JSON from sync result: ${e}`);
+  // Try candidates from last to first — the model's actual answer is
+  // typically the final JSON block; earlier braces could be unrelated prose.
+  let lastParseError: unknown = null;
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    const jsonStr = candidates[i];
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(jsonStr);
+    } catch (e) {
+      lastParseError = e;
+      continue;
+    }
+
+    if (typeof parsed !== "object" || parsed === null) continue;
+
+    const result = parsed as Record<string, unknown>;
+    if (!result.taskId || typeof result.taskId !== "string" || result.taskId.trim() === "") continue;
+
+    return {
+      taskId: result.taskId,
+      url: typeof result.url === "string" ? result.url : undefined,
+    };
   }
 
-  if (typeof parsed !== "object" || parsed === null) {
-    throw new Error("Sync result is not a JSON object");
+  if (lastParseError) {
+    throw new Error(`Failed to parse JSON from sync result: ${lastParseError}`);
   }
-
-  const result = parsed as Record<string, unknown>;
-  if (!result.taskId || typeof result.taskId !== "string" || result.taskId.trim() === "") {
-    throw new Error("Sync result missing or empty taskId");
-  }
-
-  return {
-    taskId: result.taskId,
-    url: typeof result.url === "string" ? result.url : undefined,
-  };
+  throw new Error("Sync result missing or empty taskId");
 }
 
 /**
