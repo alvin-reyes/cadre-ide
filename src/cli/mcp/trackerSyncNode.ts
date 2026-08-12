@@ -8,6 +8,12 @@
  *
  * Sync is downstream of truth: any failure here (resolve, read, agent, parse,
  * write) is logged and swallowed — it must never fail `cadre run`.
+ *
+ * Unlike the desktop store's fire-and-forget sync, the CLI AWAITS each sync in
+ * the sequential run loop — so it is BOUNDED: `realRunSyncAgentNode` caps the
+ * headless `claude` agent with a hard timeout (a hung MCP tool must never stall
+ * the whole run; a timeout rejects → syncStoryNode logs a warning and returns).
+ * The bounded round-trip per transition is a deliberate divergence for the CLI.
  */
 
 import { execFile } from "node:child_process";
@@ -27,6 +33,12 @@ import type { Status } from "../../lib/engine/status";
 import type { NodeIo } from "./connectionsNode";
 
 const mcpTrackerPath = (root: string) => `${root}/.cadre/mcp-tracker.json`;
+
+/** Hard cap on a single headless sync agent (2 min — generous for a 1-2
+ *  tool-call sync incl. npx MCP server spin-up). On timeout, execFile kills the
+ *  child (SIGKILL) and rejects; the rejection is caught by syncStoryNode's outer
+ *  try/catch → logged warning, no hang, never thrown out of the run. */
+const SYNC_AGENT_TIMEOUT_MS = 120_000;
 
 // ---------------------------------------------------------------------------
 // Injectable agent runner
@@ -49,7 +61,13 @@ export function realRunSyncAgentNode(): RunSyncAgentNode {
       execFile(
         "claude",
         ["-p", prompt, "--mcp-config", mcpConfigPath, "--allowedTools", `mcp__${serverKey}__*`],
-        { cwd, env: { ...process.env, ...env }, maxBuffer: 16 * 1024 * 1024 },
+        {
+          cwd,
+          env: { ...process.env, ...env },
+          maxBuffer: 16 * 1024 * 1024,
+          timeout: SYNC_AGENT_TIMEOUT_MS,
+          killSignal: "SIGKILL",
+        },
         (err, stdout, stderr) => {
           if (err) {
             reject(new Error(`sync agent exited non-zero: ${String(stderr || err).trim()}`));

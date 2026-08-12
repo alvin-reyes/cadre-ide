@@ -231,4 +231,34 @@ describe("syncStoryNode — agent failure never throws or corrupts state", () =>
 
     errSpy.mockRestore();
   });
+
+  it("a HUNG agent that times out (SIGKILL-style rejection): no throw, no write, prior id-map preserved", async () => {
+    // realRunSyncAgentNode caps the child with `timeout`/`killSignal:"SIGKILL"`;
+    // on timeout execFile rejects with an error carrying .killed/.signal. Model
+    // that rejection to prove syncStoryNode's outer try/catch turns a timeout
+    // into a logged warning — no hang, no corruption of the shared id-map.
+    const existingContent = JSON.stringify({
+      version: 1,
+      connectionId: "jira",
+      tasks: { "9.9": { taskId: "T-OTHER" } },
+    });
+    const io = fakeIo({ [trackerFilePath]: existingContent });
+    const timeoutErr = Object.assign(new Error("Command failed: claude ... "), {
+      killed: true,
+      signal: "SIGKILL",
+      code: null,
+    });
+    const runSyncAgent: RunSyncAgentNode = vi.fn().mockRejectedValue(timeoutErr);
+    const deps = makeDeps({ runSyncAgent });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(syncStoryNode(io, root, story, "Done", undefined, deps)).resolves.toBeUndefined();
+
+    expect(runSyncAgent).toHaveBeenCalledTimes(1);
+    // Prior id-map is untouched — the timeout wrote nothing.
+    expect(io.files.get(trackerFilePath)).toBe(existingContent);
+    expect(errSpy).toHaveBeenCalled();
+
+    errSpy.mockRestore();
+  });
 });
