@@ -11,6 +11,7 @@ import { createMockInvoke } from "./mockBackend";
 import type { PlanApproval } from "../engine/planApproval";
 import type { PtyEvent } from "./demoContent";
 import { parseSyncResult } from "../integrations/mcpTracker";
+import { parseTicket } from "../integrations/mcpIntake";
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
@@ -105,6 +106,73 @@ describe("mockBackend command handlers", () => {
           .join("");
         expect(output).not.toContain("MOCK-123");
         expect(() => parseSyncResult(output)).toThrow();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  describe("create_pty tracker FETCH agent (mcpIntakeStore demo mock — 'Import from tracker')", () => {
+    it("streams a {id,title,...} ticket that parseTicket can parse, then exits 0 — NOT the sync reply", async () => {
+      // Mirrors mcpIntakeStore.defaultRunFetchAgent's spawn: claude --allowedTools
+      // mcp__<key>__* --mcp-config <root>/.cadre/tracker.mcp.json -p <fetch prompt>.
+      // Same --mcp-config path as the sync agent — the two must be told apart by
+      // the prompt content (buildFetchPrompt's "Fetch the ticket" marker), not the
+      // config path, or this would misfire to the sync agent's {"taskId":...} reply.
+      vi.useFakeTimers();
+      try {
+        const events: PtyEvent[] = [];
+        await invoke("create_pty", {
+          rows: 24, cols: 80,
+          cwd: ROOT,
+          command: "claude",
+          args: [
+            "--allowedTools", "mcp__github__*",
+            "--mcp-config", `${ROOT}/.cadre/tracker.mcp.json`,
+            "-p",
+            "You have read-only access to a tracker via MCP tools. Fetch the ticket/issue with id/key `MOCK-1`. Do NOT modify anything. Reply with ONLY a JSON object: {\"id\":\"…\",\"title\":\"…\",\"description\":\"…\",\"acceptanceCriteria\":\"…\",\"url\":\"…\"} (omit unknown optional fields).",
+          ],
+          onEvent: { onmessage: (e: PtyEvent) => events.push(e) },
+        });
+        await vi.runAllTimersAsync();
+
+        const output = events
+          .filter((e): e is Extract<PtyEvent, { type: "output" }> => e.type === "output")
+          .map((e) => new TextDecoder().decode(new Uint8Array(e.data)))
+          .join("");
+        expect(output).not.toContain("taskId");
+        const ticket = parseTicket(output);
+        expect(ticket.id).toBe("MOCK-1");
+        expect(ticket.title).toBe("Imported demo ticket");
+        expect(events.at(-1)).toEqual({ type: "exit", code: 0 });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("a sync-agent invocation (no fetch marker in the prompt) still yields the taskId reply — no cross-wiring", async () => {
+      vi.useFakeTimers();
+      try {
+        const events: PtyEvent[] = [];
+        await invoke("create_pty", {
+          rows: 24, cols: 80,
+          cwd: ROOT,
+          command: "claude",
+          args: [
+            "--allowedTools", "mcp__github__*",
+            "--mcp-config", `${ROOT}/.cadre/tracker.mcp.json`,
+            "-p", "You have access to tracker MCP tools. Ensure a task exists for: [1.4] Add task feature\n\nSet the task status to: InProgress",
+          ],
+          onEvent: { onmessage: (e: PtyEvent) => events.push(e) },
+        });
+        await vi.runAllTimersAsync();
+
+        const output = events
+          .filter((e): e is Extract<PtyEvent, { type: "output" }> => e.type === "output")
+          .map((e) => new TextDecoder().decode(new Uint8Array(e.data)))
+          .join("");
+        expect(parseSyncResult(output)).toEqual({ taskId: "MOCK-123", url: "https://demo/MOCK-123" });
+        expect(() => parseTicket(output)).toThrow();
       } finally {
         vi.useRealTimers();
       }

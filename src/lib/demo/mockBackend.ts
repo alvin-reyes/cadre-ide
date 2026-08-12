@@ -83,6 +83,34 @@ function isSyncAgentInvocation(command: unknown, cliArgs: string[]): boolean {
   return /--mcp-config/.test(joined) && /tracker\.mcp\.json/.test(joined);
 }
 
+/**
+ * Detect the MCP tracker FETCH agent's `create_pty` invocation ("Import from
+ * tracker" — mcpIntakeStore.defaultRunFetchAgent) so the mock can reply with a
+ * parseable ticket (see mcpIntake.parseTicket) instead of either the generic
+ * build-agent transcript or the SYNC agent's `{"taskId":...}` reply.
+ *
+ * The fetch agent resolves the SAME `.cadre/tracker.mcp.json` as the sync
+ * agent (connectionsStore.resolveTrackerEnv is shared by both — see
+ * mcpIntakeStore.defaultRunFetchAgent vs mcpTrackerStore.defaultRunSyncAgent),
+ * so `--mcp-config ...tracker.mcp.json` alone does NOT tell them apart —
+ * `isSyncAgentInvocation` would misfire on a fetch invocation and hand it the
+ * sync reply, which lacks `id`/`title` and makes `parseTicket` throw.
+ * Distinguish them by the `-p` PROMPT instead: `buildFetchPrompt`
+ * (src/lib/integrations/mcpIntake.ts) always contains "Fetch the ticket", a
+ * substring `buildSyncPrompt` (src/lib/integrations/mcpTracker.ts) never
+ * produces. The dispatcher below checks this detector BEFORE
+ * `isSyncAgentInvocation` so the two stay mutually exclusive.
+ */
+function isFetchAgentInvocation(command: unknown, cliArgs: string[]): boolean {
+  if (command !== "claude") return false;
+  const joined = cliArgs.join("\n");
+  return (
+    /--mcp-config/.test(joined) &&
+    /tracker\.mcp\.json/.test(joined) &&
+    /Fetch the ticket/.test(joined)
+  );
+}
+
 function stateFilePath(root: string, epic: number, story: number): string {
   return `${root}/.cadre/state/${epic}.${story}.json`;
 }
@@ -412,15 +440,26 @@ export function createMockInvoke(fs: MockFs) {
         // Demo fidelity: the tracker sync agent (mcpTrackerStore) needs a
         // parseable `{"taskId":...}` reply in its output, not the generic
         // build-agent transcript, or parseSyncResult throws and the sync is
-        // swallowed as a (silent, in the demo) failure.
-        const lines = isSyncAgentInvocation(args.command, cliArgs)
+        // swallowed as a (silent, in the demo) failure. The tracker FETCH
+        // agent ("Import from tracker", mcpIntakeStore) needs a parseable
+        // `{"id":...,"title":...}` ticket instead — checked FIRST since both
+        // agents share the same `tracker.mcp.json` --mcp-config path (see
+        // isFetchAgentInvocation's docstring for why prompt content, not the
+        // config path, is what distinguishes them).
+        const lines = isFetchAgentInvocation(args.command, cliArgs)
           ? [
               "Connecting to tracker MCP…",
-              "Resolving existing task…",
-              "Updating task status…",
-              '{"taskId":"MOCK-123","url":"https://demo/MOCK-123"}',
+              "Fetching ticket…",
+              '{"id":"MOCK-1","title":"Imported demo ticket","description":"A demo ticket imported from the tracker.","acceptanceCriteria":"It works."}',
             ]
-          : buildTranscript(cwdLabel);
+          : isSyncAgentInvocation(args.command, cliArgs)
+            ? [
+                "Connecting to tracker MCP…",
+                "Resolving existing task…",
+                "Updating task status…",
+                '{"taskId":"MOCK-123","url":"https://demo/MOCK-123"}',
+              ]
+            : buildTranscript(cwdLabel);
 
         // Return the id immediately (Promise already resolved), THEN start the
         // stream. This mirrors the real flow where create_pty resolves with the

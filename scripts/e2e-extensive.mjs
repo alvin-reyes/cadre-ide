@@ -167,6 +167,36 @@ async function main() {
 
     await click(/Close/).catch(() => {}); await page.keyboard.press("Escape").catch(() => {});
 
+    // ── Import from tracker — PlanningStudio composer pre-fill ──
+    // Requires a tracker to already be designated (previous section) — the
+    // "Import from tracker" control only renders when trackerConnection(...)
+    // is non-null (PlanningStudio.tsx). Navigate: Build mode → Plan phase
+    // (PLAN is always unlocked, per CadreApp.tsx's `unlocked` map) — reachable
+    // even though this run entered via `?demo=1` (which lands on EXECUTE).
+    section("PlanningStudio — Import from tracker pre-fills the composer");
+    await click(/^Build$/); await page.waitForTimeout(400);
+    await click(/^Plan$/);
+    const composerReady = await until(async () => /Import from tracker/i.test(await body()), 5000, 300);
+    step("Planning composer renders with the Import-from-tracker control", composerReady);
+    const ticketRefField = page.getByLabel(/Ticket id to import/i).first();
+    let importedOk = false;
+    if (composerReady && (await ticketRefField.count())) {
+      await ticketRefField.fill("MOCK-1");
+      await click(/Import from tracker/i);
+      // `:visible` — PlanningStudio's composer, MaintainView's IntakeRail/
+      // PromptsRail/ThoughtsDock textareas, etc. all stay mounted (hidden via
+      // `display:none`) across mode switches, so an unscoped `textarea`
+      // locator could resolve to the wrong (hidden) element; only the
+      // composer is actually visible once we're on Build → Plan.
+      importedOk = await until(
+        async () => /Imported demo ticket/.test(await page.locator("textarea:visible").first().inputValue().catch(() => "")),
+        8000,
+        400
+      );
+    }
+    step("composer (draft) is pre-filled with the imported ticket", importedOk);
+    await shot("ext-12-intake.png");
+
     await browser.close();
 
     // ── Verdict ──
