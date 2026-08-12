@@ -3,6 +3,8 @@
  * Builds sync intents, parses MCP responses, and manages tracker file state.
  */
 
+import { findBalancedJsonObjects, lastJsonObject } from "./jsonScan";
+
 export interface TrackerStory {
   epic: number;
   story: number;
@@ -80,97 +82,29 @@ export function buildSyncPrompt(intent: SyncIntent): string {
 }
 
 /**
- * Find every top-level (outermost) balanced-brace `{...}` span in `raw`,
- * in order of appearance. Unlike a regex with fixed nesting depth, this
- * handles arbitrarily nested objects (e.g. `{"taskId":"T","meta":{"a":{"b":1}}}`)
- * by tracking brace depth. Braces inside JSON string literals (which may
- * contain `{`/`}` characters, e.g. in prose values) are ignored via a minimal
- * string-aware scan so they don't desync the depth count.
- */
-function findBalancedJsonObjects(raw: string): string[] {
-  const results: string[] = [];
-  let depth = 0;
-  let start = -1;
-  let inString = false;
-  let escaped = false;
-
-  for (let i = 0; i < raw.length; i++) {
-    const ch = raw[i];
-
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (ch === "\\") {
-        escaped = true;
-      } else if (ch === '"') {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (ch === '"') {
-      inString = true;
-      continue;
-    }
-
-    if (ch === "{") {
-      if (depth === 0) start = i;
-      depth++;
-    } else if (ch === "}") {
-      if (depth > 0) {
-        depth--;
-        if (depth === 0 && start >= 0) {
-          results.push(raw.slice(start, i + 1));
-          start = -1;
-        }
-      }
-    }
-  }
-
-  return results;
-}
-
-/**
  * Parse a sync result from MCP response.
  * Scans for the LAST complete, top-level balanced-brace JSON object in the
- * string (handling arbitrary nesting depth), then requires it to parse as a
+ * string (handling arbitrary nesting depth, string-aware) that parses as a
  * JSON object with a non-empty string `taskId`. Throws if no such object is
  * found.
  */
 export function parseSyncResult(raw: string): { taskId: string; url?: string } {
-  const candidates = findBalancedJsonObjects(raw);
-  if (candidates.length === 0) {
-    throw new Error("No JSON object found in sync result");
-  }
+  const result = lastJsonObject<Record<string, unknown>>(
+    raw,
+    (v) => typeof (v as any)?.taskId === "string" && (v as any).taskId.trim() !== "",
+  );
 
-  // Try candidates from last to first — the model's actual answer is
-  // typically the final JSON block; earlier braces could be unrelated prose.
-  let lastParseError: unknown = null;
-  for (let i = candidates.length - 1; i >= 0; i--) {
-    const jsonStr = candidates[i];
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(jsonStr);
-    } catch (e) {
-      lastParseError = e;
-      continue;
+  if (!result) {
+    if (findBalancedJsonObjects(raw).length === 0) {
+      throw new Error("No JSON object found in sync result");
     }
-
-    if (typeof parsed !== "object" || parsed === null) continue;
-
-    const result = parsed as Record<string, unknown>;
-    if (!result.taskId || typeof result.taskId !== "string" || result.taskId.trim() === "") continue;
-
-    return {
-      taskId: result.taskId,
-      url: typeof result.url === "string" ? result.url : undefined,
-    };
+    throw new Error("Sync result missing or empty taskId");
   }
 
-  if (lastParseError) {
-    throw new Error(`Failed to parse JSON from sync result: ${lastParseError}`);
-  }
-  throw new Error("Sync result missing or empty taskId");
+  return {
+    taskId: result.taskId as string,
+    url: typeof result.url === "string" ? result.url : undefined,
+  };
 }
 
 /**
