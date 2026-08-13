@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 
-import type { TrackerStory } from "../../lib/integrations/mcpTracker";
+import type { TrackerStory, TrackerStatus } from "../../lib/integrations/mcpTracker";
 import type { Status } from "../../lib/engine/status";
 import type { NodeIo } from "./connectionsNode";
 import {
@@ -124,6 +124,92 @@ describe("syncStoryNode — create then update", () => {
     const written = JSON.parse(io.files.get(trackerFilePath)!);
     expect(Object.keys(written.tasks)).toEqual(["1.2"]);
     expect(written.tasks["1.2"].taskId).toBe("T-1");
+  });
+});
+
+describe("syncStoryNode — parent-ticket routing (linked epic)", () => {
+  const linkedFile = JSON.stringify({
+    version: 1,
+    connectionId: "jira",
+    tasks: {},
+    epics: { "1": { ticketId: "TICK-1", url: "https://tracker/TICK-1" } },
+  });
+
+  it("linked epic + mixed epicStatuses: prompt carries the ticketId + aggregate status, no tasks[storyKey] write", async () => {
+    const io = fakeIo({ [trackerFilePath]: linkedFile });
+    let capturedPrompt = "";
+    const runSyncAgent: RunSyncAgentNode = vi.fn(async (args) => {
+      capturedPrompt = args.prompt;
+      return JSON.stringify({ taskId: "TICK-1", url: "https://tracker/TICK-1" });
+    });
+    const deps = makeDeps({ runSyncAgent });
+    const epicStatuses: { epic: number; story: number; status: TrackerStatus }[] = [
+      { epic: 1, story: 1, status: "Done" },
+      { epic: 1, story: 2, status: "InProgress" },
+    ];
+
+    await syncStoryNode(io, root, story, "InProgress", "npm test", deps, epicStatuses);
+
+    expect(runSyncAgent).toHaveBeenCalledTimes(1);
+    expect(capturedPrompt).toContain("TICK-1");
+    expect(capturedPrompt).toContain("InProgress");
+
+    // No per-story write at all — the parent ticket is the record.
+    expect(io.files.get(trackerFilePath)).toBe(linkedFile);
+  });
+
+  it("aggregate status is null (all Draft/Approved): the agent is NOT called and nothing is written", async () => {
+    const io = fakeIo({ [trackerFilePath]: linkedFile });
+    const runSyncAgent = vi.fn() as unknown as RunSyncAgentNode;
+    const deps = makeDeps({ runSyncAgent });
+    const epicStatuses: { epic: number; story: number; status: TrackerStatus }[] = [
+      { epic: 1, story: 1, status: "Draft" },
+      { epic: 1, story: 2, status: "Approved" },
+    ];
+
+    await syncStoryNode(io, root, story, "InProgress", undefined, deps, epicStatuses);
+
+    expect(runSyncAgent).not.toHaveBeenCalled();
+    expect(io.files.get(trackerFilePath)).toBe(linkedFile);
+  });
+
+  it("REGRESSION GUARD — unlinked epic: per-story path runs unchanged even when epicStatuses is supplied", async () => {
+    const io = fakeIo(); // no epics entry at all
+    let capturedPrompt = "";
+    const runSyncAgent: RunSyncAgentNode = vi.fn(async (args) => {
+      capturedPrompt = args.prompt;
+      return JSON.stringify({ taskId: "T-1", url: "https://tracker/T-1" });
+    });
+    const deps = makeDeps({ runSyncAgent });
+    const epicStatuses: { epic: number; story: number; status: TrackerStatus }[] = [
+      { epic: 1, story: 2, status: "Done" },
+    ];
+
+    await syncStoryNode(io, root, story, "Done", "npm test", deps, epicStatuses);
+
+    expect(runSyncAgent).toHaveBeenCalledTimes(1);
+    expect(capturedPrompt.toLowerCase()).toContain("create");
+
+    const written = JSON.parse(io.files.get(trackerFilePath)!);
+    expect(written.tasks["1.2"]).toEqual({ taskId: "T-1", url: "https://tracker/T-1" });
+  });
+
+  it("epicStatuses omitted (back-compat): falls back to the per-story path even for a linked epic", async () => {
+    const io = fakeIo({ [trackerFilePath]: linkedFile });
+    let capturedPrompt = "";
+    const runSyncAgent: RunSyncAgentNode = vi.fn(async (args) => {
+      capturedPrompt = args.prompt;
+      return JSON.stringify({ taskId: "T-1" });
+    });
+    const deps = makeDeps({ runSyncAgent });
+
+    await syncStoryNode(io, root, story, "Done", undefined, deps);
+
+    expect(runSyncAgent).toHaveBeenCalledTimes(1);
+    expect(capturedPrompt.toLowerCase()).toContain("create");
+
+    const written = JSON.parse(io.files.get(trackerFilePath)!);
+    expect(written.tasks["1.2"]).toEqual({ taskId: "T-1" });
   });
 });
 

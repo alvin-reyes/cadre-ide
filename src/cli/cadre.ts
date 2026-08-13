@@ -64,7 +64,13 @@ import {
 import { syncStoryNode, realRunSyncAgentNode, syncingSetStatus } from "./mcp/trackerSyncNode";
 import { fetchTicketNode } from "./mcp/intakeNode";
 import { ticketToBrief } from "../lib/integrations/mcpIntake";
-import { trackerFromFile, trackerToFile, emptyTrackerFile, recordEpicLink } from "../lib/integrations/mcpTracker";
+import {
+  trackerFromFile,
+  trackerToFile,
+  emptyTrackerFile,
+  recordEpicLink,
+  type TrackerStatus,
+} from "../lib/integrations/mcpTracker";
 import {
   parseFieldFlags,
   collectSecrets,
@@ -255,15 +261,35 @@ interface RunOutcome {
  *  (`src/cli/mcp/trackerSyncNode.ts`, the Node twin of the desktop app's
  *  `mcpTrackerStore.syncStory`). No-op when no connection is designated as
  *  the tracker; never throws — sync is downstream of truth and must never
- *  fail the run, so it's safe to await inline in the dispatch flow. */
-function syncTracker(root: string, card: StoryCard, status: Status, verifyCmd: string | undefined): Promise<void> {
+ *  fail the run, so it's safe to await inline in the dispatch flow.
+ *
+ *  Reads the current board to pass the full epic status set — this lets
+ *  `syncStoryNode` route linked epics' stories to their PARENT ticket instead
+ *  of a per-story task (mirrors the desktop app's `syncStory`). Best-effort:
+ *  a `readBoard` failure just yields `undefined` epicStatuses, which falls
+ *  back to the original per-story sync path — it must never break the run. */
+async function syncTracker(
+  root: string,
+  card: StoryCard,
+  status: Status,
+  verifyCmd: string | undefined
+): Promise<void> {
+  let epicStatuses: { epic: number; story: number; status: TrackerStatus }[] | undefined;
+  try {
+    const board = await readBoard(root);
+    epicStatuses = board.map((c) => ({ epic: c.epic, story: c.story, status: c.status as TrackerStatus }));
+  } catch {
+    epicStatuses = undefined;
+  }
+
   return syncStoryNode(
     realNodeIo(),
     root,
     { epic: card.epic, story: card.story, title: card.title ?? card.id },
     status,
     verifyCmd,
-    { resolveTrackerEnv: resolveTrackerEnvNode, runSyncAgent: realRunSyncAgentNode() }
+    { resolveTrackerEnv: resolveTrackerEnvNode, runSyncAgent: realRunSyncAgentNode() },
+    epicStatuses
   );
 }
 

@@ -21,11 +21,14 @@ import { execFile } from "node:child_process";
 import {
   shouldSync,
   buildSyncPrompt,
+  buildEpicSyncPrompt,
   parseSyncResult,
   taskKey,
   trackerFromFile,
   trackerToFile,
   emptyTrackerFile,
+  epicTicket,
+  aggregateEpicStatus,
   type TrackerStory,
   type TrackerStatus,
 } from "../../lib/integrations/mcpTracker";
@@ -96,6 +99,15 @@ export interface SyncStoryNodeDeps {
  * No-op when the status doesn't warrant a sync or no tracker connection
  * resolves. Never throws — any failure is logged (no secret values) and
  * swallowed so a tracker hiccup can never fail `cadre run`.
+ *
+ * When the story's epic is linked to a parent ticket (`epicTicket`) AND
+ * `epicStatuses` is supplied, the sync targets the PARENT ticket instead of
+ * creating/updating a per-story task: the epic's aggregate status (from ALL
+ * of `epicStatuses` filtered to this story's epic) is pushed to the linked
+ * ticket, and no per-story `file.tasks[key]` entry is written (the file is
+ * not written at all on this path). If the epic has no linked ticket, or
+ * `epicStatuses` is omitted (back-compat), the original per-story sync path
+ * runs unchanged.
  */
 export async function syncStoryNode(
   io: NodeIo,
@@ -103,7 +115,8 @@ export async function syncStoryNode(
   story: TrackerStory,
   status: TrackerStatus,
   verifyCmd: string | undefined,
-  deps: SyncStoryNodeDeps
+  deps: SyncStoryNodeDeps,
+  epicStatuses?: { epic: number; story: number; status: TrackerStatus }[]
 ): Promise<void> {
   if (!shouldSync(status)) return;
 
@@ -137,6 +150,42 @@ export async function syncStoryNode(
     }
 
     const key = taskKey(story);
+
+    // Parent-ticket routing: when this story's epic is linked to a ticket AND
+    // the caller supplied the full epic status set, sync the AGGREGATE epic
+    // status to the PARENT ticket instead of a per-story task. No per-story
+    // `file.tasks[key]` entry is written on this path — the parent ticket IS
+    // the record for the whole epic.
+    const ticket = epicTicket(file, story.epic);
+    if (ticket && epicStatuses) {
+      const forEpic = epicStatuses.filter((s) => s.epic === story.epic).map((s) => s.status);
+      const agg = aggregateEpicStatus(forEpic);
+      if (!agg) return;
+
+      const prompt = buildEpicSyncPrompt({
+        ticketId: ticket.ticketId,
+        epic: story.epic,
+        aggregateStatus: agg,
+        changedStory: key,
+        changedStatus: status,
+        doneCount: forEpic.filter((s) => s === "Done").length,
+        totalCount: forEpic.length,
+        verifyCmd,
+      });
+
+      const raw = await deps.runSyncAgent({
+        prompt,
+        mcpConfigPath: env.mcpConfigPath,
+        env: env.env,
+        serverKey: env.serverKey,
+        cwd: root,
+      });
+      // Validates a taskId came back; the parent-ticket file already has the
+      // link, so nothing needs to be written back.
+      parseSyncResult(raw);
+      return;
+    }
+
     const existing = file.tasks[key];
     const prompt = buildSyncPrompt({ story, status, verifyCmd, existing });
 
