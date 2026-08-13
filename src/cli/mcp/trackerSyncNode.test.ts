@@ -143,16 +143,27 @@ describe("syncStoryNode — parent-ticket routing (linked epic)", () => {
       return JSON.stringify({ taskId: "TICK-1", url: "https://tracker/TICK-1" });
     });
     const deps = makeDeps({ runSyncAgent });
+    // Fixture: story 1 is Blocked, story 2 is InProgress.
+    // Aggregate: aggregateEpicStatus(["Blocked", "InProgress"]) = "Blocked" (Blocked has precedence).
+    // Changed story: story 2 with status "InProgress".
+    // This ensures aggregateStatus ("Blocked") != changedStatus ("InProgress"),
+    // making the test catch if aggregateStatus were swapped with changedStatus.
     const epicStatuses: { epic: number; story: number; status: TrackerStatus }[] = [
-      { epic: 1, story: 1, status: "Done" },
+      { epic: 1, story: 1, status: "Blocked" },
       { epic: 1, story: 2, status: "InProgress" },
     ];
 
     await syncStoryNode(io, root, story, "InProgress", "npm test", deps, epicStatuses);
 
     expect(runSyncAgent).toHaveBeenCalledTimes(1);
+    // Prompt must contain the epic ticket id.
     expect(capturedPrompt).toContain("TICK-1");
-    expect(capturedPrompt).toContain("InProgress");
+    // Prompt must contain "set its status to `Blocked`" (the aggregate status for the ticket).
+    // This proves aggregateStatus (not changedStatus) was wired to the ticket status field.
+    expect(capturedPrompt).toMatch(/set its status to `Blocked`/);
+    // Prompt must contain "1.2 → InProgress" (the changed story with its status in the comment).
+    // This proves changedStatus (not aggregateStatus) was wired to the story status field.
+    expect(capturedPrompt).toContain("1.2 → InProgress");
 
     // No per-story write at all — the parent ticket is the record.
     expect(io.files.get(trackerFilePath)).toBe(linkedFile);
