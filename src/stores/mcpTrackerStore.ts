@@ -19,6 +19,9 @@ import {
   trackerFromFile,
   emptyTrackerFile,
   trackerToFile,
+  epicTicket,
+  aggregateEpicStatus,
+  buildEpicSyncPrompt,
   type TrackerStory,
   type TrackerStatus,
   type McpTrackerFile,
@@ -81,8 +84,11 @@ const mcpTrackerPath = (root: string) => `${root}/.cadre/mcp-tracker.json`;
  *  see src-tauri/src/lib.rs `read_file`, which formats
  *  `std::fs::read_to_string` errors as `Failed to read {path}: {os error}`).
  *  Anything else (permission denied, transient I/O, etc.) is NOT a
- *  not-found error and must not be treated as "file absent". */
-function isFileNotFoundError(e: unknown): boolean {
+ *  not-found error and must not be treated as "file absent".
+ *  Exported so other stores writing the same `.cadre/mcp-tracker.json` file
+ *  (e.g. mcpIntakeStore's `recordEpicLinkFor`) share this exact ENOENT
+ *  detection rather than re-deriving it. */
+export function isFileNotFoundError(e: unknown): boolean {
   const msg = e instanceof Error ? e.message : String(e);
   const lower = msg.toLowerCase();
   return lower.includes("no such file or directory") || lower.includes("os error 2");
@@ -128,15 +134,35 @@ interface McpTrackerState {
    * Sync a single story's status to the MCP tracker via an agent.
    * No-op when the status doesn't warrant a sync or no tracker connection is
    * resolvable. Best-effort: errors are routed to reportError, never thrown.
+   *
+   * When the story's epic is linked to a parent ticket (`epicTicket`) AND
+   * `epicStatuses` is supplied, the sync targets the PARENT ticket instead of
+   * creating/updating a per-story task: the epic's aggregate status (from
+   * ALL of `epicStatuses` filtered to this story's epic) is pushed to the
+   * linked ticket, and no per-story task entry is written. If the epic has no
+   * linked ticket, or `epicStatuses` is omitted (back-compat), the original
+   * per-story sync path runs unchanged.
    */
-  syncStory(root: string, story: TrackerStory, status: TrackerStatus, verifyCmd?: string): Promise<void>;
+  syncStory(
+    root: string,
+    story: TrackerStory,
+    status: TrackerStatus,
+    verifyCmd?: string,
+    epicStatuses?: { epic: number; story: number; status: TrackerStatus }[],
+  ): Promise<void>;
 
   /** Test seam: replace the agent runner (default spawns a real `claude -p`). */
   __setRunSyncAgent(fn: RunSyncAgent): void;
 }
 
 export const useMcpTrackerStore = create<McpTrackerState>(() => ({
-  syncStory: (root: string, story: TrackerStory, status: TrackerStatus, verifyCmd?: string): Promise<void> => {
+  syncStory: (
+    root: string,
+    story: TrackerStory,
+    status: TrackerStatus,
+    verifyCmd?: string,
+    epicStatuses?: { epic: number; story: number; status: TrackerStatus }[],
+  ): Promise<void> => {
     if (!shouldSync(status)) return Promise.resolve();
 
     // One serialization chain per PROJECT (not per story): every sync for this
@@ -155,6 +181,41 @@ export const useMcpTrackerStore = create<McpTrackerState>(() => ({
 
           const file = await readTrackerFile(root, env.serverKey);
           const storyKey = taskKey(story);
+
+          // Parent-ticket routing: when this story's epic is linked to a
+          // ticket AND the caller supplied the full epic status set, sync the
+          // AGGREGATE epic status to the PARENT ticket instead of a per-story
+          // task. No per-story `tasks[storyKey]` entry is written on this
+          // path — the parent ticket IS the record for the whole epic.
+          const ticket = epicTicket(file, story.epic);
+          if (ticket && epicStatuses) {
+            const forEpic = epicStatuses.filter((s) => s.epic === story.epic).map((s) => s.status);
+            const agg = aggregateEpicStatus(forEpic);
+            if (!agg) return;
+
+            const prompt = buildEpicSyncPrompt({
+              ticketId: ticket.ticketId,
+              epic: story.epic,
+              aggregateStatus: agg,
+              changedStory: storyKey,
+              changedStatus: status,
+              doneCount: forEpic.filter((s) => s === "Done").length,
+              totalCount: forEpic.length,
+              verifyCmd,
+            });
+            const raw = await runSyncAgent({
+              prompt,
+              mcpConfigPath: env.mcpConfigPath,
+              env: env.env,
+              serverKey: env.serverKey,
+              cwd: root,
+            });
+            // Validates a taskId came back; the parent-ticket file already
+            // has the link, so nothing needs to be written back.
+            parseSyncResult(raw);
+            return;
+          }
+
           const existing = file.tasks[storyKey];
 
           const prompt = buildSyncPrompt({ story, status, verifyCmd, existing });

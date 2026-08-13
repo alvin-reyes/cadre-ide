@@ -30,6 +30,28 @@ const FAKE_ENV = {
   serverKey: "jira",
 };
 
+/** In-memory fake filesystem keyed by path, backing the invoke mock for
+ *  read_file/write_text_file — mirrors mcpTrackerStore.test.ts's makeFsStub
+ *  so the real Tauri ENOENT message shape is exercised. */
+function makeFsStub(initial: Record<string, string> = {}) {
+  const files = new Map<string, string>(Object.entries(initial));
+  invokeStub.mockImplementation((cmd: string, args: { path?: string; content?: string }) => {
+    if (cmd === "read_file") {
+      const content = files.get(args.path!);
+      if (content === undefined) {
+        return Promise.reject(new Error(`Failed to read ${args.path}: No such file or directory (os error 2)`));
+      }
+      return Promise.resolve(content);
+    }
+    if (cmd === "write_text_file") {
+      files.set(args.path!, args.content!);
+      return Promise.resolve(undefined);
+    }
+    return Promise.reject(new Error(`unexpected invoke: ${cmd}`));
+  });
+  return files;
+}
+
 beforeEach(() => {
   invokeStub.mockReset();
   reportErrorStub.mockReset();
@@ -153,6 +175,93 @@ describe("mcpIntakeStore.fetchTicket — a hung agent is bounded by a timeout", 
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("mcpIntakeStore.recordEpicLinkFor — writes the epic↔ticket link (Task 2)", () => {
+  it("genuinely-missing file: creates an empty tracker file owned by the resolved serverKey, then records the epic link", async () => {
+    const files = makeFsStub();
+
+    await useMcpIntakeStore.getState().recordEpicLinkFor("/project", 1, { ticketId: "TCK-42", url: "https://tracker.example/TCK-42" });
+
+    expect(reportErrorStub).not.toHaveBeenCalled();
+    const written = files.get("/project/.cadre/mcp-tracker.json");
+    expect(written).toBeDefined();
+    const parsed = JSON.parse(written!);
+    expect(parsed.connectionId).toBe(FAKE_ENV.serverKey);
+    expect(parsed.epics["1"]).toEqual({ ticketId: "TCK-42", url: "https://tracker.example/TCK-42" });
+    expect(parsed.tasks).toEqual({});
+  });
+
+  it("existing file: preserves prior tasks/epics and adds the new epic link, without needing resolveTrackerEnv", async () => {
+    const existingContent = JSON.stringify({
+      version: 1,
+      connectionId: "jira",
+      tasks: { "2.1": { taskId: "T-OTHER" } },
+      epics: { "2": { ticketId: "EPIC-OTHER" } },
+    });
+    const files = makeFsStub({ "/project/.cadre/mcp-tracker.json": existingContent });
+
+    await useMcpIntakeStore.getState().recordEpicLinkFor("/project", 1, { ticketId: "TCK-1" });
+
+    const written = files.get("/project/.cadre/mcp-tracker.json");
+    const parsed = JSON.parse(written!);
+    expect(parsed.tasks["2.1"].taskId).toBe("T-OTHER");
+    expect(parsed.epics["2"].ticketId).toBe("EPIC-OTHER");
+    expect(parsed.epics["1"]).toEqual({ ticketId: "TCK-1" });
+  });
+
+  it("a NON-not-found read failure aborts: reportErrors and does NOT write (I1)", async () => {
+    const files = makeFsStub();
+    invokeStub.mockImplementation((cmd: string, args: { path?: string; content?: string }) => {
+      if (cmd === "read_file") {
+        return Promise.reject(new Error(`Failed to read ${args.path}: permission denied`));
+      }
+      if (cmd === "write_text_file") {
+        files.set(args.path!, args.content!);
+        return Promise.resolve(undefined);
+      }
+      return Promise.reject(new Error(`unexpected invoke: ${cmd}`));
+    });
+
+    await expect(
+      useMcpIntakeStore.getState().recordEpicLinkFor("/project", 1, { ticketId: "TCK-1" }),
+    ).resolves.toBeUndefined();
+
+    expect(reportErrorStub).toHaveBeenCalledWith("intake: record epic link", expect.any(Error));
+    const writes = invokeStub.mock.calls.filter((c: unknown[]) => c[0] === "write_text_file");
+    expect(writes).toHaveLength(0);
+  });
+
+  it("a present-but-malformed tracker file aborts: reportErrors and does NOT write", async () => {
+    const files = makeFsStub({ "/project/.cadre/mcp-tracker.json": "{not valid json" });
+
+    await expect(
+      useMcpIntakeStore.getState().recordEpicLinkFor("/project", 1, { ticketId: "TCK-1" }),
+    ).resolves.toBeUndefined();
+
+    expect(reportErrorStub).toHaveBeenCalledWith("intake: record epic link", expect.any(Error));
+    const writes = invokeStub.mock.calls.filter((c: unknown[]) => c[0] === "write_text_file");
+    expect(writes).toHaveLength(0);
+    expect(files.get("/project/.cadre/mcp-tracker.json")).toBe("{not valid json");
+  });
+
+  it("never throws even when write_text_file rejects", async () => {
+    invokeStub.mockImplementation((cmd: string, args: { path?: string }) => {
+      if (cmd === "read_file") {
+        return Promise.reject(new Error(`Failed to read ${args.path}: No such file or directory (os error 2)`));
+      }
+      if (cmd === "write_text_file") {
+        return Promise.reject(new Error("disk full"));
+      }
+      return Promise.reject(new Error(`unexpected invoke: ${cmd}`));
+    });
+
+    await expect(
+      useMcpIntakeStore.getState().recordEpicLinkFor("/project", 1, { ticketId: "TCK-1" }),
+    ).resolves.toBeUndefined();
+
+    expect(reportErrorStub).toHaveBeenCalledWith("intake: record epic link", expect.any(Error));
   });
 });
 

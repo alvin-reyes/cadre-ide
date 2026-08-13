@@ -162,7 +162,8 @@ describe("bmadStore.setStatus — MCP tracker sync", () => {
       "/mcp",
       { epic: 4, story: 5, title: "Wire up sync" },
       "Done",
-      "npm test && npm run lint"
+      "npm test && npm run lint",
+      [{ epic: 4, story: 5, status: "Done" }]
     );
   });
 

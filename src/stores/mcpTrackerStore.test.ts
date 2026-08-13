@@ -256,6 +256,123 @@ describe("mcpTrackerStore.syncStory — serialization across concurrent calls", 
   });
 });
 
+describe("mcpTrackerStore.syncStory — parent-ticket routing for a linked epic (Task 2)", () => {
+  it("linked epic + mixed epicStatuses: syncs the PARENT ticket (prompt has ticketId + aggregate status) and writes NO per-story task entry", async () => {
+    const existingContent = JSON.stringify({
+      version: 1,
+      connectionId: "jira",
+      tasks: {},
+      epics: { "1": { ticketId: "EPIC-9", url: "https://tracker.example/EPIC-9" } },
+    });
+    const files = makeFsStub({ "/project/.cadre/mcp-tracker.json": existingContent });
+
+    let capturedPrompt = "";
+    const fake: RunSyncAgent = vi.fn(async (args) => {
+      capturedPrompt = args.prompt;
+      return JSON.stringify({ taskId: "EPIC-9" });
+    });
+    useMcpTrackerStore.getState().__setRunSyncAgent(fake);
+
+    const epicStatuses = [
+      { epic: 1, story: 1, status: "Done" as const },
+      { epic: 1, story: 2, status: "InProgress" as const },
+    ];
+
+    await useMcpTrackerStore.getState().syncStory("/project", story, "InProgress", undefined, epicStatuses);
+
+    expect(fake).toHaveBeenCalledTimes(1);
+    expect(capturedPrompt).toContain("EPIC-9");
+    expect(capturedPrompt).toContain("InProgress");
+
+    // File may or may not have been rewritten, but in either case there must
+    // be no per-story task entry for "1.2".
+    const written = files.get("/project/.cadre/mcp-tracker.json");
+    const parsed = JSON.parse(written!);
+    expect(parsed.tasks["1.2"]).toBeUndefined();
+  });
+
+  it("linked epic but all stories Draft/Approved (aggregate === null): does NOT call runSyncAgent", async () => {
+    const existingContent = JSON.stringify({
+      version: 1,
+      connectionId: "jira",
+      tasks: {},
+      epics: { "1": { ticketId: "EPIC-9" } },
+    });
+    makeFsStub({ "/project/.cadre/mcp-tracker.json": existingContent });
+
+    const fake = vi.fn<RunSyncAgent>();
+    useMcpTrackerStore.getState().__setRunSyncAgent(fake);
+
+    const epicStatuses = [
+      { epic: 1, story: 1, status: "Draft" as const },
+      { epic: 1, story: 2, status: "Approved" as const },
+    ];
+
+    // Note: status passed to syncStory must itself pass shouldSync to reach
+    // the epic-routing branch at all; the aggregate (from epicStatuses) is
+    // what's asserted null here.
+    await useMcpTrackerStore.getState().syncStory("/project", story, "InProgress", undefined, epicStatuses);
+
+    expect(fake).not.toHaveBeenCalled();
+    expect(reportErrorStub).not.toHaveBeenCalled();
+  });
+
+  it("UNLINKED epic (no epics entry): falls back to the existing per-story sync path (regression guard)", async () => {
+    const existingContent = JSON.stringify({
+      version: 1,
+      connectionId: "jira",
+      tasks: {},
+      epics: {},
+    });
+    const files = makeFsStub({ "/project/.cadre/mcp-tracker.json": existingContent });
+
+    let capturedPrompt = "";
+    const fake: RunSyncAgent = vi.fn(async (args) => {
+      capturedPrompt = args.prompt;
+      return JSON.stringify({ taskId: "T-1" });
+    });
+    useMcpTrackerStore.getState().__setRunSyncAgent(fake);
+
+    const epicStatuses = [{ epic: 1, story: 2, status: "InProgress" as const }];
+
+    await useMcpTrackerStore.getState().syncStory("/project", story, "InProgress", undefined, epicStatuses);
+
+    expect(fake).toHaveBeenCalledTimes(1);
+    expect(capturedPrompt.toLowerCase()).toContain("create");
+    expect(capturedPrompt).toContain("Feature A");
+
+    const written = files.get("/project/.cadre/mcp-tracker.json");
+    const parsed = JSON.parse(written!);
+    expect(parsed.tasks["1.2"].taskId).toBe("T-1");
+  });
+
+  it("linked epic but epicStatuses omitted: falls back to the per-story path (back-compat)", async () => {
+    const existingContent = JSON.stringify({
+      version: 1,
+      connectionId: "jira",
+      tasks: {},
+      epics: { "1": { ticketId: "EPIC-9" } },
+    });
+    const files = makeFsStub({ "/project/.cadre/mcp-tracker.json": existingContent });
+
+    let capturedPrompt = "";
+    const fake: RunSyncAgent = vi.fn(async (args) => {
+      capturedPrompt = args.prompt;
+      return JSON.stringify({ taskId: "T-2" });
+    });
+    useMcpTrackerStore.getState().__setRunSyncAgent(fake);
+
+    await useMcpTrackerStore.getState().syncStory("/project", story, "InProgress");
+
+    expect(fake).toHaveBeenCalledTimes(1);
+    expect(capturedPrompt).not.toContain("EPIC-9");
+
+    const written = files.get("/project/.cadre/mcp-tracker.json");
+    const parsed = JSON.parse(written!);
+    expect(parsed.tasks["1.2"].taskId).toBe("T-2");
+  });
+});
+
 describe("mcpTrackerStore.syncStory — transient read failure never wipes the id-map (FIX I1)", () => {
   it("a genuinely-missing file (`No such file or directory`) is still treated as empty — sync proceeds and creates", async () => {
     const files = makeFsStub();

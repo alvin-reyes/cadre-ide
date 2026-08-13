@@ -10,10 +10,20 @@
  * null so the UI never needs its own try/catch around fetchTicket.
  */
 import { create } from "zustand";
+import { invoke } from "@tauri-apps/api/core";
 import { buildFetchPrompt, parseTicket, type FetchedTicket } from "../lib/integrations/mcpIntake";
+import {
+  recordEpicLink,
+  emptyTrackerFile,
+  trackerFromFile,
+  trackerToFile,
+} from "../lib/integrations/mcpTracker";
 import { useConnectionsStore } from "./connectionsStore";
+import { isFileNotFoundError } from "./mcpTrackerStore";
 import { tauriOrchestratorDeps, waitForExit } from "../lib/engine/tauriDeps";
 import { reportError } from "../lib/reportError";
+
+const mcpTrackerPath = (root: string) => `${root}/.cadre/mcp-tracker.json`;
 
 // ---------------------------------------------------------------------------
 // Injectable agent runner
@@ -88,6 +98,17 @@ interface McpIntakeState {
    */
   fetchTicket(root: string, ticketRef: string): Promise<FetchedTicket | null>;
 
+  /**
+   * Record an epic↔ticket link in `.cadre/mcp-tracker.json` after an import
+   * pre-fills the composer, so the desktop's outbound sync (mcpTrackerStore)
+   * recognizes this epic as backed by an imported parent ticket and routes
+   * future story-status syncs there instead of creating per-story tasks.
+   * Best-effort / never throws: any failure is routed through reportError and
+   * the write is skipped (I1 — never overwrite the shared tracker file on an
+   * ambiguous read).
+   */
+  recordEpicLinkFor(root: string, epic: number, link: { ticketId: string; url?: string }): Promise<void>;
+
   /** Test seam: replace the agent runner (default spawns a real `claude -p`). */
   __setRunFetchAgent(fn: RunFetchAgent): void;
 }
@@ -127,6 +148,49 @@ export const useMcpIntakeStore = create<McpIntakeState>((set) => ({
       return null;
     } finally {
       set({ importing: false });
+    }
+  },
+
+  recordEpicLinkFor: async (root: string, epic: number, link: { ticketId: string; url?: string }): Promise<void> => {
+    try {
+      const path = mcpTrackerPath(root);
+      let raw: string | undefined;
+      try {
+        raw = await invoke<string>("read_file", { path });
+      } catch (e) {
+        if (!isFileNotFoundError(e)) {
+          // Transient/permission read failure — abort without writing per I1;
+          // the file may hold other epics'/stories' ids we must not clobber.
+          reportError("intake: record epic link", e);
+          return;
+        }
+      }
+
+      let file;
+      if (raw === undefined) {
+        // Genuinely missing file: need a connection id to own the new file.
+        const env = await useConnectionsStore.getState().resolveTrackerEnv(root);
+        if (!env) {
+          reportError(
+            "intake: record epic link",
+            "No tracker connection is designated for this project — set one in Connections.",
+          );
+          return;
+        }
+        file = emptyTrackerFile(env.serverKey);
+      } else {
+        const parsed = trackerFromFile(raw);
+        if (parsed === null) {
+          reportError("intake: record epic link", new Error("mcp tracker: existing file is present but malformed"));
+          return;
+        }
+        file = parsed;
+      }
+
+      const updated = recordEpicLink(file, epic, link);
+      await invoke("write_text_file", { path, content: trackerToFile(updated) });
+    } catch (e) {
+      reportError("intake: record epic link", e);
     }
   },
 

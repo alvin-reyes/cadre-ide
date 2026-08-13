@@ -165,7 +165,18 @@ export const useBmadStore = create<BmadState>((set, get) => {
           const title = st?.title ?? `Story ${epic}.${story}`;
           const verification = useCadre.getState().projects[root]?.verification;
           const verifyCmd = (verification ?? []).filter(Boolean).join(" && ") || undefined;
-          void useMcpTrackerStore.getState().syncStory(root, { epic, story, title }, status as TrackerStatus, verifyCmd).catch(() => {});
+          // Full story-status snapshot for this project so syncStory can
+          // aggregate per-epic status when the epic is linked to a parent
+          // ticket (syncStory filters to the changed story's epic itself).
+          const epicStatuses = (get().projects[root]?.stories ?? []).map((s) => ({
+            epic: s.epic,
+            story: s.story,
+            status: s.status as TrackerStatus,
+          }));
+          void useMcpTrackerStore
+            .getState()
+            .syncStory(root, { epic, story, title }, status as TrackerStatus, verifyCmd, epicStatuses)
+            .catch(() => {});
         }
       } catch (e) {
         // Rejected (e.g. an illegal edge): roll back so the board doesn't drift

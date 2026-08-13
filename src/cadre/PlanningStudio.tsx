@@ -164,6 +164,14 @@ export function PlanningStudio() {
     if (ticket) {
       setDraft(ticketToBrief(ticket));
       setTicketRef("");
+      // Best-effort: record the epic↔ticket link (epic 1, symmetric with the
+      // CLI import path) so outbound sync routes this epic's story updates to
+      // the imported parent ticket. recordEpicLinkFor never throws (it
+      // reportErrors internally) — this must never block the pre-fill.
+      void useMcpIntakeStore
+        .getState()
+        .recordEpicLinkFor(root, 1, { ticketId: ticket.id, url: ticket.url })
+        .catch(() => {});
     }
   }
 
