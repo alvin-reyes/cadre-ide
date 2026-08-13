@@ -185,3 +185,58 @@ export function epicTicket(
 ): { ticketId: string; url?: string } | undefined {
   return file.epics?.[String(epic)];
 }
+
+/**
+ * Aggregate story statuses into an epic status by precedence.
+ * Precedence order: if all statuses are "Done" → "Done";
+ * else if any is "Blocked" or "Failed" → "Blocked";
+ * else if any is "InProgress" or "InReview" → "InProgress";
+ * else (all Draft/Approved, or empty) → null.
+ */
+export function aggregateEpicStatus(statuses: TrackerStatus[]): TrackerStatus | null {
+  // All Done → Done
+  if (statuses.length && statuses.every(s => s === "Done")) {
+    return "Done";
+  }
+
+  // Any Blocked or Failed → Blocked
+  if (statuses.some(s => s === "Blocked" || s === "Failed")) {
+    return "Blocked";
+  }
+
+  // Any InProgress or InReview → InProgress
+  if (statuses.some(s => s === "InProgress" || s === "InReview")) {
+    return "InProgress";
+  }
+
+  // All Draft/Approved or empty → null
+  return null;
+}
+
+/**
+ * Build an epic-sync prompt for the tracker MCP.
+ * Instructs the MCP to UPDATE a ticket with the aggregated epic status
+ * and a comment about the story change and progress.
+ * If Done with verifyCmd, includes the verification command.
+ * Demands a strict JSON response.
+ */
+export function buildEpicSyncPrompt(input: {
+  ticketId: string;
+  epic: number;
+  aggregateStatus: TrackerStatus;
+  changedStory: string;
+  changedStatus: TrackerStatus;
+  doneCount: number;
+  totalCount: number;
+  verifyCmd?: string;
+}): string {
+  let prompt = `You have MCP tools for an external tracker. UPDATE ticket \`${input.ticketId}\` — set its status to \`${input.aggregateStatus}\` and add a comment: \`Cadre: story ${input.changedStory} → ${input.changedStatus} (${input.doneCount}/${input.totalCount} done)\`.`;
+
+  if (input.aggregateStatus === "Done" && input.verifyCmd) {
+    prompt += ` The frozen verification command \`${input.verifyCmd}\` passed.`;
+  }
+
+  prompt += ` Reply with ONLY a JSON object: {"taskId":"${input.ticketId}","url":"…"}.`;
+
+  return prompt;
+}

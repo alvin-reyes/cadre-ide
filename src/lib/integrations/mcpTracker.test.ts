@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   taskKey, shouldSync, buildSyncPrompt, parseSyncResult,
   trackerToFile, trackerFromFile, emptyTrackerFile,
-  recordEpicLink, epicTicket,
+  recordEpicLink, epicTicket, aggregateEpicStatus, buildEpicSyncPrompt,
 } from "./mcpTracker";
 
 describe("mcpTracker core", () => {
@@ -110,5 +110,38 @@ describe("mcpTracker core", () => {
 
     expect(roundTripped).toEqual(withTask);
     expect(epicTicket(roundTripped!, 1)).toEqual({ ticketId: "E-1", url: "https://example.com/E-1" });
+  });
+});
+
+describe("aggregateEpicStatus", () => {
+  it("all Done → Done", () => expect(aggregateEpicStatus(["Done","Done"])).toBe("Done"));
+  it("any Blocked/Failed (not all done) → Blocked", () => {
+    expect(aggregateEpicStatus(["Done","Blocked"])).toBe("Blocked");
+    expect(aggregateEpicStatus(["InProgress","Failed"])).toBe("Blocked");
+  });
+  it("any active (no blocked, not all done) → InProgress", () => {
+    expect(aggregateEpicStatus(["Done","InProgress"])).toBe("InProgress");
+    expect(aggregateEpicStatus(["InReview","Draft"])).toBe("InProgress");
+  });
+  it("all Draft/Approved or empty → null", () => {
+    expect(aggregateEpicStatus(["Draft","Approved"])).toBeNull();
+    expect(aggregateEpicStatus([])).toBeNull();
+  });
+  it("Blocked wins over active when not all done", () => {
+    expect(aggregateEpicStatus(["InProgress","Blocked","Done"])).toBe("Blocked");
+  });
+});
+
+describe("buildEpicSyncPrompt", () => {
+  it("names the ticket, aggregate status, the changed story + progress, demands strict JSON", () => {
+    const p = buildEpicSyncPrompt({ ticketId: "TCK-42", epic: 1, aggregateStatus: "Done",
+      changedStory: "1.2", changedStatus: "Done", doneCount: 3, totalCount: 3, verifyCmd: "npm test" });
+    expect(p).toContain("TCK-42");
+    expect(p).toContain("Done");
+    expect(p).toContain("1.2");
+    expect(p).toMatch(/3\s*\/\s*3|3 of 3/);
+    expect(p).toContain("npm test");
+    expect(p).toMatch(/update/i);           // update the ticket, not create
+    expect(p).toMatch(/only.*json/i);
   });
 });
