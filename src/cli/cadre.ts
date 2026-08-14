@@ -78,6 +78,7 @@ import {
   buildCustomTransport,
   formatConnectionLine,
   parseConnectArgv,
+  unknownFields,
 } from "./mcp/connectCli";
 
 // The Dev-agent persona — kept in sync with useCadre.ts's DEV_SYSTEM_PROMPT.
@@ -798,9 +799,19 @@ async function cmdConnect(presetId: string, projectDir: string, opts: CmdConnect
     conn = { ...conn, transport: built.transport };
   }
 
+  const parsedFields = parseFieldFlags(opts.fields);
+  const unknown = unknownFields(preset, Object.keys(parsedFields));
+  if (unknown.length > 0) {
+    const valid = preset.secretFields.map((f) => f.field).join(", ");
+    log(
+      `cadre connect: ignoring unknown field(s) ${unknown.map((f) => `"${f}"`).join(", ")} ` +
+        `for preset ${preset.id} (valid: ${valid})`
+    );
+  }
+
   const { secrets, missing } = collectSecrets(preset, {
     token: opts.token,
-    fields: parseFieldFlags(opts.fields),
+    fields: parsedFields,
     envToken: process.env.CADRE_MCP_TOKEN,
   });
   if (missing.length > 0) {

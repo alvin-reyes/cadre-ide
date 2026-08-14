@@ -8,6 +8,7 @@ import {
   buildCustomTransport,
   formatConnectionLine,
   parseConnectArgv,
+  unknownFields,
 } from "./connectCli";
 import type { Preset } from "../../lib/mcp/catalog";
 import type { Connection } from "../../lib/mcp/connections";
@@ -105,6 +106,28 @@ describe("collectSecrets", () => {
     const { secrets, missing } = collectSecrets(customPreset, { fields: {} });
     expect(secrets).toEqual({});
     expect(missing).toEqual([]);
+  });
+});
+
+describe("unknownFields", () => {
+  it("returns [] when every provided field name is a known secretField", () => {
+    expect(unknownFields(clickupPreset, ["CLICKUP_API_TOKEN", "CLICKUP_TEAM_ID"])).toEqual([]);
+  });
+
+  it("flags a typo'd field name not present in the preset's secretFields", () => {
+    expect(unknownFields(clickupPreset, ["CLICKUP_API_TOKEN", "CLIKUP_TEAM_ID"])).toEqual(["CLIKUP_TEAM_ID"]);
+  });
+
+  it("flags multiple unknown field names, preserving order", () => {
+    expect(unknownFields(clickupPreset, ["FOO", "CLICKUP_API_TOKEN", "BAR"])).toEqual(["FOO", "BAR"]);
+  });
+
+  it("returns [] for an empty provided list", () => {
+    expect(unknownFields(clickupPreset, [])).toEqual([]);
+  });
+
+  it("a preset with no secretFields flags every provided name as unknown", () => {
+    expect(unknownFields(customPreset, ["ANYTHING"])).toEqual(["ANYTHING"]);
   });
 });
 

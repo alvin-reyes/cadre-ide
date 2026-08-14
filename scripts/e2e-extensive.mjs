@@ -183,13 +183,14 @@ async function main() {
     if (composerReady && (await ticketRefField.count())) {
       await ticketRefField.fill("MOCK-1");
       await click(/Import from tracker/i);
-      // `:visible` — PlanningStudio's composer, MaintainView's IntakeRail/
-      // PromptsRail/ThoughtsDock textareas, etc. all stay mounted (hidden via
-      // `display:none`) across mode switches, so an unscoped `textarea`
-      // locator could resolve to the wrong (hidden) element; only the
-      // composer is actually visible once we're on Build → Plan.
+      // PlanningStudio's composer carries a stable `data-testid` — target it
+      // directly rather than `textarea:visible`, which was fragile: the
+      // composer, MaintainView's IntakeRail/PromptsRail/ThoughtsDock
+      // textareas, etc. all stay mounted (hidden via `display:none`) across
+      // mode switches, so an unscoped/visibility-based textarea locator could
+      // resolve to the wrong element.
       importedOk = await until(
-        async () => /Imported demo ticket/.test(await page.locator("textarea:visible").first().inputValue().catch(() => "")),
+        async () => /Imported demo ticket/.test(await page.locator('[data-testid="plan-composer"]').first().inputValue().catch(() => "")),
         8000,
         400
       );

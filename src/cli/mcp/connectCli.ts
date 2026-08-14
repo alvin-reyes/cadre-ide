@@ -62,6 +62,15 @@ export function collectSecrets(preset: Preset, opts: CollectSecretsOpts): Collec
   return { secrets, missing };
 }
 
+/** Which of `providedFieldNames` (the keys of a parsed `--field K=V` map) are
+ *  NOT one of `preset.secretFields` — i.e. would be silently dropped since
+ *  only known fields ever reach `secretsByKeychainKey`/`upsertConnection`.
+ *  Used to warn on a typo'd `--field` name without failing the connect. */
+export function unknownFields(preset: Preset, providedFieldNames: string[]): string[] {
+  const known = new Set(preset.secretFields.map((f) => f.field));
+  return providedFieldNames.filter((name) => !known.has(name));
+}
+
 /** Map a secrets-by-field map to a secrets-by-keychainKey map for `conn`, the
  *  shape `probeConnection`'s `resolveSecret` needs. No I/O, no secret VALUE
  *  is logged — this only reshapes the object callers already hold. */

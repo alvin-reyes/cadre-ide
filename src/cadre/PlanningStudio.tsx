@@ -911,6 +911,7 @@ export function PlanningStudio() {
               </button>
               <textarea
                 ref={inputRef}
+                data-testid="plan-composer"
                 value={draft}
                 rows={1}
                 onChange={(e) => setDraft(e.target.value)}

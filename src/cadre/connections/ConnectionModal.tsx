@@ -59,6 +59,13 @@ export function ConnectionModal({
   const [testResult, setTestResult] = useState<{ ok: boolean; toolCount: number; error?: string } | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // A successful Test only counts as "current" if nothing has been edited
+  // since — any field/secret/transport change invalidates it so a stale pass
+  // can't get persisted onto Save (see handleSave).
+  function invalidateTest() {
+    setTestResult(null);
+  }
+
   function buildConn(): Connection {
     if (!preset.custom) return connection;
     const transport: StdioTransport | HttpTransport =
@@ -86,7 +93,14 @@ export function ConnectionModal({
     // A green test is a strong enough signal to flip it on by default; otherwise
     // keep whatever the connection already had (false for a brand-new one).
     const enabled = testResult?.ok ? true : built.enabled;
-    await upsert(root, { ...built, enabled }, secrets);
+    // Carry the just-tested status/toolCount onto the saved connection so the
+    // list reflects it immediately instead of showing "Not connected" until an
+    // out-of-band probe. `testResult` is invalidated (see invalidateTest) the
+    // moment any field/secret/transport input changes, so if it's still `ok`
+    // here it necessarily reflects the values we're about to save.
+    const status = testResult?.ok ? "connected" : built.status;
+    const toolCount = testResult?.ok ? testResult.toolCount : built.toolCount;
+    await upsert(root, { ...built, enabled, status, toolCount }, secrets);
     setSaving(false);
     onClose();
   }
@@ -118,14 +132,19 @@ export function ConnectionModal({
         {preset.custom && (
           <>
             <Field label="Name">
-              <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="My MCP server" style={inputStyle} />
+              <input
+                value={label}
+                onChange={(e) => { setLabel(e.target.value); invalidateTest(); }}
+                placeholder="My MCP server"
+                style={inputStyle}
+              />
             </Field>
 
             <div style={{ display: "flex", gap: 6 }}>
               {(["stdio", "http"] as const).map((k) => (
                 <button
                   key={k}
-                  onClick={() => setTransportKind(k)}
+                  onClick={() => { setTransportKind(k); invalidateTest(); }}
                   aria-pressed={transportKind === k}
                   style={{
                     fontSize: "var(--c-fs-xs)",
@@ -146,15 +165,30 @@ export function ConnectionModal({
             {transportKind === "stdio" ? (
               <>
                 <Field label="Command">
-                  <input value={stdioCommand} onChange={(e) => setStdioCommand(e.target.value)} placeholder="npx" style={inputStyle} />
+                  <input
+                    value={stdioCommand}
+                    onChange={(e) => { setStdioCommand(e.target.value); invalidateTest(); }}
+                    placeholder="npx"
+                    style={inputStyle}
+                  />
                 </Field>
                 <Field label="Args" hint="space-separated">
-                  <input value={stdioArgs} onChange={(e) => setStdioArgs(e.target.value)} placeholder="-y @scope/mcp-server" style={inputStyle} />
+                  <input
+                    value={stdioArgs}
+                    onChange={(e) => { setStdioArgs(e.target.value); invalidateTest(); }}
+                    placeholder="-y @scope/mcp-server"
+                    style={inputStyle}
+                  />
                 </Field>
               </>
             ) : (
               <Field label="URL">
-                <input value={httpUrl} onChange={(e) => setHttpUrl(e.target.value)} placeholder="https://example.com/mcp" style={inputStyle} />
+                <input
+                  value={httpUrl}
+                  onChange={(e) => { setHttpUrl(e.target.value); invalidateTest(); }}
+                  placeholder="https://example.com/mcp"
+                  style={inputStyle}
+                />
               </Field>
             )}
           </>
@@ -183,7 +217,10 @@ export function ConnectionModal({
             <input
               type={isSecretLike(f.field) ? "password" : "text"}
               value={secrets[f.field] ?? ""}
-              onChange={(e) => setSecrets((s) => ({ ...s, [f.field]: e.target.value }))}
+              onChange={(e) => {
+                setSecrets((s) => ({ ...s, [f.field]: e.target.value }));
+                invalidateTest();
+              }}
               placeholder={f.placeholder}
               autoComplete="off"
               spellCheck={false}
