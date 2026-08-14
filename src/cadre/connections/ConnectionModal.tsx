@@ -90,14 +90,20 @@ export function ConnectionModal({
   async function handleSave() {
     setSaving(true);
     const built = buildConn();
-    // A green test is a strong enough signal to flip it on by default; otherwise
-    // keep whatever the connection already had (false for a brand-new one).
-    const enabled = testResult?.ok ? true : built.enabled;
+    // Saving means the user intends to use this connection → enable it (new
+    // ones enable by default; edits keep their existing enabled). This is
+    // DECOUPLED from the transient test result on purpose: invalidateTest()
+    // clears `testResult` on any post-test edit (e.g. typing the token after a
+    // green Test), and a saved connection must not silently land disabled just
+    // because it was tested-then-tweaked — that also hides it from
+    // trackerConnection() (which requires enabled).
+    const enabled = isNew ? true : built.enabled;
     // Carry the just-tested status/toolCount onto the saved connection so the
     // list reflects it immediately instead of showing "Not connected" until an
     // out-of-band probe. `testResult` is invalidated (see invalidateTest) the
     // moment any field/secret/transport input changes, so if it's still `ok`
-    // here it necessarily reflects the values we're about to save.
+    // here it necessarily reflects the values we're about to save (else we fall
+    // back to the built status — no stale "connected").
     const status = testResult?.ok ? "connected" : built.status;
     const toolCount = testResult?.ok ? testResult.toolCount : built.toolCount;
     await upsert(root, { ...built, enabled, status, toolCount }, secrets);
