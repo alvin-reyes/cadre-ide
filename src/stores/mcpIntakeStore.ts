@@ -22,6 +22,7 @@ import { useConnectionsStore } from "./connectionsStore";
 import { isFileNotFoundError } from "./mcpTrackerStore";
 import { tauriOrchestratorDeps, waitForExit } from "../lib/engine/tauriDeps";
 import { reportError } from "../lib/reportError";
+import { AGENT_TIMEOUT_MS, withTimeout } from "../lib/integrations/agentTimeout";
 
 const mcpTrackerPath = (root: string) => `${root}/.cadre/mcp-tracker.json`;
 
@@ -38,20 +39,10 @@ export type RunFetchAgent = (args: {
 }) => Promise<string>;
 
 // Upper bound on how long a single ticket fetch may run before we give up —
-// matches the CLI fetch path's execFile timeout. fetchTicket is AWAITED behind
-// an interactive control (importing:true disables the input+button), so an
-// unbounded hang would leave the Import button stuck spinning with no recovery.
-const FETCH_AGENT_TIMEOUT_MS = 120_000;
-
-/** Reject with `label` if `p` doesn't settle within `ms`, always clearing the
- *  timer so no dangling handle survives when `p` wins the race. */
-function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(label)), ms);
-  });
-  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
-}
+// shared `AGENT_TIMEOUT_MS`, matching the CLI fetch path's execFile timeout.
+// fetchTicket is AWAITED behind an interactive control (importing:true
+// disables the input+button), so an unbounded hang would leave the Import
+// button stuck spinning with no recovery.
 
 /** Real implementation: spawn a headless `claude -p` agent with ONLY the
  *  tracker's MCP tools allowed. Mirrors mcpTrackerStore's defaultRunSyncAgent
@@ -70,7 +61,7 @@ const defaultRunFetchAgent: RunFetchAgent = async ({ prompt, mcpConfigPath, env,
     env,
   });
   try {
-    await withTimeout(waitForExit(ptyId), FETCH_AGENT_TIMEOUT_MS, "intake: fetch agent timed out");
+    await withTimeout(waitForExit(ptyId), AGENT_TIMEOUT_MS, "intake: fetch agent timed out");
   } catch (e) {
     // Kill the pty so a timed-out `claude`/MCP process doesn't linger.
     await deps.killAgent?.(ptyId).catch(() => {});
@@ -138,7 +129,7 @@ export const useMcpIntakeStore = create<McpIntakeState>((set) => ({
           serverKey: env.serverKey,
           cwd: root,
         }),
-        FETCH_AGENT_TIMEOUT_MS,
+        AGENT_TIMEOUT_MS,
         "intake: fetch agent timed out",
       );
 

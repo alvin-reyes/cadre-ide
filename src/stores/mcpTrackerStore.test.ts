@@ -24,6 +24,7 @@ vi.mock("../lib/reportError", () => ({
 
 import { useMcpTrackerStore, type RunSyncAgent } from "./mcpTrackerStore";
 import { useConnectionsStore } from "./connectionsStore";
+import { AGENT_TIMEOUT_MS } from "../lib/integrations/agentTimeout";
 
 const FAKE_ENV = {
   mcpConfigPath: "/project/.cadre/tracker.mcp.json",
@@ -381,6 +382,27 @@ describe("mcpTrackerStore.syncStory — parent-ticket routing for a linked epic 
     const written = files.get("/project/.cadre/mcp-tracker.json");
     const parsed = JSON.parse(written!);
     expect(parsed.tasks["1.2"].taskId).toBe("T-2");
+  });
+});
+
+describe("mcpTrackerStore.syncStory — bounded by AGENT_TIMEOUT_MS (leak guard)", () => {
+  it("a runSyncAgent that never resolves times out, reports the error, and syncStory still resolves (no leaked hang)", async () => {
+    vi.useFakeTimers();
+    try {
+      makeFsStub();
+      // Never resolves — models a hung agent/pty.
+      const fake: RunSyncAgent = vi.fn(() => new Promise<string>(() => {}));
+      useMcpTrackerStore.getState().__setRunSyncAgent(fake);
+
+      const p = useMcpTrackerStore.getState().syncStory("/project", story, "Done");
+
+      await vi.advanceTimersByTimeAsync(AGENT_TIMEOUT_MS + 1);
+
+      await expect(p).resolves.toBeUndefined();
+      expect(reportErrorStub).toHaveBeenCalledWith("mcp tracker: sync", expect.any(Error));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

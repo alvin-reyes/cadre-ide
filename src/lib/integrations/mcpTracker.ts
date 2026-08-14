@@ -222,7 +222,6 @@ export function aggregateEpicStatus(statuses: TrackerStatus[]): TrackerStatus | 
  */
 export function buildEpicSyncPrompt(input: {
   ticketId: string;
-  epic: number;
   aggregateStatus: TrackerStatus;
   changedStory: string;
   changedStatus: TrackerStatus;

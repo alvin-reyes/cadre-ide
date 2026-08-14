@@ -32,16 +32,17 @@ import {
   type TrackerStory,
   type TrackerStatus,
 } from "../../lib/integrations/mcpTracker";
+import { AGENT_TIMEOUT_MS } from "../../lib/integrations/agentTimeout";
 import type { Status } from "../../lib/engine/status";
 import type { NodeIo } from "./connectionsNode";
 
 const mcpTrackerPath = (root: string) => `${root}/.cadre/mcp-tracker.json`;
 
-/** Hard cap on a single headless sync agent (2 min — generous for a 1-2
- *  tool-call sync incl. npx MCP server spin-up). On timeout, execFile kills the
- *  child (SIGKILL) and rejects; the rejection is caught by syncStoryNode's outer
- *  try/catch → logged warning, no hang, never thrown out of the run. */
-const SYNC_AGENT_TIMEOUT_MS = 120_000;
+// Hard cap on a single headless sync agent — shared `AGENT_TIMEOUT_MS` (2 min,
+// generous for a 1-2 tool-call sync incl. npx MCP server spin-up). On timeout,
+// execFile kills the child (SIGKILL) and rejects; the rejection is caught by
+// syncStoryNode's outer try/catch → logged warning, no hang, never thrown out
+// of the run.
 
 // ---------------------------------------------------------------------------
 // Injectable agent runner
@@ -68,7 +69,7 @@ export function realRunSyncAgentNode(): RunSyncAgentNode {
           cwd,
           env: { ...process.env, ...env },
           maxBuffer: 16 * 1024 * 1024,
-          timeout: SYNC_AGENT_TIMEOUT_MS,
+          timeout: AGENT_TIMEOUT_MS,
           killSignal: "SIGKILL",
         },
         (err, stdout, stderr) => {
@@ -164,7 +165,6 @@ export async function syncStoryNode(
 
       const prompt = buildEpicSyncPrompt({
         ticketId: ticket.ticketId,
-        epic: story.epic,
         aggregateStatus: agg,
         changedStory: key,
         changedStatus: status,

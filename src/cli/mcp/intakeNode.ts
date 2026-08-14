@@ -19,14 +19,13 @@
 import { execFile } from "node:child_process";
 
 import { buildFetchPrompt, parseTicket, type FetchedTicket } from "../../lib/integrations/mcpIntake";
+import { AGENT_TIMEOUT_MS } from "../../lib/integrations/agentTimeout";
 import { resolveTrackerEnvNode, type NodeIo } from "./connectionsNode";
 
-/** Hard cap on a single headless fetch agent — same budget as
- *  `trackerSyncNode.ts`'s `SYNC_AGENT_TIMEOUT_MS` (2 min, generous for a
- *  1-2 tool-call fetch incl. npx MCP server spin-up). On timeout, execFile
- *  kills the child (SIGKILL) and rejects; `fetchTicketNode` lets that
- *  rejection propagate — intake is loud. */
-const FETCH_AGENT_TIMEOUT_MS = 120_000;
+// Hard cap on a single headless fetch agent — shared `AGENT_TIMEOUT_MS` (2
+// min, generous for a 1-2 tool-call fetch incl. npx MCP server spin-up). On
+// timeout, execFile kills the child (SIGKILL) and rejects; `fetchTicketNode`
+// lets that rejection propagate — intake is loud.
 
 // ---------------------------------------------------------------------------
 // Injectable agent runner
@@ -55,7 +54,7 @@ export function realRunFetchAgentNode(): RunFetchAgentNode {
           cwd,
           env: { ...process.env, ...env },
           maxBuffer: 16 * 1024 * 1024,
-          timeout: FETCH_AGENT_TIMEOUT_MS,
+          timeout: AGENT_TIMEOUT_MS,
           killSignal: "SIGKILL",
         },
         (err, stdout, stderr) => {

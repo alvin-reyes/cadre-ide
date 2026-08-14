@@ -134,7 +134,7 @@ describe("aggregateEpicStatus", () => {
 
 describe("buildEpicSyncPrompt", () => {
   it("names the ticket, aggregate status, the changed story + progress, demands strict JSON", () => {
-    const p = buildEpicSyncPrompt({ ticketId: "TCK-42", epic: 1, aggregateStatus: "Done",
+    const p = buildEpicSyncPrompt({ ticketId: "TCK-42", aggregateStatus: "Done",
       changedStory: "1.2", changedStatus: "Done", doneCount: 3, totalCount: 3, verifyCmd: "npm test" });
     expect(p).toContain("TCK-42");
     expect(p).toContain("Done");

@@ -29,6 +29,7 @@ import {
 import { useConnectionsStore } from "./connectionsStore";
 import { tauriOrchestratorDeps, waitForExit } from "../lib/engine/tauriDeps";
 import { reportError } from "../lib/reportError";
+import { AGENT_TIMEOUT_MS, withTimeout } from "../lib/integrations/agentTimeout";
 
 // ---------------------------------------------------------------------------
 // Injectable agent runner
@@ -44,7 +45,9 @@ export type RunSyncAgent = (args: {
 
 /** Real implementation: spawn a headless `claude -p` agent with ONLY the
  *  tracker's MCP tools allowed. Mirrors evaluationStore.runAgent's
- *  spawn+capture+waitForExit pattern. */
+ *  spawn+capture+waitForExit pattern, but bounds the wait so a hung agent or
+ *  MCP server can't leak a background pty — on timeout we kill the pty and
+ *  throw (mirrors mcpIntakeStore's defaultRunFetchAgent). */
 const defaultRunSyncAgent: RunSyncAgent = async ({ prompt, mcpConfigPath, env, serverKey, cwd }) => {
   let out = "";
   const deps = tauriOrchestratorDeps(cwd, (chunk) => {
@@ -56,7 +59,13 @@ const defaultRunSyncAgent: RunSyncAgent = async ({ prompt, mcpConfigPath, env, s
     cwd,
     env,
   });
-  await waitForExit(ptyId);
+  try {
+    await withTimeout(waitForExit(ptyId), AGENT_TIMEOUT_MS, "mcp tracker: sync agent timed out");
+  } catch (e) {
+    // Kill the pty so a timed-out `claude`/MCP process doesn't linger.
+    await deps.killAgent?.(ptyId).catch(() => {});
+    throw e;
+  }
   return out;
 };
 
@@ -195,7 +204,6 @@ export const useMcpTrackerStore = create<McpTrackerState>(() => ({
 
             const prompt = buildEpicSyncPrompt({
               ticketId: ticket.ticketId,
-              epic: story.epic,
               aggregateStatus: agg,
               changedStory: storyKey,
               changedStatus: status,
@@ -203,13 +211,21 @@ export const useMcpTrackerStore = create<McpTrackerState>(() => ({
               totalCount: forEpic.length,
               verifyCmd,
             });
-            const raw = await runSyncAgent({
-              prompt,
-              mcpConfigPath: env.mcpConfigPath,
-              env: env.env,
-              serverKey: env.serverKey,
-              cwd: root,
-            });
+            // Bound the wait around the runSyncAgent call itself (not only
+            // inside defaultRunSyncAgent) so a hung agent of ANY
+            // implementation still fails-closed here — the rejection lands
+            // in the catch below (reportError), never a hang.
+            const raw = await withTimeout(
+              runSyncAgent({
+                prompt,
+                mcpConfigPath: env.mcpConfigPath,
+                env: env.env,
+                serverKey: env.serverKey,
+                cwd: root,
+              }),
+              AGENT_TIMEOUT_MS,
+              "mcp tracker: sync agent timed out",
+            );
             // Validates a taskId came back; the parent-ticket file already
             // has the link, so nothing needs to be written back.
             parseSyncResult(raw);
@@ -219,13 +235,17 @@ export const useMcpTrackerStore = create<McpTrackerState>(() => ({
           const existing = file.tasks[storyKey];
 
           const prompt = buildSyncPrompt({ story, status, verifyCmd, existing });
-          const raw = await runSyncAgent({
-            prompt,
-            mcpConfigPath: env.mcpConfigPath,
-            env: env.env,
-            serverKey: env.serverKey,
-            cwd: root,
-          });
+          const raw = await withTimeout(
+            runSyncAgent({
+              prompt,
+              mcpConfigPath: env.mcpConfigPath,
+              env: env.env,
+              serverKey: env.serverKey,
+              cwd: root,
+            }),
+            AGENT_TIMEOUT_MS,
+            "mcp tracker: sync agent timed out",
+          );
           const { taskId, url } = parseSyncResult(raw);
 
           file.tasks[storyKey] = { taskId, url };
