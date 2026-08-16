@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { planApproval, canApprove, planningModel, PLANNING_MODEL } from "./planning";
+import { planApproval, canApprove, planningModel, PLANNING_MODEL, getPlanningKey } from "./planning";
 import { canDispatch } from "../lib/engine/planApproval";
 
 describe("planning helpers", () => {
@@ -61,6 +61,61 @@ describe("planning helpers", () => {
         if (saved === undefined) delete process.env.CADRE_PLANNING_MODEL;
         else process.env.CADRE_PLANNING_MODEL = saved;
       }
+    });
+  });
+
+  describe("getPlanningKey (bounded keychain read)", () => {
+    // The reader/timeout are injected so we never touch the real keychain or wait 60s.
+    const withoutEnvKey = async (fn: () => Promise<void>) => {
+      const saved = process.env.ANTHROPIC_API_KEY;
+      delete process.env.ANTHROPIC_API_KEY;
+      try {
+        await fn();
+      } finally {
+        if (saved === undefined) delete process.env.ANTHROPIC_API_KEY;
+        else process.env.ANTHROPIC_API_KEY = saved;
+      }
+    };
+
+    it("prefers ANTHROPIC_API_KEY and never touches the keychain", async () => {
+      const saved = process.env.ANTHROPIC_API_KEY;
+      process.env.ANTHROPIC_API_KEY = "  sk-ant-env  ";
+      let read = false;
+      try {
+        const key = await getPlanningKey({ read: async () => { read = true; return "sk-keychain"; } });
+        expect(key).toBe("sk-ant-env"); // trimmed
+        expect(read).toBe(false);
+      } finally {
+        if (saved === undefined) delete process.env.ANTHROPIC_API_KEY;
+        else process.env.ANTHROPIC_API_KEY = saved;
+      }
+    });
+
+    it("returns the keychain value when the reader resolves", async () => {
+      await withoutEnvKey(async () => {
+        expect(await getPlanningKey({ read: async () => "sk-from-keychain" })).toBe("sk-from-keychain");
+      });
+    });
+
+    it("returns null when the reader yields nothing", async () => {
+      await withoutEnvKey(async () => {
+        expect(await getPlanningKey({ read: async () => null })).toBeNull();
+      });
+    });
+
+    it("times out to null (not a hang) and hints when the read never returns", async () => {
+      await withoutEnvKey(async () => {
+        const hints: string[] = [];
+        const t = Date.now();
+        const key = await getPlanningKey({
+          timeoutMs: 60,
+          read: () => new Promise<string | null>(() => {}), // never resolves (pending dialog)
+          onHint: (m) => hints.push(m),
+        });
+        expect(key).toBeNull();
+        expect(Date.now() - t).toBeLessThan(1000); // bounded, not a hang
+        expect(hints.some((h) => /keychain approval/i.test(h))).toBe(true);
+      });
     });
   });
 });

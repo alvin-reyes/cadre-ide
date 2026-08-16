@@ -439,9 +439,11 @@ async function cmdRun(projectDir: string, auto: boolean): Promise<number> {
 /** The shared "no planning key" message + non-zero exit. */
 function planKeyMissing(): number {
   log(
-    "[cadre] no Anthropic planning key found. Planning uses the Anthropic API (not the\n" +
-      "        `claude` login). Set ANTHROPIC_API_KEY, or store the key in the macOS\n" +
-      "        keychain (service `dev.cadre.ide`, account `anthropic_api_key`)."
+    "[cadre] no Anthropic planning key found (or keychain access was not approved in\n" +
+      "        time). Planning uses the Anthropic API (not the `claude` login).\n" +
+      "        Fastest fix: export ANTHROPIC_API_KEY. Or store the key in the macOS\n" +
+      "        keychain (service `dev.cadre.ide`, account `anthropic_api_key`) and, when\n" +
+      "        the access dialog appears, click Allow (the read waits up to 60s)."
   );
   return 1;
 }
@@ -587,7 +589,12 @@ async function cmdShard(projectDir: string): Promise<number> {
 
   const stories = backlogFromTool(toolInput, epic, start);
   if (stories.length === 0) {
-    log("[cadre] SM returned an empty backlog.");
+    log(
+      "[cadre] the SM returned an EMPTY backlog — no stories written, nothing to build.\n" +
+        "        The shard is tuned for full-lifecycle app plans (frontend/API/DB/DevOps/QA);\n" +
+        "        a very small or single-purpose brief can yield nothing. Try a broader brief,\n" +
+        "        or seed a story yourself under docs/stories/ and run `cadre approve` + `cadre run`."
+    );
     return 1;
   }
   for (const content of stories) {

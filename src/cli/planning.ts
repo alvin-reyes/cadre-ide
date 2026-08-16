@@ -34,19 +34,21 @@ export function planningModel(): string {
   return process.env.CADRE_PLANNING_MODEL?.trim() || PLANNING_MODEL;
 }
 
-/**
- * Resolve the Anthropic planning key: `ANTHROPIC_API_KEY` first, else the macOS
- * keychain (`security find-generic-password -s dev.cadre.ide -a
- * anthropic_api_key -w`). Returns the trimmed key, or `null` when neither has
- * one (a trailing newline on a pasted key silently breaks the API, so trim).
- */
-export function getPlanningKey(): Promise<string | null> {
-  const env = process.env.ANTHROPIC_API_KEY?.trim();
-  if (env) return Promise.resolve(env);
-  return new Promise((resolve) => {
+/** Reads the raw key from the macOS keychain (or null on any failure). Injectable for tests. */
+export type KeychainReader = () => Promise<string | null>;
+
+/** How long to wait for the keychain read before giving up. Generous, so a human
+ *  has time to approve the macOS access dialog, but bounded so a never-approved
+ *  prompt can't hang a headless run forever (the original bug: no timeout). */
+export const KEYCHAIN_TIMEOUT_MS = 60_000;
+
+const defaultKeychainReader: KeychainReader = () =>
+  new Promise((resolve) => {
     execFile(
       "security",
       ["find-generic-password", "-s", "dev.cadre.ide", "-a", "anthropic_api_key", "-w"],
+      // Also bound the child itself, belt-and-suspenders with the race below.
+      { timeout: KEYCHAIN_TIMEOUT_MS },
       (err, stdout) => {
         if (err) {
           resolve(null);
@@ -56,6 +58,53 @@ export function getPlanningKey(): Promise<string | null> {
         resolve(key.length > 0 ? key : null);
       }
     );
+  });
+
+/**
+ * Resolve the Anthropic planning key: `ANTHROPIC_API_KEY` first, else the macOS
+ * keychain (`security find-generic-password -s dev.cadre.ide -a
+ * anthropic_api_key -w`). Returns the trimmed key, or `null` when neither has
+ * one (a trailing newline on a pasted key silently breaks the API, so trim).
+ *
+ * The keychain read is BOUNDED: reading the value (`-w`) can trigger a macOS
+ * access-approval dialog, and a headless process would otherwise block on it
+ * forever. So we race the read against a timeout, and — only if it's actually
+ * waiting — emit a one-time hint telling the user to approve the dialog (or set
+ * ANTHROPIC_API_KEY). `opts` is for tests (small timeout + injected reader).
+ */
+export function getPlanningKey(opts: {
+  timeoutMs?: number;
+  read?: KeychainReader;
+  onHint?: (msg: string) => void;
+} = {}): Promise<string | null> {
+  const env = process.env.ANTHROPIC_API_KEY?.trim();
+  if (env) return Promise.resolve(env);
+
+  const timeoutMs = opts.timeoutMs ?? KEYCHAIN_TIMEOUT_MS;
+  const read = opts.read ?? defaultKeychainReader;
+  const onHint = opts.onHint ?? ((m) => process.stderr.write(m + "\n"));
+
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v: string | null) => {
+      if (done) return;
+      done = true;
+      clearTimeout(hintTimer);
+      clearTimeout(hardTimer);
+      resolve(v);
+    };
+    // Fire the hint only if the read is still pending shortly in — so the fast
+    // (already-approved) path stays silent, and a pending dialog gets a nudge.
+    const hintTimer = setTimeout(() => {
+      if (!done) {
+        onHint(
+          "[cadre] waiting for macOS keychain approval — click Allow on the dialog " +
+            "(or set ANTHROPIC_API_KEY to skip the keychain)."
+        );
+      }
+    }, Math.min(2000, Math.floor(timeoutMs / 3)));
+    const hardTimer = setTimeout(() => finish(null), timeoutMs);
+    read().then(finish, () => finish(null));
   });
 }
 
