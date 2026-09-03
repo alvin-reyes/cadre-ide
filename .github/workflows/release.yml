@@ -161,6 +161,14 @@ jobs:
         run: npm ci
 
       - name: Build Tauri app
+        # Tauri's beforeBuildCommand runs `vite build`, which needs >2GB to link
+        # the bundle (mermaid + cytoscape + katex + monaco). The macOS runners
+        # have ~7GB RAM, so Node defaults to a ~2GB old-space heap and the build
+        # dies with "JavaScript heap out of memory" — while the 16GB Linux and
+        # Windows runners get a bigger default and pass. Pin it so every target
+        # builds with the same ceiling instead of inheriting the runner's size.
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: npx tauri build --target ${{ matrix.target }}
 
       - name: List bundle output (debug)
