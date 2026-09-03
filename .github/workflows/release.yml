@@ -1,5 +1,11 @@
 name: Build & Release Installers
 
+# Tag-driven. Push a `v*` tag whose version matches src-tauri/tauri.conf.json and
+# this builds installers for all four targets and publishes a GitHub Release.
+#
+# The release is created as a DRAFT and only published once every matrix leg has
+# succeeded. Publishing up front (the previous behaviour) meant a single failing
+# target left a live release advertising downloads that were never uploaded.
 on:
   push:
     tags:
@@ -10,17 +16,59 @@ permissions:
   contents: write
 
 jobs:
-  create-release:
+  prepare:
+    name: Verify tag & create draft
     runs-on: ubuntu-latest
     outputs:
       release_id: ${{ steps.create.outputs.id }}
     steps:
-      - name: Create GitHub Release
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history so we can find the previous tag for the changelog link.
+          fetch-depth: 0
+
+      # workflow_dispatch can be aimed at a branch, which would otherwise create a
+      # release named after the branch. Fail loudly instead.
+      - name: Require a tag ref
+        run: |
+          if [ "${{ github.ref_type }}" != "tag" ]; then
+            echo "::error::This workflow must run on a tag, got ${{ github.ref_type }} '${{ github.ref_name }}'."
+            exit 1
+          fi
+
+      # tauri.conf.json is the single source of truth for the app version — it is
+      # what the shipped bundle reports. A tag that disagrees would publish an
+      # installer whose in-app version contradicts its download name.
+      - name: Check tag matches tauri.conf.json
+        run: |
+          CONFIG_VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          echo "tauri.conf.json: $CONFIG_VERSION"
+          echo "tag:             $TAG_VERSION"
+          if [ "$CONFIG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag '$GITHUB_REF_NAME' does not match tauri.conf.json version '$CONFIG_VERSION'."
+            exit 1
+          fi
+
+      - name: Resolve previous tag
+        id: prev
+        run: |
+          # The tag for this run already exists, so skip it when looking back.
+          PREV=$(git tag --sort=-creatordate | grep -v "^${GITHUB_REF_NAME}$" | head -n1 || true)
+          if [ -n "$PREV" ]; then
+            echo "compare=https://github.com/${{ github.repository }}/compare/$PREV...${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            # First release — there is nothing to compare against.
+            echo "compare=https://github.com/${{ github.repository }}/commits/${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create draft release
         id: create
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: 'ADE ${{ github.ref_name }}'
+          name: 'Cadre ${{ github.ref_name }}'
           body: |
             ## Downloads
 
@@ -31,18 +79,31 @@ jobs:
             | **Windows** | `.msi` / `.exe` | x64 |
             | **Linux** | `.deb` / `.AppImage` | x64 |
 
-            ### Install via Homebrew (macOS)
+            ### Installing on macOS
+
+            These builds are **not code-signed or notarized yet**. macOS will refuse
+            the first launch and report that Cadre "is damaged and can't be opened" —
+            that message is Gatekeeper reacting to the missing signature, not a
+            corrupt download.
+
+            Open it once via **right-click → Open → Open**, or clear the quarantine
+            attribute after dragging it to Applications:
+
             ```bash
-            brew tap alvin-reyes/tap
-            brew install --cask ade
+            xattr -dr com.apple.quarantine /Applications/Cadre.app
             ```
 
-            **Full Changelog**: https://github.com/${{ github.repository }}/compare/v0.2.0...${{ github.ref_name }}
-          draft: false
+            ### Installing on Windows
+
+            SmartScreen will warn about an unrecognized publisher for the same
+            reason. Choose **More info → Run anyway**.
+
+            **Full Changelog**: ${{ steps.prev.outputs.compare }}
+          draft: true
           prerelease: false
 
   build:
-    needs: create-release
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
@@ -126,7 +187,19 @@ jobs:
             FOUND=1
           done < <(find "$BUNDLE_DIR" -type f \( -name "*.dmg" -o -name "*.deb" -o -name "*.AppImage" -o -name "*.msi" -o -name "*.exe" \) -print0 2>/dev/null)
 
+          # A leg that silently uploads nothing would still go green and let the
+          # publish job advertise a download that does not exist.
           if [ "$FOUND" -eq 0 ]; then
-            echo "::warning::No installer artifacts found in $BUNDLE_DIR"
+            echo "::error::No installer artifacts found in $BUNDLE_DIR"
+            exit 1
           fi
 
+  publish:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Flip draft to published
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "${{ github.ref_name }}" --repo "${{ github.repository }}" --draft=false
