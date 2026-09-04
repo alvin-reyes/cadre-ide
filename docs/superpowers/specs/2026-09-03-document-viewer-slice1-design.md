@@ -47,10 +47,19 @@ export function imageMime(path: string): string;
 One component, one prop contract, embeddable by any surface:
 
 ```tsx
-<DocViewer path={string} onError={(e: unknown) => void} />
+<DocViewer path={string} text={string | undefined} />
 ```
 
-It calls `viewerKind(path)` and renders the matching leaf: `PdfView`, `DocxView`, `ImageView`, or `Markdown` (the existing component — reused, not reimplemented). Each leaf owns its own loading and error state. `DocViewer` holds no lifecycle logic and no Tauri calls beyond reading the file, keeping it a presentation component.
+**Ruling (post-implementation):** the shipped component does not take an `onError` — every leaf's
+failure already routes through `reportError()`, which lands as a toast *and* an AI Log entry per the
+errors-are-never-silent convention, so a caller-supplied error callback would be an unused prop
+(YAGNI). `text` is optional and was added during the whole-branch review fix pass: when the caller
+already has the file's bytes in memory (Workbench holds the Monaco buffer for the currently-open
+file), it's passed straight through instead of `DocViewer` re-reading the same file over a second
+`read_file` IPC round-trip — and it keeps the Rendered markdown pane showing unsaved Source edits
+rather than the on-disk version.
+
+It calls `viewerKind(path)` and renders the matching leaf: `PdfView`, `DocxView`, `ImageView`, or `Markdown` (the existing component — reused, not reimplemented). Each leaf owns its own loading and error state. `DocViewer` holds no lifecycle logic and no Tauri calls beyond reading the file (and none at all for markdown when `text` is supplied), keeping it a presentation component.
 
 **Both parsers are lazy.** `pdf.js` and `mammoth` are reached only through `await import(...)` inside the leaf that needs them. The main bundle is already 5.68 MB (1.49 MB gzipped) and Vite warns about it; a static import would make a documented problem worse for a feature most sessions never touch.
 
