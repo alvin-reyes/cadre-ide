@@ -92,6 +92,10 @@ export function Workbench({ root }: { root: string }) {
   // search results. Bump the nonce each time so re-clicking the same line re-reveals.
   async function openAt(path: string, line: number, col: number) {
     if (path !== openPath) await openFile(path);
+    // openFile defaults markdown to Rendered mode, which unmounts Monaco —
+    // a line/col jump only means anything in the Source (Monaco) pane, so
+    // force it before revealing, or the jump below is silently a no-op.
+    if (viewerKind(path) === "markdown") setMdSource(true);
     setGotoLine({ line, col, nonce: Date.now() });
   }
 
@@ -242,7 +246,10 @@ export function Workbench({ root }: { root: string }) {
               gotoLine={gotoLine}
             />
           ) : (
-            <DocViewer path={openPath} />
+            // Pass the live editor buffer for markdown so the Rendered pane
+            // reflects unsaved Source edits, instead of DocViewer re-reading
+            // the same file from disk over a second IPC round-trip.
+            <DocViewer path={openPath} text={isMarkdown ? content : undefined} />
           )}
         </div>
       </div>
