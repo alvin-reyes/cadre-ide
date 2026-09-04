@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Save, FileCode2, RefreshCw, SquareTerminal, X, Files, Search } from "lucide-react";
+import { Save, FileCode2, RefreshCw, SquareTerminal, X, Files, Search, Eye, Code2 } from "lucide-react";
 import MonacoWrapper from "../components/editor/MonacoWrapper";
 import { FileTree } from "./FileTree";
 import { SearchPanel } from "./SearchPanel";
@@ -8,6 +8,8 @@ import { TerminalTabs } from "./TerminalTabs";
 import { useThemeStore } from "../stores/themeStore";
 import { toast } from "../stores/toastStore";
 import { reportError } from "../lib/reportError";
+import { viewerKind } from "../lib/viewer/viewerKind";
+import { DocViewer } from "./viewer/DocViewer";
 
 /**
  * The File View: the project structure (tree) beside a real code editor (Monaco),
@@ -32,6 +34,13 @@ export function Workbench({ root }: { root: string }) {
   const [leftMode, setLeftMode] = useState<"files" | "search">("files");
   // Bumping `nonce` re-triggers the editor's reveal-line even for the same target.
   const [gotoLine, setGotoLine] = useState<{ line: number; col?: number; nonce: number } | null>(null);
+  // Markdown opens rendered (reading is the common case) but stays editable via
+  // this toggle — the Source pane is the unchanged Monaco + Cmd+S flow.
+  const [mdSource, setMdSource] = useState(false);
+  const kind = openPath ? viewerKind(openPath) : "text";
+  const isMarkdown = kind === "markdown";
+  // Markdown in Source mode is the only non-"text" kind that still uses Monaco.
+  const usesEditor = kind === "text" || (isMarkdown && mdSource);
   // Integrated terminal below the editor (IDE-style). Mounted once opened so its
   // PTY survives hide/show; resizable via the drag handle.
   const [termMounted, setTermMounted] = useState(false);
@@ -64,8 +73,13 @@ export function Workbench({ root }: { root: string }) {
     // Don't silently discard unsaved edits when switching files.
     if (dirty && !window.confirm("Discard unsaved changes to the current file?")) return;
     try {
-      const text = await invoke<string>("read_file", { path });
+      // Binary formats are read by DocViewer itself (read_file_base64);
+      // read_file would fail here on invalid UTF-8.
+      const text = viewerKind(path) === "text" || viewerKind(path) === "markdown"
+        ? await invoke<string>("read_file", { path })
+        : "";
       setOpenPath(path);
+      setMdSource(false);
       setContent(text);
       setSaved(text);
       setError(null);
@@ -126,28 +140,42 @@ export function Workbench({ root }: { root: string }) {
           <SquareTerminal size={13} strokeWidth={2} />
           Terminal
         </button>
-        <button
-          onClick={save}
-          disabled={!dirty}
-          title="Save (Ctrl/Cmd+S)"
-          aria-label="Save file"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 5,
-            fontSize: "var(--c-fs-xs)",
-            fontWeight: 550 as const,
-            padding: "4px 10px",
-            borderRadius: "var(--c-radius-sm)",
-            background: dirty ? "var(--c-accent)" : "var(--c-surface-2)",
-            color: dirty ? "var(--c-on-accent)" : "var(--c-text-muted)",
-            border: "none",
-            cursor: dirty ? "pointer" : "default",
-          }}
-        >
-          <Save size={12} strokeWidth={2} />
-          Save
-        </button>
+        {isMarkdown && (
+          <button
+            onClick={() => setMdSource((v) => !v)}
+            title={mdSource ? "Show rendered Markdown" : "Edit Markdown source"}
+            aria-pressed={mdSource}
+            className="cadre-hover"
+            style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: "var(--c-fs-xs)", fontWeight: 550 as const, padding: "4px 10px", borderRadius: "var(--c-radius-sm)", background: "transparent", color: "var(--c-text-muted)", border: "1px solid var(--c-border)", cursor: "pointer" }}
+          >
+            {mdSource ? <Eye size={12} strokeWidth={2} /> : <Code2 size={12} strokeWidth={2} />}
+            {mdSource ? "Rendered" : "Source"}
+          </button>
+        )}
+        {usesEditor && (
+          <button
+            onClick={save}
+            disabled={!dirty}
+            title="Save (Ctrl/Cmd+S)"
+            aria-label="Save file"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              fontSize: "var(--c-fs-xs)",
+              fontWeight: 550 as const,
+              padding: "4px 10px",
+              borderRadius: "var(--c-radius-sm)",
+              background: dirty ? "var(--c-accent)" : "var(--c-surface-2)",
+              color: dirty ? "var(--c-on-accent)" : "var(--c-text-muted)",
+              border: "none",
+              cursor: dirty ? "pointer" : "default",
+            }}
+          >
+            <Save size={12} strokeWidth={2} />
+            Save
+          </button>
+        )}
       </div>
 
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
@@ -200,7 +228,11 @@ export function Workbench({ root }: { root: string }) {
 
         {/* Editor */}
         <div style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
-          {openPath ? (
+          {!openPath ? (
+            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--c-text-faint)", fontSize: "var(--c-fs-sm)", textAlign: "center", padding: "var(--c-space-5)" }}>
+              Select a file in the tree to view and edit it.
+            </div>
+          ) : usesEditor ? (
             <MonacoWrapper
               filePath={openPath}
               content={content}
@@ -210,9 +242,7 @@ export function Workbench({ root }: { root: string }) {
               gotoLine={gotoLine}
             />
           ) : (
-            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--c-text-faint)", fontSize: "var(--c-fs-sm)", textAlign: "center", padding: "var(--c-space-5)" }}>
-              Select a file in the tree to view and edit it.
-            </div>
+            <DocViewer path={openPath} />
           )}
         </div>
       </div>
