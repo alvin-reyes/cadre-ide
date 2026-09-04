@@ -280,6 +280,22 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
         .map_err(|e| format!("Invalid base64: {}", e))
 }
 
+/// Cap on files the document viewer will load. base64 inflates by ~4/3 and the
+/// whole string crosses the IPC boundary at once, so an unbounded read stalls
+/// the webview with no feedback. A refusal the user can read beats a hang.
+pub const MAX_VIEWER_BYTES: u64 = 64 * 1024 * 1024;
+
+pub fn check_viewer_size(len: u64) -> Result<(), String> {
+    if len > MAX_VIEWER_BYTES {
+        return Err(format!(
+            "File is too large to preview: {:.1} MB (limit {} MB)",
+            len as f64 / 1_048_576.0,
+            MAX_VIEWER_BYTES / 1_048_576
+        ));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn read_file_base64(path: String) -> Result<String, String> {
     let resolved = if path.starts_with("~/") {
@@ -288,6 +304,10 @@ fn read_file_base64(path: String) -> Result<String, String> {
     } else {
         path.clone()
     };
+    // Check the size BEFORE reading, so an oversized file is never loaded at all.
+    let meta = std::fs::metadata(&resolved)
+        .map_err(|e| format!("Failed to stat {}: {}", resolved, e))?;
+    check_viewer_size(meta.len())?;
     let bytes = std::fs::read(&resolved).map_err(|e| format!("Failed to read {}: {}", resolved, e))?;
     Ok(STANDARD.encode(bytes))
 }
@@ -557,4 +577,24 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod viewer_size_tests {
+    use super::check_viewer_size;
+    use super::MAX_VIEWER_BYTES;
+
+    #[test]
+    fn accepts_a_file_under_the_cap() {
+        assert!(check_viewer_size(1024).is_ok());
+        assert!(check_viewer_size(MAX_VIEWER_BYTES).is_ok());
+    }
+
+    #[test]
+    fn rejects_a_file_over_the_cap() {
+        let err = check_viewer_size(MAX_VIEWER_BYTES + 1).unwrap_err();
+        // The message must name both numbers so the user knows how far over it is.
+        assert!(err.contains("64"), "expected the cap in the message, got: {err}");
+        assert!(err.to_lowercase().contains("too large"), "got: {err}");
+    }
 }
