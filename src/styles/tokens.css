@@ -708,6 +708,10 @@
   font-weight: var(--c-weight-medium);
   background: var(--c-surface-2);
 }
+.cadre-doc img {
+  max-width: 100%;
+  height: auto;
+}
 
 /* Chat Markdown: comfortable reading size + generous line-height (Claude-style). */
 .cadre-md {

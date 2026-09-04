@@ -1,15 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
 import { reportError } from "../../lib/reportError";
+import { base64ToBytes, Centered } from "./shared";
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 
-/** base64 → bytes, for handing the raw PDF to pdf.js. */
-function base64ToBytes(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
+const MIN_SCALE = 0.5;
+const MAX_SCALE = 3;
+const DEFAULT_SCALE = 1.5;
+const SCALE_STEP = 0.25;
 
 /**
  * Renders a PDF with pdf.js. Bundled rather than using the webview's native
@@ -20,6 +18,7 @@ export function PdfView({ data }: { data: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [pageCount, setPageCount] = useState(0);
   const [page, setPage] = useState(1);
+  const [scale, setScale] = useState(DEFAULT_SCALE);
   const [error, setError] = useState<string | null>(null);
   // Holds the loaded PDFDocumentProxy between renders without re-parsing.
   const docRef = useRef<PDFDocumentProxy | null>(null);
@@ -27,7 +26,9 @@ export function PdfView({ data }: { data: string }) {
   // canvas during multiple render() operations" if a second render() starts
   // on the same <canvas> before the first is cancelled — shared between both
   // effects' cleanups so a fast page-flip *and* a document swap mid-render
-  // both cancel it before anything new touches the canvas.
+  // both cancel it before anything new touches the canvas. A zoom change
+  // goes through the same page-render effect (scale is in its deps), so it
+  // gets the same cancel-before-redraw treatment as a page change.
   const renderTaskRef = useRef<RenderTask | null>(null);
 
   // Parse the document once per file.
@@ -45,6 +46,7 @@ export function PdfView({ data }: { data: string }) {
         docRef.current = doc;
         setPageCount(doc.numPages);
         setPage(1);
+        setScale(DEFAULT_SCALE);
       } catch (e) {
         if (!cancelled) setError(reportError("render pdf", e));
       }
@@ -62,7 +64,7 @@ export function PdfView({ data }: { data: string }) {
     };
   }, [data]);
 
-  // Draw the current page.
+  // Draw the current page at the current scale.
   useEffect(() => {
     const doc = docRef.current;
     const canvas = canvasRef.current;
@@ -72,7 +74,7 @@ export function PdfView({ data }: { data: string }) {
       try {
         const pg = await doc.getPage(page);
         if (cancelled) return;
-        const viewport = pg.getViewport({ scale: 1.5 });
+        const viewport = pg.getViewport({ scale });
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
         canvas.width = viewport.width;
@@ -84,29 +86,24 @@ export function PdfView({ data }: { data: string }) {
       } catch (e) {
         // `.cancel()` (below, or from the parse effect's cleanup) rejects the
         // pending render with RenderingCancelledException by design — that's
-        // the expected outcome of a fast page-flip, not a failure, so it must
-        // not surface as a toast/AI-Log entry. Everything else still does.
+        // the expected outcome of a fast page-flip or zoom change, not a
+        // failure, so it must not surface as a toast/AI-Log entry. Everything
+        // else still does.
         const isCancellation = e instanceof Error && e.name === "RenderingCancelledException";
         if (!cancelled && !isCancellation) setError(reportError("render pdf page", e));
       }
     })();
     return () => {
       cancelled = true;
-      // Cancel this page's render before the next one starts (page changes)
-      // or the effect tears down — without this, two render()s can race on
-      // the same canvas and pdf.js throws.
+      // Cancel this page's render before the next one starts (page or zoom
+      // change) or the effect tears down — without this, two render()s can
+      // race on the same canvas and pdf.js throws.
       renderTaskRef.current?.cancel();
       renderTaskRef.current = null;
     };
-  }, [page, pageCount]);
+  }, [page, pageCount, scale]);
 
-  if (error) {
-    return (
-      <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--c-danger)", fontSize: "var(--c-fs-sm)", padding: "var(--c-space-5)" }}>
-        {error}
-      </div>
-    );
-  }
+  if (error) return <Centered color="var(--c-danger)">{error}</Centered>;
 
   const btn = {
     display: "inline-flex",
@@ -133,9 +130,22 @@ export function PdfView({ data }: { data: string }) {
         <button style={btn} onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={page >= pageCount} aria-label="Next page">
           <ChevronRight size={13} strokeWidth={2} />
         </button>
+        <div style={{ flex: 1 }} />
+        <button style={btn} onClick={() => setScale((s) => Math.max(MIN_SCALE, +(s - SCALE_STEP).toFixed(2)))} disabled={scale <= MIN_SCALE} aria-label="Zoom out">
+          <ZoomOut size={13} strokeWidth={2} />
+        </button>
+        <span style={{ fontSize: "var(--c-fs-xs)", color: "var(--c-text-secondary)", fontFamily: "var(--c-font-mono)", minWidth: 40, textAlign: "center" }}>
+          {Math.round((scale / DEFAULT_SCALE) * 100)}%
+        </span>
+        <button style={btn} onClick={() => setScale((s) => Math.min(MAX_SCALE, +(s + SCALE_STEP).toFixed(2)))} disabled={scale >= MAX_SCALE} aria-label="Zoom in">
+          <ZoomIn size={13} strokeWidth={2} />
+        </button>
+        <button style={btn} onClick={() => setScale(DEFAULT_SCALE)} disabled={scale === DEFAULT_SCALE} aria-label="Reset zoom">
+          <RotateCcw size={12} strokeWidth={2} />
+        </button>
       </div>
       <div style={{ flex: 1, minHeight: 0, overflow: "auto", display: "flex", justifyContent: "center", padding: "var(--c-space-4)" }}>
-        <canvas ref={canvasRef} style={{ maxWidth: "100%", height: "fit-content", boxShadow: "0 1px 8px rgba(0,0,0,0.18)" }} />
+        <canvas ref={canvasRef} style={{ maxWidth: "none", height: "fit-content", boxShadow: "0 1px 8px rgba(0,0,0,0.18)" }} />
       </div>
     </div>
   );
