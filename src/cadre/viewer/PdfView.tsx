@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { reportError } from "../../lib/reportError";
-import type { PDFDocumentProxy } from "pdfjs-dist";
+import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 
 /** base64 → bytes, for handing the raw PDF to pdf.js. */
 function base64ToBytes(b64: string): Uint8Array {
@@ -23,6 +23,12 @@ export function PdfView({ data }: { data: string }) {
   const [error, setError] = useState<string | null>(null);
   // Holds the loaded PDFDocumentProxy between renders without re-parsing.
   const docRef = useRef<PDFDocumentProxy | null>(null);
+  // The in-flight page render, if any. pdf.js throws "Cannot use the same
+  // canvas during multiple render() operations" if a second render() starts
+  // on the same <canvas> before the first is cancelled — shared between both
+  // effects' cleanups so a fast page-flip *and* a document swap mid-render
+  // both cancel it before anything new touches the canvas.
+  const renderTaskRef = useRef<RenderTask | null>(null);
 
   // Parse the document once per file.
   useEffect(() => {
@@ -45,6 +51,12 @@ export function PdfView({ data }: { data: string }) {
     })();
     return () => {
       cancelled = true;
+      // Cancel any render still in flight against this document before tearing
+      // it down — otherwise a page-render effect that's mid-`getPage`/`render`
+      // when `data` changes can throw against a doc that's being destroyed
+      // out from under it.
+      renderTaskRef.current?.cancel();
+      renderTaskRef.current = null;
       docRef.current?.loadingTask.destroy();
       docRef.current = null;
     };
@@ -65,13 +77,26 @@ export function PdfView({ data }: { data: string }) {
         if (!ctx) return;
         canvas.width = viewport.width;
         canvas.height = viewport.height;
-        await pg.render({ canvasContext: ctx, viewport, canvas }).promise;
+        const task = pg.render({ canvasContext: ctx, viewport, canvas });
+        renderTaskRef.current = task;
+        await task.promise;
+        renderTaskRef.current = null;
       } catch (e) {
-        if (!cancelled) setError(reportError("render pdf page", e));
+        // `.cancel()` (below, or from the parse effect's cleanup) rejects the
+        // pending render with RenderingCancelledException by design — that's
+        // the expected outcome of a fast page-flip, not a failure, so it must
+        // not surface as a toast/AI-Log entry. Everything else still does.
+        const isCancellation = e instanceof Error && e.name === "RenderingCancelledException";
+        if (!cancelled && !isCancellation) setError(reportError("render pdf page", e));
       }
     })();
     return () => {
       cancelled = true;
+      // Cancel this page's render before the next one starts (page changes)
+      // or the effect tears down — without this, two render()s can race on
+      // the same canvas and pdf.js throws.
+      renderTaskRef.current?.cancel();
+      renderTaskRef.current = null;
     };
   }, [page, pageCount]);
 
