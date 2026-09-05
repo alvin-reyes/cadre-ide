@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Plus, X, SplitSquareHorizontal } from "lucide-react";
 import { TerminalPanel } from "./TerminalPanel";
 import {
   loadStructure,
   saveStructure,
   clearBuffer,
+  tabLabel,
+  normalizeTitle,
   type TabSnap,
   type PaneSnap,
 } from "../stores/terminalSession";
@@ -48,6 +50,10 @@ export function TerminalTabs({
     return [{ id: genKey(), panes: [{ key: genKey(), cwd, startupCommand }] }];
   });
   const [active, setActive] = useState<string>(tabs[0].id);
+  // Double-click a tab label to rename it. `draft` is the in-flight text.
+  const [editing, setEditing] = useState<{ id: string; draft: string } | null>(null);
+  // Escape must cancel without the ensuing blur committing the discarded draft.
+  const cancelledRef = useRef(false);
 
   // Persist the layout whenever it changes so a relaunch restores these terminals.
   useEffect(() => {
@@ -81,6 +87,14 @@ export function TerminalTabs({
 
   function closeTab(tabId: string) {
     setTabs((t) => removeTab(t, tabId));
+  }
+
+  /** Commit the in-flight rename. An empty name clears the title → back to "Terminal N". */
+  function commitRename() {
+    if (!editing) return;
+    const title = normalizeTitle(editing.draft);
+    setTabs((t) => t.map((x) => (x.id === editing.id ? { ...x, title } : x)));
+    setEditing(null);
   }
 
   // Split the active tab into another side-by-side pane.
@@ -136,21 +150,52 @@ export function TerminalTabs({
       <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "3px 6px", borderBottom: "1px solid var(--c-border)", background: "var(--c-surface-1)", flexShrink: 0, overflowX: "auto" }}>
         {tabs.map((tab, i) => {
           const on = active === tab.id;
+          const label = tabLabel(tab, i);
+          const isEditing = editing?.id === tab.id;
           return (
             <div key={tab.id} style={{ display: "inline-flex", alignItems: "center", borderRadius: "var(--c-radius-sm)", background: on ? "var(--c-surface-3)" : "transparent", flexShrink: 0 }}>
-              <button
-                onClick={() => setActive(tab.id)}
-                aria-pressed={on}
-                aria-label={`Terminal ${i + 1}`}
-                className="cadre-hover"
-                style={{ display: "inline-flex", alignItems: "center", height: 26, fontSize: "var(--c-fs-xs)", fontWeight: 550 as const, padding: "0 4px 0 10px", borderRadius: "var(--c-radius-sm) 0 0 var(--c-radius-sm)", background: "transparent", border: "none", color: on ? "var(--c-text)" : "var(--c-text-muted)", cursor: "pointer" }}
-              >
-                Terminal {i + 1}
-                {tab.panes.length > 1 && <span style={{ marginLeft: 4, color: "var(--c-text-faint)" }}>·{tab.panes.length}</span>}
-              </button>
+              {isEditing ? (
+                <input
+                  autoFocus
+                  value={editing.draft}
+                  aria-label={`Rename ${label}`}
+                  onChange={(e) => setEditing({ id: tab.id, draft: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitRename();
+                    else if (e.key === "Escape") {
+                      cancelledRef.current = true;
+                      setEditing(null);
+                    }
+                    // Don't let the terminal's global Ctrl+T/` handlers see these keys.
+                    e.stopPropagation();
+                  }}
+                  onBlur={() => {
+                    // Escape already discarded this draft — don't re-commit it.
+                    if (cancelledRef.current) {
+                      cancelledRef.current = false;
+                      return;
+                    }
+                    commitRename();
+                  }}
+                  style={{ height: 26, width: 110, fontSize: "var(--c-fs-xs)", fontWeight: 550 as const, fontFamily: "inherit", padding: "0 6px 0 10px", borderRadius: "var(--c-radius-sm) 0 0 var(--c-radius-sm)", background: "var(--c-surface-2)", border: "1px solid var(--c-accent)", color: "var(--c-text)", outline: "none", minWidth: 0 }}
+                />
+              ) : (
+                <button
+                  onClick={() => setActive(tab.id)}
+                  onDoubleClick={() => setEditing({ id: tab.id, draft: tab.title ?? "" })}
+                  aria-pressed={on}
+                  aria-label={label}
+                  title="Double-click to rename"
+                  className="cadre-hover"
+                  style={{ display: "inline-flex", alignItems: "center", height: 26, maxWidth: 160, fontSize: "var(--c-fs-xs)", fontWeight: 550 as const, padding: "0 4px 0 10px", borderRadius: "var(--c-radius-sm) 0 0 var(--c-radius-sm)", background: "transparent", border: "none", color: on ? "var(--c-text)" : "var(--c-text-muted)", cursor: "pointer" }}
+                >
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+                  {tab.panes.length > 1 && <span style={{ marginLeft: 4, flexShrink: 0, color: "var(--c-text-faint)" }}>·{tab.panes.length}</span>}
+                </button>
+              )}
               <button
                 onClick={() => closeTab(tab.id)}
-                aria-label={`Close terminal ${i + 1}`}
+                aria-label={`Close ${label}`}
                 title="Close terminal"
                 style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 22, height: 26, borderRadius: "0 var(--c-radius-sm) var(--c-radius-sm) 0", background: "transparent", border: "none", color: on ? "var(--c-text-secondary)" : "var(--c-text-faint)", cursor: "pointer", padding: 0 }}
               >

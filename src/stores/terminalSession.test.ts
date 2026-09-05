@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { loadStructure, saveStructure, loadBuffer, saveBuffer, clearBuffer } from "./terminalSession";
+import { loadStructure, saveStructure, loadBuffer, saveBuffer, clearBuffer, tabLabel, normalizeTitle } from "./terminalSession";
 
 beforeEach(() => {
   const store = new Map<string, string>();
@@ -43,5 +43,47 @@ describe("terminalSession buffers", () => {
     const got = loadBuffer("s::p1")!;
     expect(got.length).toBeLessThanOrEqual(48_000);
     expect(got.endsWith("TAIL")).toBe(true);
+  });
+});
+
+describe("tabLabel", () => {
+  it("falls back to the positional default when a tab has no title", () => {
+    expect(tabLabel({ id: "t1", panes: [] }, 0)).toBe("Terminal 1");
+    expect(tabLabel({ id: "t2", panes: [] }, 3)).toBe("Terminal 4");
+  });
+
+  it("prefers a custom title over the positional default", () => {
+    expect(tabLabel({ id: "t1", panes: [], title: "build" }, 0)).toBe("build");
+  });
+
+  it("keeps a custom title stable regardless of position", () => {
+    const tab = { id: "t1", panes: [], title: "logs" };
+    expect(tabLabel(tab, 0)).toBe(tabLabel(tab, 5));
+  });
+
+  it("falls back when a persisted title is blank, so a tab can never render nameless", () => {
+    // Defensive: normalizeTitle prevents this being stored, but older or
+    // hand-edited localStorage could still carry one.
+    expect(tabLabel({ id: "t1", panes: [], title: "   " }, 0)).toBe("Terminal 1");
+  });
+});
+
+describe("normalizeTitle", () => {
+  it("trims surrounding whitespace", () => {
+    expect(normalizeTitle("  build  ")).toBe("build");
+  });
+
+  it("returns undefined for an empty or whitespace-only name, reverting to the default", () => {
+    expect(normalizeTitle("")).toBeUndefined();
+    expect(normalizeTitle("   ")).toBeUndefined();
+  });
+
+  it("caps a very long name at 60 chars so one tab cannot bloat the tab strip or storage", () => {
+    const long = "x".repeat(200);
+    expect(normalizeTitle(long)).toHaveLength(60);
+  });
+
+  it("leaves an ordinary name untouched", () => {
+    expect(normalizeTitle("server logs")).toBe("server logs");
   });
 });

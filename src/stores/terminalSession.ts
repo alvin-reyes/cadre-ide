@@ -24,6 +24,30 @@ export interface PaneSnap {
 export interface TabSnap {
   id: string;
   panes: PaneSnap[];
+  /** User-assigned name. Absent → the positional "Terminal N" default. */
+  title?: string;
+}
+
+/** Cap a tab name so one rename can't bloat the tab strip or the stored structure. */
+const MAX_TITLE = 60;
+
+/**
+ * The name to show for a tab. Falls back to the positional default whenever the
+ * title is missing OR blank — a persisted structure is just JSON in localStorage,
+ * so a whitespace-only title can exist even though normalizeTitle never writes one,
+ * and a nameless tab would be unclickable-looking.
+ */
+export function tabLabel(tab: TabSnap, index: number): string {
+  return tab.title?.trim() ? tab.title : `Terminal ${index + 1}`;
+}
+
+/**
+ * Clean a name coming from the rename input. Returns undefined for an empty or
+ * whitespace-only name, which is how a user clears a rename and gets the default back.
+ */
+export function normalizeTitle(raw: string): string | undefined {
+  const trimmed = raw.trim();
+  return trimmed ? trimmed.slice(0, MAX_TITLE) : undefined;
 }
 
 type StructMap = Record<string, TabSnap[]>;
