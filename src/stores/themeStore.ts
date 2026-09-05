@@ -38,9 +38,14 @@ function readMode(): ThemeMode {
 
 function applyTheme(_theme: Theme) {
   // data-theme is owned by the settings THEME PRESET (see settingsStore.applyThemeToDOM),
-  // which is the single source of truth for light/dark. All current presets are dark,
-  // so a light/dark override here would only re-create the dark-on-dark mismatch.
+  // which is the single source of truth for light/dark. Writing it here too would let
+  // the clock fight the preset and re-create the dark-on-dark mismatch.
   // This is intentionally a no-op; kept so callers/state stay unchanged.
+  //
+  // KNOWN SPLIT-BRAIN: this store's `theme` is still read directly by Monaco
+  // (Workbench) and mermaid (components/Markdown), so in "auto" mode those two
+  // follow the clock while everything else follows the preset — they can disagree.
+  // Reconnecting them to one source of truth is deliberately out of scope here.
 }
 
 function persistMode(mode: ThemeMode) {

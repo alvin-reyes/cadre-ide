@@ -453,7 +453,10 @@ function persistWorkspaces(w: WorkspacePreset[]) {
 }
 
 const defaults: Settings = {
-  themeId: "github-light",
+  // Dark by default. The preset is the single source of truth for light/dark
+  // (applyThemeToDOM derives data-theme from its bgPrimary), so this also decides
+  // the --c-* token layer and therefore the integrated terminal's palette.
+  themeId: "github-dark",
   customColors: null,
   fontSize: 14,
   fontFamily: '"JetBrains Mono", "SF Mono", "Fira Code", "Cascadia Code", monospace',
