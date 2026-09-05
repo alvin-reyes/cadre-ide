@@ -32,6 +32,8 @@ import { resolve, join, dirname } from "node:path";
 import { boardStories, parseStoryFilename, storyId, type StoryCard } from "../lib/engine/board";
 import type { Status } from "../lib/engine/status";
 import { composeDispatchPrompt, type AlwaysFile } from "../lib/engine/dispatch";
+import { loadSharedContext as loadSharedContextCore } from "../lib/engine/sharedContext";
+import { DEV_SYSTEM_PROMPT, SM_SYSTEM_PROMPT } from "../lib/engine/personas";
 import { runApprovedStory } from "../lib/engine/orchestrator";
 import { integrateStory } from "../lib/engine/integrate";
 import { reviewStory, aggregateReviews, type ReviewLens } from "../lib/engine/reviewFleet";
@@ -82,10 +84,6 @@ import {
 } from "./mcp/connectCli";
 
 // The Dev-agent persona — kept in sync with useCadre.ts's DEV_SYSTEM_PROMPT.
-const DEV_SYSTEM_PROMPT = `You are the Dev agent. Implement the assigned story test-first: write the failing test, then the minimal code to make it pass. Follow the project's standards. Do NOT mark the story done — Cadre runs the verification command and decides.
-
-SHARED CONTEXT: other stories build in parallel with you. If you create or change something other stories must agree on — a shared interface, type, API contract, config key, or an important decision — record it in a short Markdown file under \`.cadre/context/\` (e.g. \`.cadre/context/auth-api.md\`). Keep those files small and factual. Before inventing a shared contract, check what's already in \`.cadre/context/\` and reuse it. This is how parallel and later agents stay consistent.`;
-
 // The adversarial review lenses. Kept in sync with lib/planning/review.ts's
 // CODE_REVIEW_LENSES; inlined here so the CLI doesn't pull the desktop app's
 // browser-only module graph (Anthropic SDK / zustand stores) into a Node build.
@@ -147,16 +145,6 @@ const SUGGEST_VERIFICATION_TOOL = {
 };
 
 // The SM (Scrum Master) persona — kept in sync with useCadre.ts's SM_SYSTEM_PROMPT.
-const SM_SYSTEM_PROMPT = `You are the Scrum Master (SM). Turn the approved plan into the NEXT single implementation story via the create_story tool.
-
-Prefer a small, vertically-sliced, independently testable story. Populate every field completely — the Dev agent works only from this story and reads nothing else, so put the relevant architecture, file paths, and standards into devNotes. Acceptance criteria must be concrete and testable; tasks must be TDD-first (write the failing test, then the code).
-
-Declare the exact repo-relative \`files\` this story will create or modify, and keep stories FILE-DISJOINT from one another — Cadre runs file-disjoint stories as parallel agents, and any file two stories share forces them to run sequentially. Slice the work so parallel stories don't touch the same files.
-
-Think across every LAYER (frontend/UI, backend/API, database) and the WHOLE lifecycle (setup, DevOps/CI-CD/deployment, tests, QA/acceptance testing, integration, monitoring, documentation, support) — not just backend features. A backlog that is backend-only, or missing the frontend, database, QA, or deployment work, is incomplete.
-
-Every story MUST include an extensive Definition of Done — a thorough, checkable list (acceptance criteria met and test-covered, edge cases, no regressions, docs, and the frozen verification command green). A story without a real DoD is incomplete.`;
-
 /** Where the planning artifacts live under the project root (mirrors useCadre.ts). */
 const PRD_PATH = "docs/prd.md";
 const ARCH_PATH = "docs/architecture.md";
@@ -219,24 +207,17 @@ async function readBoard(root: string): Promise<StoryCard[]> {
 
 /** The shared Context Store (`.cadre/context/*.md`) injected into every agent. */
 async function loadSharedContext(root: string): Promise<AlwaysFile[]> {
-  const files: AlwaysFile[] = [];
-  const dir = join(root, ".cadre", "context");
-  let entries: string[] = [];
-  try {
-    entries = await readdir(dir);
-  } catch {
-    return files;
-  }
-  for (const name of entries) {
-    if (!name.endsWith(".md")) continue;
-    try {
-      const content = await readFile(join(dir, name));
-      if (content.trim()) files.push({ path: `.cadre/context/${name}`, content });
-    } catch {
-      /* skip unreadable */
-    }
-  }
-  return files;
+  // Thin node adapter over the shared engine loader. This used to be a separate
+  // implementation that read only `.cadre/context/*.md` — its `.md` filter skipped
+  // the `decisions/` DIRECTORY, so CLI agents never received the ADRs the Dev
+  // persona tells them to obey, nor the session journal.
+  return loadSharedContextCore(root, {
+    readFile,
+    listDir: async (path) => {
+      const names = await readdir(path, { withFileTypes: true });
+      return names.map((d) => ({ name: d.name, path: join(path, d.name), isDir: d.isDirectory() }));
+    },
+  });
 }
 
 async function findStoryPath(root: string, epic: number, story: number): Promise<string | null> {

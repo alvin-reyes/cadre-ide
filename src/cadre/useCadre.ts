@@ -16,10 +16,11 @@ import { documentAllRepos, composeAggregateAnalysis, BROWNFIELD_DOC_PATH } from 
 import { CODE_REVIEW_LENSES } from "../lib/planning/review";
 import { tauriOrchestratorDeps, tauriReviewFleetDeps, tauriResolveConflictDeps } from "../lib/engine/tauriDeps";
 import { composeDispatchPrompt, storyBranch, type AlwaysFile } from "../lib/engine/dispatch";
-import { ADR_DECISIONS_DIR } from "../lib/engine/adr";
+import { loadSharedContext as loadSharedContextCore } from "../lib/engine/sharedContext";
+import { DEV_SYSTEM_PROMPT, SM_SYSTEM_PROMPT } from "../lib/engine/personas";
 import { resolveMergeConflict, composeResolverPrompt } from "../lib/engine/resolveConflict";
 import { reportError } from "../lib/reportError";
-import { appendSessionEntry, SESSION_LOG_PATH } from "../lib/engine/sessionLog";
+import { appendSessionEntry } from "../lib/engine/sessionLog";
 import { resolveStorySession } from "../lib/engine/agentSessions";
 import { nextStoryNumber, parseStoryFiles, parseStoryRepo, shardStory } from "../lib/engine/shard";
 import { parseRepos, resolveRepoPath, findRepo, DEFAULT_REPO_ID } from "../lib/engine/repos";
@@ -99,22 +100,6 @@ export function isInterrupted(status: string, active: Record<string, boolean>, e
   return (status === "InProgress" || status === "InReview") && !active[`${epic}.${story}`];
 }
 
-const SM_SYSTEM_PROMPT = `You are the Scrum Master (SM). Turn the approved plan into the NEXT single implementation story via the create_story tool.
-
-Prefer a small, vertically-sliced, independently testable story. Populate every field completely — the Dev agent works only from this story and reads nothing else, so put the relevant architecture, file paths, and standards into devNotes. Acceptance criteria must be concrete and testable; tasks must be TDD-first (write the failing test, then the code).
-
-Declare the exact repo-relative \`files\` this story will create or modify, and keep stories FILE-DISJOINT from one another — Cadre runs file-disjoint stories as parallel agents, and any file two stories share forces them to run sequentially. Slice the work so parallel stories don't touch the same files.
-
-Think across every LAYER (frontend/UI, backend/API, database) and the WHOLE lifecycle (setup, DevOps/CI-CD/deployment, tests, QA/acceptance testing, integration, monitoring, documentation, support) — not just backend features. A backlog that is backend-only, or missing the frontend, database, QA, or deployment work, is incomplete.
-
-Every story MUST include an extensive Definition of Done — a thorough, checkable list (acceptance criteria met and test-covered, edge cases, no regressions, docs, and the frozen verification command green). A story without a real DoD is incomplete.`;
-
-const DEV_SYSTEM_PROMPT = `You are the Dev agent. Implement the assigned story test-first: write the failing test, then the minimal code to make it pass. Follow the project's standards. Do NOT mark the story done — Cadre runs the verification command and decides.
-
-SHARED CONTEXT: other stories build in parallel with you. If you create or change something other stories must agree on — a shared interface, type, API contract, config key, or an important decision — record it in a short Markdown file under \`.cadre/context/\` (e.g. \`.cadre/context/auth-api.md\`). Keep those files small and factual. Before inventing a shared contract, check what's already in \`.cadre/context/\` and reuse it. This is how parallel and later agents stay consistent.
-
-DECISION MEMORY (ADRs): significant architectural or cross-cutting decisions — a technology, pattern, contract, or trade-off other stories depend on — are recorded as Architecture Decision Records under \`.cadre/context/decisions/NNNN-slug.md\`, each with \`## Status\` (Accepted), \`## Context\`, \`## Decision\`, and \`## Consequences\`. Before diverging from an existing decision, READ the ADRs already in \`.cadre/context/decisions/\` and follow them — do not silently re-decide. When you make such a decision, add a new ADR (next number) so later agents inherit it.`;
-
 interface DirEntry {
   name: string;
   path: string;
@@ -136,13 +121,7 @@ const BRIEF_PATH = "docs/brief.md";
 const TECHDOCS_PATH = "docs/documentation.md";
 const OPS_PATH = "docs/ops.md";
 
-/** Byte budget for ADRs inlined into a dispatched agent's prompt (the decision
- *  log is append-only and unbounded; newest ADRs win, the rest are summarized). */
-const ADR_INJECT_BUDGET_BYTES = 24_000;
 
-/** Byte budget for the brownfield analysis inlined into a dispatched agent's prompt
- *  (a multi-repo aggregate can be large; the full doc stays on disk). */
-const BROWNFIELD_INJECT_BUDGET_BYTES = 16_000;
 
 interface CadreState {
   // --- per-project map (Task 5) ---
@@ -342,71 +321,15 @@ async function readManifest(root: string): Promise<string> {
  * parallel agents build against the same contract instead of diverging.
  */
 async function loadSharedContext(root: string): Promise<AlwaysFile[]> {
-  // Only the (small, incremental) Context Store is inlined into every agent — the
-  // relevant architecture already lives in each story's dev notes. Inlining the
-  // whole architecture.md here bloated the `claude -p "<prompt>"` argv and could
-  // fail the spawn outright.
-  const files: AlwaysFile[] = [];
-  // The session journal — what's already been planned/built/shipped — so a fresh
-  // subagent knows what's happening across the fleet, not just its own story.
-  const journal = await invoke<string>("read_file", { path: `${root}/${SESSION_LOG_PATH}` }).catch(() => "");
-  if (journal.trim()) files.push({ path: SESSION_LOG_PATH, content: journal });
-  try {
-    const entries = await invoke<DirEntry[]>("list_directory", { path: `${root}/.cadre/context` });
-    for (const e of entries) {
-      if (e.is_dir || !e.name.endsWith(".md")) continue;
-      const c = await invoke<string>("read_file", { path: e.path }).catch(() => "");
-      if (c.trim()) files.push({ path: `.cadre/context/${e.name}`, content: c });
-    }
-  } catch {
-    /* no Context Store yet */
-  }
-  // ADRs (durable decision records) live in a subdir of the Context Store. Inject
-  // them too so every agent consults prior decisions before re-deciding. Tolerant
-  // of absence — a project with no decisions/ dir behaves exactly as before.
-  //
-  // The decision log is append-only and grows for the life of a project, so bound
-  // what we inline into the `claude -p` argv: newest ADRs first, up to a byte
-  // budget. If any are dropped, say so explicitly rather than silently truncating.
-  try {
-    const decisions = await invoke<DirEntry[]>("list_directory", { path: `${root}/${ADR_DECISIONS_DIR}` });
-    const mdFiles = decisions
-      .filter((e) => !e.is_dir && e.name.endsWith(".md"))
-      .sort((a, b) => b.name.localeCompare(a.name)); // zero-padded NNNN- prefix → newest first
-    let used = 0;
-    let injected = 0;
-    for (const e of mdFiles) {
-      const c = await invoke<string>("read_file", { path: e.path }).catch(() => "");
-      if (!c.trim()) continue;
-      // Always inject at least the newest ADR; stop once the budget is exceeded.
-      if (used + c.length > ADR_INJECT_BUDGET_BYTES && injected > 0) break;
-      files.push({ path: `${ADR_DECISIONS_DIR}/${e.name}`, content: c });
-      used += c.length;
-      injected += 1;
-    }
-    const omitted = mdFiles.length - injected;
-    if (omitted > 0) {
-      files.push({
-        path: `${ADR_DECISIONS_DIR}/_index.md`,
-        content: `# Decision log (truncated)\n\nThe ${injected} most-recent ADR(s) are inlined above; ${omitted} older ADR(s) were omitted to bound prompt size. Read \`${ADR_DECISIONS_DIR}/\` directly for the full history before diverging from a settled decision.`,
-      });
-    }
-  } catch {
-    /* no decisions yet */
-  }
-  // Brownfield: the as-is analysis (the structured architecture/stack/risk summary)
-  // so a Dev agent working existing code sees the high-level map, not just its story.
-  // Bound it — a multi-repo aggregate can be large and rides every agent's argv.
-  const brownfield = await invoke<string>("read_file", { path: `${root}/${BROWNFIELD_DOC_PATH}` }).catch(() => "");
-  if (brownfield.trim()) {
-    const capped =
-      brownfield.length > BROWNFIELD_INJECT_BUDGET_BYTES
-        ? brownfield.slice(0, BROWNFIELD_INJECT_BUDGET_BYTES) +
-          `\n\n…(analysis truncated for prompt size — read \`${BROWNFIELD_DOC_PATH}\` in full for the complete picture)`
-        : brownfield;
-    files.push({ path: BROWNFIELD_DOC_PATH, content: capped });
-  }
-  return files;
+  // Thin Tauri adapter over the shared engine loader — the CLI wires the same
+  // function to node fs, so both faces inject an identical context set.
+  return loadSharedContextCore(root, {
+    readFile: (path) => invoke<string>("read_file", { path }),
+    listDir: async (path) => {
+      const entries = await invoke<DirEntry[]>("list_directory", { path });
+      return entries.map((e) => ({ name: e.name, path: e.path, isDir: e.is_dir }));
+    },
+  });
 }
 
 /**
