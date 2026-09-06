@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scaffoldFiles } from "./projectScaffold";
+import { scaffoldFiles, missingScaffoldFiles } from "./projectScaffold";
 
 describe("scaffoldFiles", () => {
   it("ships CLAUDE.md, llms.txt, the BMAD rules, and the BMAD agent prompts", () => {
@@ -53,5 +53,46 @@ describe("scaffoldFiles", () => {
       const sectionCount = (a.content.match(/^## /gm) || []).length;
       expect(sectionCount).toBeGreaterThanOrEqual(3);
     }
+  });
+});
+
+describe("missingScaffoldFiles", () => {
+  const files = scaffoldFiles("acme");
+  const allPaths = new Set(files.map((f) => f.path));
+
+  it("returns nothing when every scaffold file already exists", () => {
+    expect(missingScaffoldFiles(files, allPaths)).toEqual([]);
+  });
+
+  it("returns everything for a project with no scaffold at all", () => {
+    expect(missingScaffoldFiles(files, new Set())).toHaveLength(files.length);
+  });
+
+  it("returns only the files that are absent", () => {
+    const existing = new Set(allPaths);
+    existing.delete("CLAUDE.md");
+    existing.delete(".cadre/agents/qa.md");
+    const missing = missingScaffoldFiles(files, existing);
+    expect(missing.map((f) => f.path).sort()).toEqual([".cadre/agents/qa.md", "CLAUDE.md"]);
+  });
+
+  it("never returns a file that exists, whatever its content — the no-clobber guarantee", () => {
+    // The caller only knows PATHS, not contents. A user who has heavily edited
+    // their CLAUDE.md must never see it reappear in the write list.
+    const missing = missingScaffoldFiles(files, new Set(["CLAUDE.md"]));
+    expect(missing.map((f) => f.path)).not.toContain("CLAUDE.md");
+  });
+
+  it("matches nested agent paths exactly, not by basename", () => {
+    // A project with its own top-level "qa.md" must NOT suppress
+    // ".cadre/agents/qa.md" — they are different files.
+    const missing = missingScaffoldFiles(files, new Set(["qa.md"]));
+    expect(missing.map((f) => f.path)).toContain(".cadre/agents/qa.md");
+  });
+
+  it("preserves the content of the files it returns, so callers can write them directly", () => {
+    const missing = missingScaffoldFiles(files, new Set());
+    const claude = missing.find((f) => f.path === "CLAUDE.md");
+    expect(claude?.content).toContain("acme");
   });
 });

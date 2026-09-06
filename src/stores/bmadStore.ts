@@ -9,7 +9,7 @@ import {
   type StoryCard,
 } from "../lib/engine/board";
 import type { Status } from "../lib/engine/status";
-import { scaffoldFiles } from "../lib/projectScaffold";
+import { scaffoldFiles, missingScaffoldFiles } from "../lib/projectScaffold";
 import { reportError } from "../lib/reportError";
 import {
   emptyBmadSlice,
@@ -75,6 +75,34 @@ interface BmadState {
   setStatus: (epic: number, story: number, status: Status, root?: string) => Promise<void>;
   setActiveProject: (root: string) => void;
   closeProject: (root: string) => void;
+}
+
+/**
+ * Write any missing BMAD scaffold files into `root`. Discovers what exists with
+ * three directory listings rather than a read probe per file — openProject runs
+ * for every project on every launch (the restore path), so the common case must
+ * be cheap, and it usually writes nothing at all.
+ */
+async function ensureScaffold(root: string): Promise<void> {
+  const files = scaffoldFiles(basename(root) || "cadre-project");
+  const existing = new Set<string>();
+
+  // Only these three directories can contain a scaffold file.
+  for (const dir of ["", ".cadre", ".cadre/agents"]) {
+    const abs = dir ? `${root}/${dir}` : root;
+    const entries = await invoke<DirEntry[]>("list_directory", { path: abs }).catch(
+      () => [] as DirEntry[]
+    );
+    for (const e of entries) {
+      if (e.is_dir) continue;
+      existing.add(dir ? `${dir}/${e.name}` : e.name);
+    }
+  }
+
+  const missing = missingScaffoldFiles(files, existing);
+  for (const f of missing) {
+    await invoke("write_text_file", { path: `${root}/${f.path}`, content: f.content });
+  }
 }
 
 export const useBmadStore = create<BmadState>((set, get) => {
@@ -245,6 +273,21 @@ export const useBmadStore = create<BmadState>((set, get) => {
       }
 
       await invoke("open_project", { root });
+
+      // Ensure the BMAD scaffold exists — CLAUDE.md, llms.txt, .cadre/rules.md and
+      // the agent role prompts. Previously only newProject wrote these, so a project
+      // that was OPENED rather than created had none of them: the dispatched
+      // `claude -p` agent auto-loads CLAUDE.md from the repo, and without it the
+      // agent never learns the project's standards or that .cadre/agents/ exists.
+      //
+      // Gaps only, never overwrite (see missingScaffoldFiles) — Maintain mode points
+      // Cadre at other people's codebases, and clobbering their CLAUDE.md would be
+      // unforgivable. Best-effort: a read-only or unwritable folder must still open.
+      try {
+        await ensureScaffold(root);
+      } catch (e) {
+        reportError("initialize project", e);
+      }
 
       // Resolve the project's working mode (Build vs Maintain). A repo that
       // already carries greenfield plan artifacts (a PRD, or sharded stories) is

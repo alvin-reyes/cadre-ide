@@ -320,6 +320,22 @@ An honest, skeptical verdict on one artifact: every material flaw found, each wi
 ];
 
 /** All default files for a new project, ready to write to disk. */
+/**
+ * Which scaffold files are absent, given the repo-relative paths that already exist.
+ *
+ * Opening a project must never clobber the user's own work — Maintain mode is
+ * explicitly for pointing Cadre at somebody else's codebase, which may already
+ * have a CLAUDE.md, or an agent prompt the user has since edited. So existence
+ * alone suppresses a write; contents are deliberately not compared, because
+ * "differs from our template" is not evidence that ours is the better one.
+ */
+export function missingScaffoldFiles(
+  files: ScaffoldFile[],
+  existing: Set<string>
+): ScaffoldFile[] {
+  return files.filter((f) => !existing.has(f.path));
+}
+
 export function scaffoldFiles(projectName: string): ScaffoldFile[] {
   const files: ScaffoldFile[] = [
     { path: "CLAUDE.md", content: CLAUDE_MD(projectName) },
