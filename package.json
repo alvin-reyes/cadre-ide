@@ -15,7 +15,8 @@
     "test:watch": "vitest",
     "test:smoke": "node scripts/smoke.mjs",
     "test:e2e": "node scripts/e2e-lifecycle.mjs",
-    "test:e2e:extensive": "node scripts/e2e-extensive.mjs"
+    "test:e2e:extensive": "node scripts/e2e-extensive.mjs",
+    "test:search-jump": "node scripts/e2e-search-jump.mjs"
   },
   "keywords": [],
   "author": "",

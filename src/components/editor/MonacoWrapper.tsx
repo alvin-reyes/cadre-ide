@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect } from "react";
+import { useRef, useCallback, useEffect, useState } from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
 import type { editor as monacoEditor } from "monaco-editor";
 
@@ -48,6 +48,11 @@ export default function MonacoWrapper({ filePath, content, onChange, onSave, the
   onSaveRef.current = onSave;
   const language = detectLanguage(filePath);
 
+  // The goto-line effect below can run BEFORE the editor exists (see its comment),
+  // so it needs a reactive signal that mounting has happened — a ref alone cannot
+  // re-trigger an effect.
+  const [editorReady, setEditorReady] = useState(false);
+
   const handleMount: OnMount = useCallback((editor, monaco) => {
     editorRef.current = editor;
     editor.addAction({
@@ -57,10 +62,17 @@ export default function MonacoWrapper({ filePath, content, onChange, onSave, the
       run: () => onSaveRef.current(),
     });
     editor.focus();
+    setEditorReady(true);
   }, []);
 
   // Jump to a line when a search result is clicked. `nonce` forces re-run even when
   // clicking the same line twice.
+  //
+  // `editorReady` is a dependency because a search hit can MOUNT this editor and
+  // set gotoLine in the same commit — clicking a result in a Markdown file flips
+  // the Workbench out of the rendered view into Monaco. In that case this effect
+  // runs first, with editorRef.current still null (onMount resolves afterwards),
+  // and since `nonce` never changes again the reveal would be dropped silently.
   useEffect(() => {
     const ed = editorRef.current;
     if (!ed || !gotoLine) return;
@@ -70,7 +82,7 @@ export default function MonacoWrapper({ filePath, content, onChange, onSave, the
     ed.setPosition({ lineNumber: line, column: col });
     ed.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gotoLine?.nonce]);
+  }, [gotoLine?.nonce, editorReady]);
 
   // `path` gives each file its own model (clean undo history, no cursor bleed);
   // `value` stays controlled. No manual setValue — that fought the controlled prop.
