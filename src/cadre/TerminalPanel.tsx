@@ -17,7 +17,7 @@ import "@xterm/xterm/css/xterm.css";
 
 type PtyEvent =
   | { type: "output"; data: number[] }
-  | { type: "exit"; code: number | null }
+  | { type: "exit"; code: number | null; reason?: string; pid?: number | null }
   | { type: "error"; message: string };
 
 /** Read a CSS token off the root, with a fallback. */
@@ -125,6 +125,10 @@ export function TerminalPanel({
     let ptyId: number | null = null;
     let disposed = false;
     const encoder = new TextEncoder();
+    // Diagnostic: a Maintain terminal has been dying on tab/view switches with an
+    // opaque "[process exited: 0]". Stamp the mount so the exit line can report how
+    // long the shell actually lived alongside WHY it ended.
+    const bornAt = Date.now();
 
     // Set whenever the terminal emits new output, so the persist interval can skip
     // serializing (and rewriting localStorage) while the terminal is idle.
@@ -132,7 +136,13 @@ export function TerminalPanel({
     const channel = new Channel<PtyEvent>();
     channel.onmessage = (ev) => {
       if (ev.type === "output") term.write(new Uint8Array(ev.data));
-      else if (ev.type === "exit") { term.write(`\r\n\x1b[90m[process exited: ${ev.code ?? "?"}]\x1b[0m\r\n`); onExitRef.current?.(ev.code); }
+      else if (ev.type === "exit") {
+        const alive = ((Date.now() - bornAt) / 1000).toFixed(1);
+        const detail = `code=${ev.code ?? "?"} reason=${ev.reason ?? "?"} pty=${ptyId ?? "?"} pid=${ev.pid ?? "?"} alive=${alive}s`;
+        term.write(`\r\n\x1b[90m[process exited: ${detail}]\x1b[0m\r\n`);
+        console.warn(`[cadre:pty] exit ${detail} persistId=${persistId ?? "-"} cwd=${cwd}`);
+        onExitRef.current?.(ev.code);
+      }
       else if (ev.type === "error") term.write(`\r\n\x1b[31m[pty error: ${ev.message}]\x1b[0m\r\n`);
       dirty = true;
     };
@@ -207,6 +217,10 @@ export function TerminalPanel({
 
     return () => {
       disposed = true;
+      console.warn(
+        `[cadre:pty] teardown pty=${ptyId ?? "-"} persistId=${persistId ?? "-"} ` +
+          `alive=${((Date.now() - bornAt) / 1000).toFixed(1)}s`
+      );
       if (persistTimer != null) clearInterval(persistTimer);
       if (persistId != null) {
         try {
