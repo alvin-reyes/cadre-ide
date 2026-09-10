@@ -11,9 +11,17 @@ import { FleetTab } from "./FleetTab";
 import { IntakeRail } from "./IntakeRail";
 import { ThoughtsDock } from "./ThoughtsDock";
 import { useCadre } from "../useCadre";
+import type { FleetBatch } from "../../lib/maintain/tasks";
+
+// Hoisted so the selector never returns a fresh array — a new identity each render
+// would re-render forever under Zustand.
+const NO_BATCHES: FleetBatch[] = [];
 
 export function MaintainMainTabs({ projectRoot }: { projectRoot: string }) {
-  const batches = useCadre((s) => s.batches);
+  // Read this project's slice directly, NOT the active-project mirror: every open
+  // project has its own mounted cockpit, and the mirror would show them all the
+  // foreground project's batches.
+  const batches = useCadre((s) => s.projects[projectRoot]?.batches ?? NO_BATCHES);
   const closeBatch = useCadre((s) => s.closeBatch);
   const closeSubagent = useCadre((s) => s.closeSubagent);
   const markSubagentExited = useCadre((s) => s.markSubagentExited);
@@ -58,7 +66,7 @@ export function MaintainMainTabs({ projectRoot }: { projectRoot: string }) {
             </button>
           </div>
           <div style={{ flex: 1, minHeight: 0 }}>
-            <IntakeRail onBatchLaunched={(id) => setActive(id)} />
+            <IntakeRail root={projectRoot} onBatchLaunched={(id) => setActive(id)} />
           </div>
         </div>
       )}
@@ -74,7 +82,7 @@ export function MaintainMainTabs({ projectRoot }: { projectRoot: string }) {
               label={`Fleet · ${fmt(b.createdAt)}`}
               on={active === b.id}
               onClick={() => setActive(b.id)}
-              onClose={() => void closeBatch(b.id)}
+              onClose={() => void closeBatch(b.id, projectRoot)}
             />
           ))}
         </div>
@@ -90,8 +98,8 @@ export function MaintainMainTabs({ projectRoot }: { projectRoot: string }) {
               <FleetTab
                 batch={b}
                 projectDir={projectRoot}
-                onCloseSubagent={(taskId) => closeSubagent(b.id, taskId)}
-                onExitSubagent={(taskId) => markSubagentExited(b.id, taskId)}
+                onCloseSubagent={(taskId) => closeSubagent(b.id, taskId, projectRoot)}
+                onExitSubagent={(taskId) => markSubagentExited(b.id, taskId, projectRoot)}
               />
             </div>
           ))}

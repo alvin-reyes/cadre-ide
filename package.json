@@ -15,6 +15,7 @@
     "test:watch": "vitest",
     "test:smoke": "node scripts/smoke.mjs",
     "test:e2e": "node scripts/e2e-lifecycle.mjs",
+    "test:project-switch": "node scripts/e2e-project-switch.mjs",
     "test:e2e:extensive": "node scripts/e2e-extensive.mjs",
     "test:search-jump": "node scripts/e2e-search-jump.mjs"
   },

@@ -10,9 +10,14 @@ import { PromptsRail } from "./PromptsRail";
 import { useCadre } from "../useCadre";
 import { aiLog } from "../../stores/aiLogStore";
 import { toast } from "../../stores/toastStore";
+import type { StagedTask } from "../../lib/maintain/tasks";
 
-export function IntakeRail({ onBatchLaunched }: { onBatchLaunched: (batchId: string) => void }) {
-  const staged = useCadre((s) => s.stagedTasks);
+// Hoisted: a fresh array from the selector would re-render forever under Zustand.
+const NO_TASKS: StagedTask[] = [];
+
+export function IntakeRail({ root, onBatchLaunched }: { root: string; onBatchLaunched: (batchId: string) => void }) {
+  // This project's slice, not the active-project mirror — see MaintainMainTabs.
+  const staged = useCadre((s) => s.projects[root]?.stagedTasks ?? NO_TASKS);
   const stageTask = useCadre((s) => s.stageTask);
   const unstageTask = useCadre((s) => s.unstageTask);
   const runStagedBatch = useCadre((s) => s.runStagedBatch);
@@ -20,11 +25,11 @@ export function IntakeRail({ onBatchLaunched }: { onBatchLaunched: (batchId: str
   const [thought, setThought] = useState("");
   const [running, setRunning] = useState(false);
 
-  const add = () => { const t = thought.trim(); if (!t) return; stageTask(t); setThought(""); };
+  const add = () => { const t = thought.trim(); if (!t) return; stageTask(t, root); setThought(""); };
   const runAll = async () => {
     setRunning(true);
     try {
-      const id = await runStagedBatch();
+      const id = await runStagedBatch(root);
       if (id) onBatchLaunched(id);
     } catch (e) {
       aiLog("maintain", `Run failed: ${String(e)}\n`, "error");
@@ -64,7 +69,7 @@ export function IntakeRail({ onBatchLaunched }: { onBatchLaunched: (batchId: str
           ) : staged.map((t) => (
             <div key={t.id} className="cadre-hover" style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "var(--c-space-2) var(--c-space-3)", background: "var(--c-surface-2)", border: "1px solid var(--c-border)", borderRadius: "var(--c-radius-sm)" }}>
               <span style={{ flex: 1, minWidth: 0, fontSize: "var(--c-fs-sm)", color: "var(--c-text)", lineHeight: 1.45, wordBreak: "break-word" }}>{t.prompt}</span>
-              <button onClick={() => unstageTask(t.id)} title="Remove" aria-label="Remove staged task" style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--c-text-faint)", padding: 0, marginTop: 1, display: "inline-flex" }}>
+              <button onClick={() => unstageTask(t.id, root)} title="Remove" aria-label="Remove staged task" style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--c-text-faint)", padding: 0, marginTop: 1, display: "inline-flex" }}>
                 <X size={12} strokeWidth={2.5} />
               </button>
             </div>

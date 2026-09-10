@@ -41,9 +41,12 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 // Stub remaining stores and modules that useCadre imports so we don't pull in
 // the full Tauri-dependent dependency tree.
+// Mutable so a test can put a project in the FOREGROUND and prove that a
+// root-targeted action still writes to the named project instead of this one.
+const { bmadRoot } = vi.hoisted(() => ({ bmadRoot: { current: null as string | null } }));
 vi.mock("../stores/bmadStore", () => ({
   useBmadStore: {
-    getState: () => ({ projectRoot: null, stories: [], setStatus: vi.fn() }),
+    getState: () => ({ projectRoot: bmadRoot.current, stories: [], setStatus: vi.fn() }),
   },
 }));
 vi.mock("../stores/settingsStore", () => ({
@@ -374,5 +377,124 @@ describe("busy/error mirror routing — transitively proven via prd/phase path",
     useCadre.getState().setActiveProject("/b");
     expect(useCadre.getState().busy).toBe("running-B");
     expect(useCadre.getState().error).toBeNull();
+  });
+});
+
+/**
+ * One Maintain cockpit is mounted per open project, so a hidden cockpit's action
+ * must name its own root. Before the optional `root` parameter these all resolved
+ * to activeRoot, meaning a background cockpit would silently mutate whichever
+ * project happened to be in the foreground. That is the invariant here.
+ */
+describe("maintain actions — explicit root never touches the active project", () => {
+  const A = "/proj/a";
+  const B = "/proj/b";
+
+  function seedTwoProjects() {
+    resetStore();
+    // A is the FOREGROUND project throughout; B is a mounted-but-hidden cockpit.
+    useCadre.getState().setActiveProject(A);
+    useCadre.getState().setActiveProject(B);
+    useCadre.getState().setActiveProject(A);
+    bmadRoot.current = A;
+  }
+
+  beforeEach(seedTwoProjects);
+
+  const batchWith = (id: string, taskIds: string[]) => ({
+    id,
+    createdAt: 1,
+    root: B,
+    subagents: taskIds.map((t) => ({
+      taskId: t,
+      prompt: t,
+      status: "running" as const,
+      branch: `task/${t}`,
+      worktree: `/wt/${t}`,
+    })),
+  });
+
+  it("stageTask(root: B) stages into B and leaves A untouched", () => {
+    useCadre.getState().stageTask("only for B", B);
+    expect(useCadre.getState().projects[B]?.stagedTasks).toHaveLength(1);
+    expect(useCadre.getState().projects[A]?.stagedTasks ?? []).toHaveLength(0);
+    // The mirror follows the ACTIVE project, so it must not show B's task.
+    expect(useCadre.getState().stagedTasks).toHaveLength(0);
+  });
+
+  it("stageTask() without a root still targets the active project", () => {
+    useCadre.getState().stageTask("for the active one");
+    expect(useCadre.getState().projects[A]?.stagedTasks).toHaveLength(1);
+    expect(useCadre.getState().projects[B]?.stagedTasks ?? []).toHaveLength(0);
+  });
+
+  it("unstageTask(root: B) removes from B only", () => {
+    useCadre.getState().stageTask("a-task");
+    useCadre.getState().stageTask("b-task", B);
+    const bId = useCadre.getState().projects[B]!.stagedTasks[0].id;
+    useCadre.getState().unstageTask(bId, B);
+    expect(useCadre.getState().projects[B]?.stagedTasks).toHaveLength(0);
+    expect(useCadre.getState().projects[A]?.stagedTasks).toHaveLength(1);
+  });
+
+  it("closeBatch(root: B) drops B's batch and leaves A's intact", () => {
+    useCadre.setState({
+      projects: {
+        ...useCadre.getState().projects,
+        [A]: { ...useCadre.getState().projects[A]!, batches: [batchWith("a1", ["t"])] },
+        [B]: { ...useCadre.getState().projects[B]!, batches: [batchWith("b1", ["t"])] },
+      },
+    });
+    useCadre.getState().closeBatch("b1", B);
+    expect(useCadre.getState().projects[B]?.batches).toHaveLength(0);
+    expect(useCadre.getState().projects[A]?.batches).toHaveLength(1);
+  });
+
+  it("closeSubagent(root: B) removes from B's batch only", () => {
+    useCadre.setState({
+      projects: {
+        ...useCadre.getState().projects,
+        [A]: { ...useCadre.getState().projects[A]!, batches: [batchWith("x", ["t1", "t2"])] },
+        [B]: { ...useCadre.getState().projects[B]!, batches: [batchWith("x", ["t1", "t2"])] },
+      },
+    });
+    useCadre.getState().closeSubagent("x", "t1", B);
+    expect(useCadre.getState().projects[B]!.batches[0].subagents).toHaveLength(1);
+    expect(useCadre.getState().projects[A]!.batches[0].subagents).toHaveLength(2);
+  });
+
+  it("markSubagentExited(root: B) flips status in B only", () => {
+    useCadre.setState({
+      projects: {
+        ...useCadre.getState().projects,
+        [A]: { ...useCadre.getState().projects[A]!, batches: [batchWith("x", ["t1"])] },
+        [B]: { ...useCadre.getState().projects[B]!, batches: [batchWith("x", ["t1"])] },
+      },
+    });
+    useCadre.getState().markSubagentExited("x", "t1", B);
+    expect(useCadre.getState().projects[B]!.batches[0].subagents[0].status).toBe("exited");
+    expect(useCadre.getState().projects[A]!.batches[0].subagents[0].status).toBe("running");
+  });
+
+  it("reorderSubagent(root: B) reorders B only", () => {
+    useCadre.setState({
+      projects: {
+        ...useCadre.getState().projects,
+        [A]: { ...useCadre.getState().projects[A]!, batches: [batchWith("x", ["t1", "t2"])] },
+        [B]: { ...useCadre.getState().projects[B]!, batches: [batchWith("x", ["t1", "t2"])] },
+      },
+    });
+    useCadre.getState().reorderSubagent("x", "t1", "t2", B);
+    expect(useCadre.getState().projects[B]!.batches[0].subagents.map((s) => s.taskId)).toEqual(["t2", "t1"]);
+    expect(useCadre.getState().projects[A]!.batches[0].subagents.map((s) => s.taskId)).toEqual(["t1", "t2"]);
+  });
+
+  it("runStagedBatch(root: B) reads B's staged list, not the active project's", async () => {
+    // A (active) has staged work; B has none. Targeting B must short-circuit to null
+    // rather than launching A's tasks — proof the root argument selects the slice.
+    useCadre.getState().stageTask("active-project work");
+    await expect(useCadre.getState().runStagedBatch(B)).resolves.toBeNull();
+    expect(useCadre.getState().projects[A]?.stagedTasks).toHaveLength(1);
+    expect(useCadre.getState().projects[A]?.batches ?? []).toHaveLength(0);
   });
 });
