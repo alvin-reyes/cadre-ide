@@ -4,7 +4,6 @@
  * them as a live fleet of isolated-worktree subagents in a new Fleet tab.
  */
 import { Wrench } from "lucide-react";
-import { useBmadStore } from "../stores/bmadStore";
 import { MaintainMainTabs } from "./maintain/MaintainMainTabs";
 
 function basename(path: string): string {
@@ -12,9 +11,12 @@ function basename(path: string): string {
   return parts[parts.length - 1] ?? path;
 }
 
-export function MaintainView() {
-  const projectRoot = useBmadStore((s) => s.projectRoot);
-  if (!projectRoot) return null;
+/**
+ * One cockpit is mounted PER OPEN PROJECT (see nextMountedRoots), so the root
+ * arrives as a prop rather than being read from the active-project mirror — a
+ * background cockpit must render its own project, not the foreground one.
+ */
+export function MaintainView({ root: projectRoot }: { root: string }) {
   const repo = basename(projectRoot);
 
   return (

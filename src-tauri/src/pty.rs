@@ -1,5 +1,5 @@
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
@@ -28,6 +28,11 @@ fn resolve_argv(command: Option<&str>, args: &[String], shell: &str) -> Vec<Stri
 pub struct PtyManager {
     instances: Arc<Mutex<HashMap<u32, PtyInstance>>>,
     next_id: Arc<Mutex<u32>>,
+    /// Ids the app explicitly killed. `kill_pty` drops the instance, so the reader
+    /// thread can no longer reap the child and would report an indistinguishable
+    /// `Exit { code: None }` — the same shape as a child that died on its own. This
+    /// set is what lets the exit event say WHICH happened.
+    killed: Arc<Mutex<HashSet<u32>>>,
 }
 
 impl PtyManager {
@@ -35,6 +40,7 @@ impl PtyManager {
         Self {
             instances: Arc::new(Mutex::new(HashMap::new())),
             next_id: Arc::new(Mutex::new(1)),
+            killed: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 }
@@ -45,7 +51,13 @@ pub enum PtyEvent {
     #[serde(rename = "output")]
     Output { data: Vec<u8> },
     #[serde(rename = "exit")]
-    Exit { code: Option<i32> },
+    Exit {
+        code: Option<i32>,
+        /// "killed" = the app called kill_pty; "eof" = the child closed its fds on
+        /// its own; "read-error" = the master read failed. Diagnostic only.
+        reason: String,
+        pid: Option<u32>,
+    },
     #[serde(rename = "error")]
     Error { message: String },
 }
@@ -148,7 +160,9 @@ pub fn create_pty(
     }
 
     let instances_ref = state.instances.clone();
+    let killed_ref = state.killed.clone();
     std::thread::spawn(move || {
+        let mut read_error = false;
         let mut buf = [0u8; 4096];
         loop {
             match reader.read(&mut buf) {
@@ -159,6 +173,7 @@ pub fn create_pty(
                     });
                 }
                 Err(e) => {
+                    read_error = true;
                     let _ = on_event.send(PtyEvent::Error {
                         message: e.to_string(),
                     });
@@ -175,7 +190,22 @@ pub fn create_pty(
                 None => None,
             }
         };
-        let _ = on_event.send(PtyEvent::Exit { code });
+        // An id in `killed` means kill_pty already dropped the instance — the child
+        // died because WE closed its master, not on its own. Without this the two
+        // cases are indistinguishable downstream.
+        let was_killed = killed_ref.lock().unwrap().remove(&id);
+        let reason = if was_killed {
+            "killed"
+        } else if read_error {
+            "read-error"
+        } else {
+            "eof"
+        };
+        let _ = on_event.send(PtyEvent::Exit {
+            code,
+            reason: reason.to_string(),
+            pid: child_pid,
+        });
     });
 
     Ok(id)
@@ -258,6 +288,9 @@ pub fn reattach_pty(
 
 #[tauri::command]
 pub fn kill_pty(state: tauri::State<'_, PtyManager>, id: u32) -> Result<(), String> {
+    // Record BEFORE dropping the instance: dropping it closes the master, which is
+    // what makes the child die, and the reader thread reads this set on its way out.
+    state.killed.lock().unwrap().insert(id);
     let mut instances = state.instances.lock().unwrap();
     instances.remove(&id);
     Ok(())

@@ -213,20 +213,25 @@ interface CadreState {
   requestModeChoice: (suggested: ProjectMode) => void;
   /** The user picked a mode: set it and clear the pending picker. */
   chooseMode: (mode: ProjectMode) => void;
+  // Every maintain action below takes an OPTIONAL trailing `root`. One cockpit is
+  // mounted per open project (see nextMountedRoots), so a mounted-but-hidden cockpit
+  // must name the project it belongs to — without it these resolve to activeRoot and
+  // a background cockpit would mutate whichever project is in the foreground.
+  // Omitting it preserves the previous active-root behaviour for every other caller.
   /** Stage a new maintenance task (persisted, not yet dispatched). */
-  stageTask: (prompt: string) => void;
+  stageTask: (prompt: string, root?: string) => void;
   /** Remove a staged task before it's launched. */
-  unstageTask: (id: string) => void;
+  unstageTask: (id: string, root?: string) => void;
   /** Freeze the staged list into a fleet batch and launch every subagent. Returns the new batch id, or null if nothing staged. */
-  runStagedBatch: () => Promise<string | null>;
+  runStagedBatch: (root?: string) => Promise<string | null>;
   /** Flip a subagent to "exited" when its claude session ends (driven by the terminal). */
-  markSubagentExited: (batchId: string, taskId: string) => void;
+  markSubagentExited: (batchId: string, taskId: string, root?: string) => void;
   /** Close one subagent card — dropping it unmounts its terminal, which kills the session. */
-  closeSubagent: (batchId: string, taskId: string) => void;
+  closeSubagent: (batchId: string, taskId: string, root?: string) => void;
   /** Close a Fleet tab — dropping the batch unmounts its terminals, killing the sessions. */
-  closeBatch: (batchId: string) => void;
+  closeBatch: (batchId: string, root?: string) => void;
   /** Drag-to-reorder a subagent within its batch's grid. */
-  reorderSubagent: (batchId: string, fromTaskId: string, toTaskId: string) => void;
+  reorderSubagent: (batchId: string, fromTaskId: string, toTaskId: string, root?: string) => void;
 
   /** Freeze the verification command, write the plan to disk, unlock the fleet. */
   approvePlan: (verification: string[]) => Promise<void>;
@@ -363,7 +368,10 @@ function withMergeLock<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
-function requireRoot(): string {
+function requireRoot(explicit?: string): string {
+  // An explicit root wins: a background cockpit names its own project rather than
+  // inheriting whichever one happens to be in the foreground.
+  if (explicit) return explicit;
   const root = useBmadStore.getState().projectRoot;
   if (!root) {
     throw new Error("Open a project first — sharding and dispatch need a project on disk.");
@@ -505,8 +513,8 @@ export const useCadre = create<CadreState>((set, get) => {
       saveModeChoice(root, mode); // remember it so we don't ask again next open
     }
   },
-  stageTask: (prompt) => {
-    const root = requireRoot();
+  stageTask: (prompt, rootArg) => {
+    const root = requireRoot(rootArg);
     const text = prompt.trim();
     if (!text) return;
     const id = Math.random().toString(36).slice(2, 8);
@@ -514,14 +522,14 @@ export const useCadre = create<CadreState>((set, get) => {
     saveStaged(root, next);
     patchRoot(root, { stagedTasks: next });
   },
-  unstageTask: (id) => {
-    const root = requireRoot();
+  unstageTask: (id, rootArg) => {
+    const root = requireRoot(rootArg);
     const next = removeStaged(get().projects[root]?.stagedTasks ?? [], id);
     saveStaged(root, next);
     patchRoot(root, { stagedTasks: next });
   },
-  runStagedBatch: async () => {
-    const root = requireRoot();
+  runStagedBatch: async (rootArg) => {
+    const root = requireRoot(rootArg);
     const staged = get().projects[root]?.stagedTasks ?? [];
     if (staged.length === 0) return null;
 
@@ -567,26 +575,26 @@ export const useCadre = create<CadreState>((set, get) => {
     return batchId;
   },
 
-  markSubagentExited: (batchId, taskId) => {
-    const root = get().activeRoot;
+  markSubagentExited: (batchId, taskId, rootArg) => {
+    const root = rootArg ?? get().activeRoot;
     if (!root) return;
     patchRoot(root, { batches: setSubagentStatus(get().projects[root]?.batches ?? [], batchId, taskId, "exited") });
   },
 
   // The card's TerminalPanel kills its PTY on unmount, so closing just drops the
   // subagent/batch from state; the resulting unmount stops any live claude session.
-  closeSubagent: (batchId, taskId) => {
-    const root = requireRoot();
+  closeSubagent: (batchId, taskId, rootArg) => {
+    const root = requireRoot(rootArg);
     patchRoot(root, { batches: removeSubagent(get().projects[root]?.batches ?? [], batchId, taskId) });
   },
 
-  closeBatch: (batchId) => {
-    const root = requireRoot();
+  closeBatch: (batchId, rootArg) => {
+    const root = requireRoot(rootArg);
     patchRoot(root, { batches: removeBatch(get().projects[root]?.batches ?? [], batchId) });
   },
 
-  reorderSubagent: (batchId, fromTaskId, toTaskId) => {
-    const root = requireRoot();
+  reorderSubagent: (batchId, fromTaskId, toTaskId, rootArg) => {
+    const root = requireRoot(rootArg);
     patchRoot(root, { batches: moveSubagent(get().projects[root]?.batches ?? [], batchId, fromTaskId, toTaskId) });
   },
 

@@ -20,6 +20,7 @@ import { useBmadStore } from "../stores/bmadStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCadre } from "./useCadre";
 import { useOpenProjects } from "../stores/openProjectsStore";
+import { nextMountedRoots, nextMountedSurfaces } from "../lib/maintain/mountedCockpits";
 import { loadView, saveView } from "../stores/viewPreference";
 import { reportError } from "../lib/reportError";
 import { useRepos } from "../stores/reposStore";
@@ -51,30 +52,54 @@ export function CadreApp() {
   // Files/Terminal/Context mount on first visit and stay mounted (hidden) so editor
   // buffers, terminal PTY sessions, and context store state survive switching away.
   const [filesMounted, setFilesMounted] = useState(false);
-  const [termMounted, setTermMounted] = useState(false);
+  // Per-root, for the same reason as the cockpits: the dock terminal was keyed on
+  // the active project, so switching projects killed its PTY too.
+  const [dockTerminals, setDockTerminals] = useState<string[]>([]);
   const [ctxMounted, setCtxMounted] = useState(false);
-  // Maintain cockpit mounts the first time a project enters Maintain mode and then
-  // stays mounted (hidden in Build mode) so its Claude terminal survives mode switches.
-  const [maintainMounted, setMaintainMounted] = useState(false);
+  // ONE Maintain cockpit per open project, not a singleton re-pointed at the active
+  // one. A singleton had to be destroyed on every project switch to avoid leaking one
+  // project's terminal into another, and that teardown killed the PTY (and the claude
+  // session in it). Per-root instances solve the leak without the teardown.
+  const [mountedCockpits, setMountedCockpits] = useState<string[]>([]);
   const [teamOpen, setTeamOpen] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
   const projectRoot = useBmadStore((s) => s.projectRoot);
+  const openRoots = useOpenProjects((s) => s.roots);
   // Guard so the restore-on-launch effect runs exactly once per app session.
   const restoredRef = useRef(false);
 
   // Lazy-mount a view the first time it's opened.
   useEffect(() => {
     if (view === "files") setFilesMounted(true);
-    if (view === "terminal") setTermMounted(true);
     if (view === "context") setCtxMounted(true);
   }, [view]);
 
-  // Mount the Maintain cockpit the first time this project enters Maintain mode;
-  // once mounted it stays mounted (just hidden) so toggling Build⇄Maintain keeps
-  // the Claude terminal alive instead of killing its PTY.
+  // Keep the mounted set in sync: lazily add a project's cockpit when it enters
+  // Maintain mode, keep it while its tab is open (so switching projects no longer
+  // kills its terminal), and drop it when the tab closes — the one place teardown is
+  // correct. nextMountedRoots owns the policy so it stays testable in node-only Vitest.
   useEffect(() => {
-    if (mode === "maintain") setMaintainMounted(true);
-  }, [mode]);
+    setMountedCockpits((mounted) => {
+      const next = nextMountedRoots({ mounted, openRoots, activeRoot: projectRoot, activeMode: mode });
+      // Same membership → return the SAME array, or every store tick re-renders and
+      // remounts the very panes this exists to keep alive.
+      return next.length === mounted.length && next.every((r, i) => r === mounted[i]) ? mounted : next;
+    });
+  }, [mode, projectRoot, openRoots]);
+
+  // Same policy for the dock terminal — mount on first visit, keep while the tab is
+  // open, drop when the project closes.
+  useEffect(() => {
+    setDockTerminals((mounted) => {
+      const next = nextMountedSurfaces({
+        mounted,
+        openRoots,
+        activeRoot: projectRoot,
+        wantActive: view === "terminal",
+      });
+      return next.length === mounted.length && next.every((r, i) => r === mounted[i]) ? mounted : next;
+    });
+  }, [view, projectRoot, openRoots]);
 
   // A different project drops the other views — including the Maintain cockpit, so
   // a project switch doesn't leak the previous project's Claude terminal into the
@@ -84,16 +109,11 @@ export function CadreApp() {
     const restored: MainView = isMainView(saved) ? saved : "orchestrator";
     setView(restored);
     setFilesMounted(restored === "files");
-    setTermMounted(restored === "terminal");
     setCtxMounted(restored === "context");
-    // Drop the previous project's Maintain cockpit, but if THIS project already
-    // opens in Maintain mode keep it mounted. A hard `false` here would race the
-    // [mode] effect (both fire in the same commit on open) and win, leaving the
-    // cockpit unmounted and the main area blank. Reading `mode` (committed value
-    // at the time projectRoot changed) is deliberate; it must NOT be a dep, or a
-    // mere Build⇄Maintain toggle would reset the active view.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    setMaintainMounted(mode === "maintain");
+    // NOTE: the Maintain cockpits are deliberately NOT reset here. Dropping the
+    // previous project's cockpit is exactly what killed its terminal on a project
+    // switch; the mounted set is now owned by nextMountedRoots above, which keeps a
+    // cockpit alive until its project tab actually closes.
   }, [projectRoot]);
 
   // Persist the active view for this project so reopening lands on it.
@@ -168,13 +188,13 @@ export function CadreApp() {
         setView("terminal");
         // Target the dock terminal surface specifically — other mounted TerminalTabs
         // (e.g. the hidden Maintain cockpit) must not also spawn a tab/PTY.
-        if (termMounted && projectRoot)
+        if (projectRoot && dockTerminals.includes(projectRoot))
           window.dispatchEvent(new CustomEvent("cadre:new-terminal", { detail: { surfaceId: `dock:${projectRoot}` } }));
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [projectRoot, termMounted]);
+  }, [projectRoot, dockTerminals]);
 
   // Show SignIn when: credential check is done, no usable credential, and user
   // hasn't completed sign-in yet. An existing Anthropic-key user skips this entirely
@@ -229,11 +249,11 @@ export function CadreApp() {
 
             {/* Maintenance cockpit — lazy-mounted, then kept mounted (hidden in
                 Build mode) so the Claude session survives mode switches. */}
-            {maintainMounted && projectRoot && (
-              <div style={hidden(mode === "maintain")}>
-                <MaintainView />
+            {mountedCockpits.map((root) => (
+              <div key={root} style={hidden(mode === "maintain" && root === projectRoot)}>
+                <MaintainView root={root} />
               </div>
-            )}
+            ))}
           </div>
 
           {/* File view — tree + editable code. */}
@@ -244,11 +264,11 @@ export function CadreApp() {
           )}
 
           {/* Terminal view — multi-session, PTYs persist while hidden. */}
-          {termMounted && projectRoot && (
-            <div style={hidden(view === "terminal")}>
-              <TerminalTabs key={projectRoot} cwd={projectRoot} surfaceId={`dock:${projectRoot}`} />
+          {dockTerminals.map((root) => (
+            <div key={root} style={hidden(view === "terminal" && root === projectRoot)}>
+              <TerminalTabs cwd={root} surfaceId={`dock:${root}`} />
             </div>
-          )}
+          ))}
 
           {/* Context view — browses .cadre/context and ADRs; store state persists. */}
           {ctxMounted && projectRoot && (
