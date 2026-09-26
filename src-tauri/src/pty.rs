@@ -62,6 +62,9 @@ pub enum PtyEvent {
     Error { message: String },
 }
 
+// Each parameter is a named key in the frontend's `invoke("create_pty", {...})` payload; folding
+// them into a struct would change that wire contract for every caller.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub fn create_pty(
     state: tauri::State<'_, PtyManager>,
@@ -350,7 +353,7 @@ fn get_foreground_pid(shell_pid: u32) -> Option<u32> {
     stdout
         .lines()
         .filter_map(|line| line.trim().parse::<u32>().ok())
-        .last()
+        .next_back()
 }
 
 #[cfg(test)]
