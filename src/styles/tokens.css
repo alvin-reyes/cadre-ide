@@ -98,6 +98,16 @@
   /* Code/diagram surface — dark by default; light theme overrides below. */
   --c-code-bg: #0e0e17;
 
+  /* Syntax — highlighted code in rendered Markdown (src/lib/editor/highlight.ts).
+     Restrained: violet keywords echo the accent; everything else is muted.
+     Each clears 4.5:1 on --c-code-bg. */
+  --c-syn-keyword: #a99cff;
+  --c-syn-string: #8ce0c0;
+  --c-syn-number: #f2c078;
+  --c-syn-comment: #7d7d95;
+  --c-syn-type: #7cc4f8;
+  --c-syn-variable: #f2a7b8;
+
   /* Modal/overlay scrim. */
   --c-scrim: rgba(0, 0, 0, 0.5);
 }
@@ -148,6 +158,14 @@
 
   /* Code/diagram surface — light Cloud block */
   --c-code-bg: #efeff3;
+
+  /* Syntax — deepened for the light code block; each clears 4.5:1 on --c-code-bg. */
+  --c-syn-keyword: #5443d1;
+  --c-syn-string: #12714b;
+  --c-syn-number: #8f5300;
+  --c-syn-comment: #62627a;
+  --c-syn-type: #1a64a6;
+  --c-syn-variable: #a8325a;
 
   /* Cool scrim on light. */
   --c-scrim: rgba(11, 11, 18, 0.32);
@@ -682,6 +700,8 @@
   border-radius: var(--c-radius);
   padding: var(--c-space-3);
   overflow: auto;
+  /* Go and Makefiles indent with tabs; the browser default of 8 wastes half the block. */
+  tab-size: 4;
 }
 .cadre-doc pre code {
   background: none;
@@ -690,6 +710,17 @@
   font-size: var(--c-fs-sm);
   color: var(--c-text-secondary);
 }
+
+/* Syntax classes emitted by src/lib/editor/highlight.ts (see segments.ts tokenClass). */
+.cadre-syn-keyword,
+.cadre-syn-tag { color: var(--c-syn-keyword); }
+.cadre-syn-string { color: var(--c-syn-string); }
+.cadre-syn-number,
+.cadre-syn-regexp { color: var(--c-syn-number); }
+.cadre-syn-comment { color: var(--c-syn-comment); font-style: italic; }
+.cadre-syn-type,
+.cadre-syn-attribute { color: var(--c-syn-type); }
+.cadre-syn-variable { color: var(--c-syn-variable); }
 
 /* Tables */
 .cadre-doc table {

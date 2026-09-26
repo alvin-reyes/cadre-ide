@@ -1,34 +1,7 @@
 import { useRef, useCallback, useEffect, useState } from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
 import type { editor as monacoEditor } from "monaco-editor";
-
-const EXT_TO_LANGUAGE: Record<string, string> = {
-  ts: "typescript", tsx: "typescript",
-  js: "javascript", jsx: "javascript",
-  rs: "rust", py: "python", go: "go",
-  java: "java", c: "c", cpp: "cpp", h: "c",
-  rb: "ruby", swift: "swift", kt: "kotlin",
-  json: "json", yaml: "yaml", yml: "yaml",
-  toml: "toml", ini: "ini",
-  css: "css", scss: "scss", less: "less",
-  html: "html", htm: "html",
-  md: "markdown", markdown: "markdown",
-  sh: "shell", bash: "shell", zsh: "shell",
-  sql: "sql", graphql: "graphql",
-  xml: "xml", svg: "xml",
-  dockerfile: "dockerfile",
-  mmd: "markdown", mermaid: "markdown",
-  txt: "plaintext", log: "plaintext", csv: "plaintext",
-  env: "plaintext", lock: "json", conf: "plaintext", cfg: "plaintext",
-  proto: "protobuf",
-};
-
-function detectLanguage(filePath: string): string {
-  const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
-  const basename = filePath.split("/").pop()?.toLowerCase() ?? "";
-  if (basename === "dockerfile") return "dockerfile";
-  return EXT_TO_LANGUAGE[ext] || "plaintext";
-}
+import { languageForPath } from "../../lib/editor/languages";
 
 interface MonacoWrapperProps {
   filePath: string;
@@ -46,7 +19,9 @@ export default function MonacoWrapper({ filePath, content, onChange, onSave, the
   // points at the latest onSave — otherwise it saves a stale closure's content.
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
-  const language = detectLanguage(filePath);
+  // The first line only matters for extensionless scripts (shebang detection).
+  const nl = content.indexOf("\n");
+  const language = languageForPath(filePath, nl === -1 ? content : content.slice(0, nl));
 
   // The goto-line effect below can run BEFORE the editor exists (see its comment),
   // so it needs a reactive signal that mounting has happened — a ref alone cannot
