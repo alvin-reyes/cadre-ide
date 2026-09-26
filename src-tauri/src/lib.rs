@@ -30,9 +30,18 @@ fn list_directory(path: String) -> Result<Vec<FileEntry>, String> {
     };
 
     let skip_names: std::collections::HashSet<&str> = [
-        "node_modules", ".git", "target", "dist", ".DS_Store",
-        "__pycache__", ".next", ".cache",
-    ].iter().copied().collect();
+        "node_modules",
+        ".git",
+        "target",
+        "dist",
+        ".DS_Store",
+        "__pycache__",
+        ".next",
+        ".cache",
+    ]
+    .iter()
+    .copied()
+    .collect();
 
     let entries = std::fs::read_dir(&resolved)
         .map_err(|e| format!("Failed to read directory {}: {}", resolved, e))?;
@@ -48,7 +57,9 @@ fn list_directory(path: String) -> Result<Vec<FileEntry>, String> {
             Err(_) => continue, // skip unreadable entries
         };
         let entry_path = entry.path();
-        let extension = entry_path.extension().map(|e| e.to_string_lossy().to_string());
+        let extension = entry_path
+            .extension()
+            .map(|e| e.to_string_lossy().to_string());
         let is_hidden = name.starts_with('.');
         files.push(FileEntry {
             name,
@@ -62,7 +73,8 @@ fn list_directory(path: String) -> Result<Vec<FileEntry>, String> {
 
     // Sort: directories first, then alphabetical (case-insensitive)
     files.sort_by(|a, b| {
-        b.is_dir.cmp(&a.is_dir)
+        b.is_dir
+            .cmp(&a.is_dir)
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
 
@@ -143,7 +155,12 @@ fn get_home_dir() -> String {
     }
     // 3. Try dscl
     if let Ok(output) = std::process::Command::new("/usr/bin/dscl")
-        .args([".", "-read", &format!("/Users/{}", whoami()), "NFSHomeDirectory"])
+        .args([
+            ".",
+            "-read",
+            &format!("/Users/{}", whoami()),
+            "NFSHomeDirectory",
+        ])
         .output()
     {
         if output.status.success() {
@@ -214,8 +231,8 @@ fn claude_auth_status() -> Result<bool, String> {
 fn check_claude_plugin(plugin_name: String) -> Result<bool, String> {
     let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
     let path = format!("{}/.claude/plugins/installed_plugins.json", home);
-    let content = std::fs::read_to_string(&path)
-        .map_err(|_| "No installed plugins file".to_string())?;
+    let content =
+        std::fs::read_to_string(&path).map_err(|_| "No installed plugins file".to_string())?;
     Ok(content.contains(&plugin_name))
 }
 
@@ -229,7 +246,8 @@ fn write_text_file(path: String, content: String) -> Result<(), String> {
     };
     // Ensure parent dir exists
     if let Some(parent) = std::path::Path::new(&expanded).parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create parent dir: {}", e))?;
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create parent dir: {}", e))?;
     }
     std::fs::write(&expanded, content).map_err(|e| format!("Failed to write file: {}", e))?;
     Ok(())
@@ -262,11 +280,11 @@ fn save_temp_image(base64_data: String, extension: String) -> Result<String, Str
     let filename = format!("paste-{}.{}", timestamp, extension);
     let path = format!("{}/{}", dir, filename);
 
-    let bytes = base64_decode(&base64_data)
-        .map_err(|e| format!("Failed to decode base64: {}", e))?;
+    let bytes =
+        base64_decode(&base64_data).map_err(|e| format!("Failed to decode base64: {}", e))?;
 
-    let mut file = std::fs::File::create(&path)
-        .map_err(|e| format!("Failed to create file: {}", e))?;
+    let mut file =
+        std::fs::File::create(&path).map_err(|e| format!("Failed to create file: {}", e))?;
     file.write_all(&bytes)
         .map_err(|e| format!("Failed to write file: {}", e))?;
 
@@ -305,10 +323,11 @@ fn read_file_base64(path: String) -> Result<String, String> {
         path.clone()
     };
     // Check the size BEFORE reading, so an oversized file is never loaded at all.
-    let meta = std::fs::metadata(&resolved)
-        .map_err(|e| format!("Failed to stat {}: {}", resolved, e))?;
+    let meta =
+        std::fs::metadata(&resolved).map_err(|e| format!("Failed to stat {}: {}", resolved, e))?;
     check_viewer_size(meta.len())?;
-    let bytes = std::fs::read(&resolved).map_err(|e| format!("Failed to read {}: {}", resolved, e))?;
+    let bytes =
+        std::fs::read(&resolved).map_err(|e| format!("Failed to read {}: {}", resolved, e))?;
     Ok(STANDARD.encode(bytes))
 }
 
@@ -327,12 +346,22 @@ fn read_file(path: String) -> Result<String, String> {
 fn list_md_files(dir: String) -> Result<Vec<String>, String> {
     let mut files = Vec::new();
     fn walk(dir: &std::path::Path, files: &mut Vec<String>, depth: u32) {
-        if depth > 5 { return; }
+        if depth > 5 {
+            return;
+        }
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-                if name.starts_with('.') || name == "node_modules" || name == "target" || name == "dist" {
+                let name = path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                if name.starts_with('.')
+                    || name == "node_modules"
+                    || name == "target"
+                    || name == "dist"
+                {
                     continue;
                 }
                 if path.is_dir() {
@@ -354,9 +383,9 @@ fn list_md_files(dir: String) -> Result<Vec<String>, String> {
 
 #[derive(serde::Serialize)]
 struct SearchMatch {
-    line: u32,    // 1-based line number
-    col: u32,     // 1-based column of the first match on the line
-    count: u32,   // matches on this line
+    line: u32,  // 1-based line number
+    col: u32,   // 1-based column of the first match on the line
+    count: u32, // matches on this line
     preview: String,
 }
 
@@ -373,8 +402,17 @@ struct ReplaceSummary {
 }
 
 const SEARCH_SKIP_DIRS: &[&str] = &[
-    "node_modules", ".git", "target", "dist", ".next", ".cache",
-    "__pycache__", ".venv", "venv", "build", ".idea",
+    "node_modules",
+    ".git",
+    "target",
+    "dist",
+    ".next",
+    ".cache",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "build",
+    ".idea",
 ];
 const SEARCH_MAX_DEPTH: u32 = 12;
 const SEARCH_MAX_FILE_BYTES: u64 = 2 * 1024 * 1024; // skip files > 2MB
@@ -391,7 +429,10 @@ fn find_byte_indices(hay: &[u8], needle: &[u8], case_sensitive: bool) -> Vec<usi
         let hit = if case_sensitive {
             window == needle
         } else {
-            window.iter().zip(needle).all(|(a, b)| a.eq_ignore_ascii_case(b))
+            window
+                .iter()
+                .zip(needle)
+                .all(|(a, b)| a.eq_ignore_ascii_case(b))
         };
         if hit {
             idxs.push(i);
@@ -594,7 +635,10 @@ mod viewer_size_tests {
     fn rejects_a_file_over_the_cap() {
         let err = check_viewer_size(MAX_VIEWER_BYTES + 1).unwrap_err();
         // The message must name both numbers so the user knows how far over it is.
-        assert!(err.contains("64"), "expected the cap in the message, got: {err}");
+        assert!(
+            err.contains("64"),
+            "expected the cap in the message, got: {err}"
+        );
         assert!(err.to_lowercase().contains("too large"), "got: {err}");
     }
 }

@@ -51,57 +51,50 @@ pub fn watch_directory(
     let channel = on_event.clone();
 
     let mut watcher = RecommendedWatcher::new(
-        move |res: Result<notify::Event, notify::Error>| {
-            match res {
-                Ok(event) => {
-                    let paths: Vec<&PathBuf> = event
-                        .paths
-                        .iter()
-                        .filter(|p| {
-                            if ext_set.is_empty() {
-                                return true;
-                            }
-                            p.extension()
-                                .and_then(|e| e.to_str())
-                                .map(|e| ext_set.contains(&e.to_lowercase()))
-                                .unwrap_or(false)
-                        })
-                        .collect();
-
-                    if paths.is_empty() {
-                        return;
-                    }
-
-                    for path in paths {
-                        let path_str = path.to_string_lossy().to_string();
-                        match event.kind {
-                            EventKind::Create(_) => {
-                                let _ = channel.send(WatchEvent::Created {
-                                    path: path_str,
-                                });
-                            }
-                            EventKind::Modify(_) => {
-                                let content = std::fs::read_to_string(path)
-                                    .unwrap_or_default();
-                                let _ = channel.send(WatchEvent::Changed {
-                                    path: path_str,
-                                    content,
-                                });
-                            }
-                            EventKind::Remove(_) => {
-                                let _ = channel.send(WatchEvent::Removed {
-                                    path: path_str,
-                                });
-                            }
-                            _ => {}
+        move |res: Result<notify::Event, notify::Error>| match res {
+            Ok(event) => {
+                let paths: Vec<&PathBuf> = event
+                    .paths
+                    .iter()
+                    .filter(|p| {
+                        if ext_set.is_empty() {
+                            return true;
                         }
+                        p.extension()
+                            .and_then(|e| e.to_str())
+                            .map(|e| ext_set.contains(&e.to_lowercase()))
+                            .unwrap_or(false)
+                    })
+                    .collect();
+
+                if paths.is_empty() {
+                    return;
+                }
+
+                for path in paths {
+                    let path_str = path.to_string_lossy().to_string();
+                    match event.kind {
+                        EventKind::Create(_) => {
+                            let _ = channel.send(WatchEvent::Created { path: path_str });
+                        }
+                        EventKind::Modify(_) => {
+                            let content = std::fs::read_to_string(path).unwrap_or_default();
+                            let _ = channel.send(WatchEvent::Changed {
+                                path: path_str,
+                                content,
+                            });
+                        }
+                        EventKind::Remove(_) => {
+                            let _ = channel.send(WatchEvent::Removed { path: path_str });
+                        }
+                        _ => {}
                     }
                 }
-                Err(e) => {
-                    let _ = channel.send(WatchEvent::Error {
-                        message: e.to_string(),
-                    });
-                }
+            }
+            Err(e) => {
+                let _ = channel.send(WatchEvent::Error {
+                    message: e.to_string(),
+                });
             }
         },
         Config::default(),
@@ -128,10 +121,7 @@ pub fn watch_directory(
 }
 
 #[tauri::command]
-pub fn unwatch_directory(
-    state: tauri::State<'_, WatcherManager>,
-    id: u32,
-) -> Result<(), String> {
+pub fn unwatch_directory(state: tauri::State<'_, WatcherManager>, id: u32) -> Result<(), String> {
     let mut watchers = state.watchers.lock().unwrap();
     watchers.remove(&id);
     Ok(())

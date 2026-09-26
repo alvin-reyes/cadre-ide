@@ -132,12 +132,21 @@ pub fn create_pty(
         }
     }
 
-    let child = pair.slave.spawn_command(cmd).map_err(|e| format!("spawn failed: {}", e))?;
+    let child = pair
+        .slave
+        .spawn_command(cmd)
+        .map_err(|e| format!("spawn failed: {}", e))?;
     let child_pid = child.process_id();
     drop(pair.slave);
 
-    let writer = pair.master.take_writer().map_err(|e| format!("take_writer failed: {}", e))?;
-    let mut reader = pair.master.try_clone_reader().map_err(|e| format!("clone_reader failed: {}", e))?;
+    let writer = pair
+        .master
+        .take_writer()
+        .map_err(|e| format!("take_writer failed: {}", e))?;
+    let mut reader = pair
+        .master
+        .try_clone_reader()
+        .map_err(|e| format!("clone_reader failed: {}", e))?;
 
     let id = {
         let mut next = state.next_id.lock().unwrap();

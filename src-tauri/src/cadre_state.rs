@@ -106,8 +106,7 @@ impl CadreState {
     /// never observes a torn file, and record the write's origin.
     pub fn atomic_write(&self, path: &Path, content: &str) -> Result<(), String> {
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("mkdir {}: {}", parent.display(), e))?;
+            fs::create_dir_all(parent).map_err(|e| format!("mkdir {}: {}", parent.display(), e))?;
         }
         let mut tmp = path.as_os_str().to_owned();
         tmp.push(".tmp");
@@ -133,7 +132,11 @@ impl CadreState {
                 ));
             }
         }
-        let state = StoryState { epic, story, status };
+        let state = StoryState {
+            epic,
+            story,
+            status,
+        };
         let json = serde_json::to_string_pretty(&state).map_err(|e| e.to_string())?;
         self.atomic_write(&self.status_path(epic, story), &json)
     }
@@ -142,7 +145,9 @@ impl CadreState {
     pub fn get_status(&self, epic: u32, story: u32) -> Result<Option<StoryState>, String> {
         let path = self.status_path(epic, story);
         match fs::read_to_string(&path) {
-            Ok(s) => serde_json::from_str(&s).map(Some).map_err(|e| e.to_string()),
+            Ok(s) => serde_json::from_str(&s)
+                .map(Some)
+                .map_err(|e| e.to_string()),
             Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(e.to_string()),
         }
@@ -153,7 +158,11 @@ impl CadreState {
     }
 
     /// Approve the PLAN gate, freezing the human-confirmed verification steps.
-    pub fn approve_plan(&self, verification: Vec<String>, repo_verification: HashMap<String, Vec<String>>) -> Result<(), String> {
+    pub fn approve_plan(
+        &self,
+        verification: Vec<String>,
+        repo_verification: HashMap<String, Vec<String>>,
+    ) -> Result<(), String> {
         let approval = PlanApproval {
             approved: true,
             verification,
@@ -166,7 +175,9 @@ impl CadreState {
     /// Read the PLAN approval, or `None` if the plan hasn't been approved yet.
     pub fn get_plan_approval(&self) -> Result<Option<PlanApproval>, String> {
         match fs::read_to_string(self.plan_path()) {
-            Ok(s) => serde_json::from_str(&s).map(Some).map_err(|e| e.to_string()),
+            Ok(s) => serde_json::from_str(&s)
+                .map(Some)
+                .map_err(|e| e.to_string()),
             Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(e.to_string()),
         }
@@ -188,7 +199,9 @@ pub struct CadreEngine {
 
 impl CadreEngine {
     pub fn new() -> Self {
-        Self { states: Mutex::new(HashMap::new()) }
+        Self {
+            states: Mutex::new(HashMap::new()),
+        }
     }
 }
 
@@ -197,7 +210,11 @@ impl CadreEngine {
 #[tauri::command]
 pub fn open_project(engine: tauri::State<'_, CadreEngine>, root: String) -> Result<(), String> {
     let key = PathBuf::from(&root);
-    engine.states.lock().unwrap().insert(key, CadreState::new(root));
+    engine
+        .states
+        .lock()
+        .unwrap()
+        .insert(key, CadreState::new(root));
     Ok(())
 }
 
@@ -339,7 +356,10 @@ mod tests {
         let err = s.set_status(1, 1, Status::Done).unwrap_err();
         assert!(err.contains("illegal status transition"));
         // and the stored status is unchanged
-        assert_eq!(s.get_status(1, 1).unwrap().unwrap().status, Status::InProgress);
+        assert_eq!(
+            s.get_status(1, 1).unwrap().unwrap().status,
+            Status::InProgress
+        );
     }
 
     #[test]
@@ -368,10 +388,15 @@ mod tests {
         let state = CadreState::new(tmp_root("repo-verify"));
         let mut map = std::collections::HashMap::new();
         map.insert("api".to_string(), vec!["go test ./...".to_string()]);
-        state.approve_plan(vec!["npm test".to_string()], map.clone()).unwrap();
+        state
+            .approve_plan(vec!["npm test".to_string()], map.clone())
+            .unwrap();
         let got = state.get_plan_approval().unwrap().unwrap();
         assert_eq!(got.verification, vec!["npm test".to_string()]);
-        assert_eq!(got.repo_verification.get("api"), Some(&vec!["go test ./...".to_string()]));
+        assert_eq!(
+            got.repo_verification.get("api"),
+            Some(&vec!["go test ./...".to_string()])
+        );
     }
 
     #[test]
@@ -390,7 +415,10 @@ mod tests {
         // approvals path is under .cadre/approvals, not in any story worktree,
         // so an agent (running in .cadre/worktrees/...) has no write path to it.
         let s = CadreState::new("/proj");
-        assert_eq!(s.plan_path(), PathBuf::from("/proj/.cadre/approvals/plan.json"));
+        assert_eq!(
+            s.plan_path(),
+            PathBuf::from("/proj/.cadre/approvals/plan.json")
+        );
     }
 
     #[test]

@@ -26,7 +26,10 @@ pub fn mcp_probe(connection_json: String) -> Result<String, String> {
         .map_err(|e| e.to_string())?;
     let out = child.wait_with_output().map_err(|e| e.to_string())?;
     if !out.status.success() {
-        return Err(format!("probe failed: {}", String::from_utf8_lossy(&out.stderr)));
+        return Err(format!(
+            "probe failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        ));
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }

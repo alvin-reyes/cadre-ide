@@ -150,7 +150,10 @@ mod tests {
     fn set_get_roundtrip() {
         let s = store();
         s.set_secret("anthropic", "sk-abc123").unwrap();
-        assert_eq!(s.get_secret("anthropic").unwrap(), Some("sk-abc123".to_string()));
+        assert_eq!(
+            s.get_secret("anthropic").unwrap(),
+            Some("sk-abc123".to_string())
+        );
     }
 
     #[test]
