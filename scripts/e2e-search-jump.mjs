@@ -119,4 +119,8 @@ async function main() {
   process.exitCode = failed ? 1 : 0;
 }
 
-main().catch((e) => { console.error(e); process.exitCode = 1; });
+// The detached vite child keeps the event loop alive, so the "exit" hook that kills it never fires
+// on its own — exit explicitly (honouring exitCode) or the script hangs after reporting.
+main()
+  .catch((e) => { console.error(e); process.exitCode = 1; })
+  .finally(() => process.exit());
