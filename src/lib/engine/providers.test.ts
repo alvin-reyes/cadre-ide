@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { PROVIDERS, getProvider, resolveAgentEnv } from "./providers";
+import { PROVIDERS, getProvider, resolveAgentEnv, preferClaudeLogin } from "./providers";
 
 describe("providers", () => {
   it("offers Claude, Kimi, and DeepSeek", () => {
@@ -37,5 +37,26 @@ describe("resolveAgentEnv", () => {
   it("honors a model override", () => {
     const { model } = resolveAgentEnv(getProvider("kimi"), "k", "kimi-k2-thinking");
     expect(model).toBe("kimi-k2-thinking");
+  });
+});
+
+describe("preferClaudeLogin", () => {
+  it("prefers the login when one is actually available on the machine", () => {
+    // The user is logged into the claude CLI (keychain) — use it even if the
+    // opt-in toggle was never flipped, so connectors load and billing stays on
+    // the subscription instead of an injected API key.
+    expect(preferClaudeLogin(true, false)).toBe(true);
+  });
+
+  it("prefers the login when the user explicitly opted in, even if none detected", () => {
+    expect(preferClaudeLogin(false, true)).toBe(true);
+  });
+
+  it("falls back to a key when there is no login and no opt-in", () => {
+    expect(preferClaudeLogin(false, false)).toBe(false);
+  });
+
+  it("prefers the login when both are true", () => {
+    expect(preferClaudeLogin(true, true)).toBe(true);
   });
 });

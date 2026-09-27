@@ -356,6 +356,7 @@ dependencies = [
  "libc",
  "notify",
  "portable-pty",
+ "security-framework 3.7.0",
  "serde",
  "serde_json",
  "tauri",

@@ -31,3 +31,9 @@ keyring = { version = "3", features = ["apple-native"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# macOS Keychain queries (login-presence check). Used to detect the `claude` CLI
+# subscription login WITHOUT reading (decrypting) the secret — a data-less item
+# search never triggers the "allow access" prompt, unlike keyring's get_password.
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3"

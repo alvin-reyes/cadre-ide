@@ -47,6 +47,21 @@ export function getProvider(id: string): Provider {
   return provider;
 }
 
+/**
+ * Whether a native-Claude fleet agent should run on the user's claude.ai CLI
+ * login (empty auth env → the spawned `claude` falls back to its keychain login)
+ * rather than an injected API key.
+ *
+ * Prefer the login whenever one is actually present on the machine, OR when the
+ * user has explicitly opted into login mode. This matters because an injected
+ * ANTHROPIC_API_KEY (a) bills the API instead of the subscription and (b) makes
+ * Claude Code disable the claude.ai/org connectors — connectors load only under
+ * subscription auth. So if a login exists, using it is strictly better.
+ */
+export function preferClaudeLogin(loginAvailable: boolean, useLoginToggle: boolean): boolean {
+  return loginAvailable || useLoginToggle;
+}
+
 export interface AgentEnv {
   env: Record<string, string>;
   model: string;
